@@ -1,7 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
 PyInstaller spec for PDF Editor
-Run:  .venv\Scripts\pyinstaller.exe pdf_editor.spec
+One-folder mode (recommended for faster startup with PySide6 + PyMuPDF)
+
+Build:
+  .venv\Scripts\pyinstaller.exe pdf_editor.spec
+  (or: python -m PyInstaller pdf_editor.spec)
+
+Output:
+  dist/PDF_Editor/PDF_Editor.exe  +  dist/PDF_Editor/_internal/...
 """
 
 import sys
@@ -60,22 +67,32 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,   # One-folder モード用（起動高速化）
     name='PDF_Editor',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,           # UPX は PySide6 と相性が悪いことがあるので無効
+    upx=False,               # UPX は PySide6 と相性が悪いことがあるので無効
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,       # GUIアプリなのでコンソールウィンドウを非表示
+    console=False,           # GUIアプリなのでコンソールウィンドウを非表示
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon='resources/app_icon.ico',
+)
+
+# One-folder 出力（dist/PDF_Editor/ の中に exe + _internal フォルダができる）
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='PDF_Editor',
 )
