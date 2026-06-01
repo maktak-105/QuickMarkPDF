@@ -48,6 +48,7 @@ class PDFManager:
         self.documents: List[PDFDocument] = []
         self.all_pages: List[fitz.Page] = []
         self.page_infos: List[PageInfo] = []
+        self._thumb_cache: dict = {}  # (page_id, max_size, rotation) → fitz.Pixmap
 
     def load_pdfs(self, paths: List[Path]) -> int:
         """Load one or more PDF files. Returns number of successfully loaded files."""
@@ -88,20 +89,26 @@ class PDFManager:
         if not 0 <= page_index < len(self.all_pages):
             return
         page = self.all_pages[page_index]
+        pid = id(page)
+        self._thumb_cache = {k: v for k, v in self._thumb_cache.items() if k[0] != pid}
         page.set_rotation((page.rotation + degrees) % 360)
 
     def get_thumbnail_pixmap(self, page_index: int, max_size: int = 200) -> Optional[fitz.Pixmap]:
-        """Generate a thumbnail pixmap for the given page."""
+        """Generate a thumbnail pixmap for the given page (cached)."""
         if not 0 <= page_index < len(self.all_pages):
             return None
         page = self.all_pages[page_index]
-        mat = fitz.Matrix(0.5, 0.5)  # lower res for thumbnail
-        pix = page.get_pixmap(matrix=mat)
-        # Scale down if needed
-        if max(pix.width, pix.height) > max_size:
-            factor = max_size / max(pix.width, pix.height)
-            mat = fitz.Matrix(factor, factor)
-            pix = page.get_pixmap(matrix=mat)
+        cache_key = (id(page), max_size, page.rotation)
+
+        if cache_key in self._thumb_cache:
+            return self._thumb_cache[cache_key]
+
+        # Compute the exact scale factor in one shot — no double render
+        page_max = max(page.rect.width, page.rect.height)
+        factor = max_size / page_max if page_max > max_size else 1.0
+        pix = page.get_pixmap(matrix=fitz.Matrix(factor, factor))
+
+        self._thumb_cache[cache_key] = pix
         return pix
 
     def get_preview_pixmap(self, page_index: int, zoom: float = 1.5) -> Optional[fitz.Pixmap]:
@@ -118,57 +125,102 @@ class PDFManager:
         self.documents.clear()
         self.all_pages.clear()
         self.page_infos.clear()
+        self._thumb_cache.clear()
 
     # =====================
     # Header & Footer
     # =====================
+
+    @staticmethod
+    def _text_x(text: str, page_width: float, align: str, font_size: int, margin: float) -> float:
+        """Return the x coordinate for text given alignment."""
+        tw = fitz.get_text_length(text, fontname="helv", fontsize=font_size)
+        if align == "left":
+            return margin
+        if align == "right":
+            return page_width - tw - margin
+        return (page_width - tw) / 2  # center
+
     def add_header_footer(
         self,
+        header_enabled: bool = False,
         header_text: str = "",
-        show_page_number: bool = True,
-        font_size: int = 11,
-        margin_bottom: int = 30,
-        margin_top: int = 25,
+        header_align: str = "center",
+        footer_page_num: bool = False,
+        footer_page_num_align: str = "center",
+        footer_text_enabled: bool = False,
+        footer_text: str = "",
+        footer_text_align: str = "center",
+        font_size: int = 10,
+        margin: int = 25,
     ):
+        """Insert header and/or footer text directly onto each page.
+        Footer page-number and footer text are rendered on separate lines to avoid overlap.
         """
-        Add header (title) and footer (page number) to all pages.
-        Text is inserted directly onto the page objects.
-        """
-        total_pages = self.get_page_count()
-        if total_pages == 0:
+        total = self.get_page_count()
+        if total == 0:
             return
 
+        h_text = header_text.strip() if header_enabled else ""
+        f_num = footer_page_num
+        f_text = footer_text.strip() if footer_text_enabled else ""
+
+        if not h_text and not f_num and not f_text:
+            return
+
+        self._thumb_cache.clear()
+
+        line_gap = font_size + 3  # vertical distance between footer lines
+
         for i, page in enumerate(self.all_pages):
-            page_number = i + 1
             rect = page.rect
 
-            # --- Header (Title) ---
-            if header_text:
-                text = header_text
-                text_width = fitz.get_text_length(text, fontname="helv", fontsize=font_size)
-                x = (rect.width - text_width) / 2
-                y = margin_top + font_size   # baseline adjustment
-                page.insert_text(
-                    (x, y),
-                    text,
-                    fontname="helv",
-                    fontsize=font_size,
-                    color=(0.15, 0.15, 0.15)
-                )
+            if h_text:
+                x = self._text_x(h_text, rect.width, header_align, font_size, margin)
+                page.insert_text((x, margin + font_size), h_text,
+                                 fontname="helv", fontsize=font_size, color=(0.15, 0.15, 0.15))
 
-            # --- Footer (Page Number) ---
-            if show_page_number:
-                text = f"- {page_number} / {total_pages} -"
-                text_width = fitz.get_text_length(text, fontname="helv", fontsize=font_size)
-                x = (rect.width - text_width) / 2
-                y = rect.height - margin_bottom
-                page.insert_text(
-                    (x, y),
-                    text,
-                    fontname="helv",
-                    fontsize=font_size,
-                    color=(0.15, 0.15, 0.15)
-                )
+            # Build footer lines bottom-up: page-number is always the lowest line
+            # so it never overlaps with the custom text line above it.
+            footer_lines = []  # each item: (text, align)
+            if f_num:
+                footer_lines.append((f"- {i + 1} / {total} -", footer_page_num_align))
+            if f_text:
+                footer_lines.append((f_text, footer_text_align))
+
+            for row, (line_text, align) in enumerate(footer_lines):
+                x = self._text_x(line_text, rect.width, align, font_size, margin)
+                y = rect.height - margin - row * line_gap
+                page.insert_text((x, y), line_text,
+                                 fontname="helv", fontsize=font_size, color=(0.15, 0.15, 0.15))
+
+    def remove_header_footer(self):
+        """Reload all pages from disk to erase inserted text, then re-apply stored rotations."""
+        if not self.documents:
+            return
+
+        # Save accumulated rotations before wiping page objects
+        rotations = [page.rotation for page in self.all_pages]
+
+        # Re-open each source document from disk (fresh, no inserted text)
+        for doc in self.documents:
+            doc.close()
+            doc.open()
+
+        # Rebuild all_pages in the current page_infos order
+        doc_by_path = {doc.path: doc for doc in self.documents}
+        self.all_pages = []
+        for info in self.page_infos:
+            src = doc_by_path.get(info.source_doc_path)
+            if src and 0 <= info.original_page_index < len(src.pages):
+                self.all_pages.append(src.pages[info.original_page_index])
+
+        # Re-apply rotations that the user had set
+        for page, rot in zip(self.all_pages, rotations):
+            if rot != page.rotation:
+                page.set_rotation(rot)
+
+        self._thumb_cache.clear()
 
     # =====================
     # Save / Export

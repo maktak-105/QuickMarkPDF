@@ -122,8 +122,12 @@ class ThumbnailPanel(QTreeWidget):
         else:
             w, h = 120, 155
 
+        # rootIsDecorated=True (Qt default) makes child items indent by 2 × _INDENT.
+        # Also reserve space for the vertical scrollbar so the icon never gets clipped.
+        self._panel_width = w + 2 * _INDENT + 24  # child_indent(40) + scrollbar(17) + margin(7)
+
         self.setIconSize(QSize(w, h))
-        self.setMinimumWidth(w + _INDENT + 10)  # minimum: icon + indent, no hard max
+        self.setMinimumWidth(self._panel_width)
 
         self._delegate = _ThumbnailDelegate(w, h, self)
         self.setItemDelegate(self._delegate)
