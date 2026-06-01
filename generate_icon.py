@@ -1,10 +1,11 @@
 """
 PDF Editor アプリアイコン生成スクリプト
+スーパーサンプリング: 1024px で描画 → LANCZOS で各サイズに縮小
 出力: resources/app_icon.png  (256x256 プレビュー用)
       resources/app_icon.ico  (PyInstaller 用 / 複数サイズ埋め込み)
 """
-from PIL import Image, ImageDraw, ImageFont
-import math, os
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import os
 
 # ── パレット ────────────────────────────────────────────────
 BG_DARK   = (22,  38,  54)   # ダークネイビー
@@ -13,13 +14,15 @@ FOLD_GRAY = (195, 210, 224)  # 折り目
 RED       = (196,  56,  40)  # PDF ラベル
 LINE_BLUE = (170, 195, 218)  # コンテンツ模擬ライン
 
+MASTER = 1024  # 描画解像度（この後 LANCZOS で縮小）
+
 
 def load_font(size: int) -> ImageFont.FreeTypeFont:
     candidates = [
         "C:/Windows/Fonts/arialbd.ttf",
-        "C:/Windows/Fonts/arial.ttf",
         "C:/Windows/Fonts/calibrib.ttf",
         "C:/Windows/Fonts/verdanab.ttf",
+        "C:/Windows/Fonts/arial.ttf",
         "C:/Windows/Fonts/verdana.ttf",
     ]
     for path in candidates:
@@ -30,81 +33,60 @@ def load_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def draw_rounded_rect(draw, bbox, r, fill):
-    draw.rounded_rectangle(bbox, radius=r, fill=fill)
-
-
-def create_icon(size: int = 256) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+def create_master() -> Image.Image:
+    """1024×1024 のマスター画像を生成する。"""
+    s = MASTER
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d   = ImageDraw.Draw(img)
-    s   = size
 
     # ── 背景（角丸正方形）──────────────────────────────────
-    bg_r = max(6, int(s * 0.14))
-    draw_rounded_rect(d, [0, 0, s - 1, s - 1], bg_r, BG_DARK)
+    bg_r = int(s * 0.14)
+    d.rounded_rectangle([0, 0, s - 1, s - 1], radius=bg_r, fill=BG_DARK)
 
     # ── ドキュメント本体 ────────────────────────────────────
-    ml = int(s * 0.165)     # left margin
-    mt = int(s * 0.130)     # top margin
-    mr = int(s * 0.165)     # right margin
-    mb = int(s * 0.130)     # bottom margin
-    DL, DT = ml, mt
-    DR, DB = s - mr, s - mb
-    FOLD   = int(s * 0.145)
+    DL = int(s * 0.165);  DT = int(s * 0.130)
+    DR = s - int(s * 0.165); DB = s - int(s * 0.130)
+    FOLD = int(s * 0.145)
 
-    # ドキュメント（折り目あり）
     doc_pts = [
-        (DL, DT),
-        (DR - FOLD, DT),
-        (DR, DT + FOLD),
-        (DR, DB),
-        (DL, DB),
+        (DL, DT), (DR - FOLD, DT),
+        (DR, DT + FOLD), (DR, DB), (DL, DB),
     ]
     d.polygon(doc_pts, fill=DOC_WHITE)
 
-    # 折り目三角
-    fold_pts = [
-        (DR - FOLD, DT),
-        (DR, DT + FOLD),
-        (DR - FOLD, DT + FOLD),
-    ]
+    fold_pts = [(DR - FOLD, DT), (DR, DT + FOLD), (DR - FOLD, DT + FOLD)]
     d.polygon(fold_pts, fill=FOLD_GRAY)
 
-    # 折り目の境界線（白）
-    d.line([(DR - FOLD, DT), (DR, DT + FOLD)], fill=(220, 233, 243), width=max(1, s // 128))
+    # 折り目の境界線
+    border_w = max(2, s // 256)
+    d.line([(DR - FOLD, DT), (DR, DT + FOLD)], fill=(215, 228, 240), width=border_w)
 
     # ── PDF ラベル（赤い帯）──────────────────────────────────
     pad  = int(s * 0.055)
     LT   = DT + int(s * 0.095)
     LB   = LT + int(s * 0.165)
-    LR   = DR - FOLD - int(s * 0.02)
-    label_r = max(3, int(s * 0.025))
-    draw_rounded_rect(d, [DL + pad, LT, LR, LB], label_r, RED)
+    LR   = DR - FOLD - int(s * 0.020)
+    d.rounded_rectangle([DL + pad, LT, LR, LB], radius=int(s * 0.025), fill=RED)
 
-    font_size = max(12, int(s * 0.145))
-    font      = load_font(font_size)
-    txt       = "PDF"
-
+    font = load_font(int(s * 0.145))
+    txt  = "PDF"
     bbox = d.textbbox((0, 0), txt, font=font)
     tw   = bbox[2] - bbox[0]
     th   = bbox[3] - bbox[1]
-    lbl_cx = (DL + pad + LR) // 2
-    lbl_cy = (LT + LB) // 2
-    d.text((lbl_cx - tw // 2, lbl_cy - th // 2 - max(1, s // 64)),
-           txt, fill=(255, 255, 255), font=font)
+    lx   = (DL + pad + LR) // 2 - tw // 2
+    ly   = (LT + LB) // 2 - th // 2 - s // 64
+    d.text((lx, ly), txt, fill=(255, 255, 255), font=font)
 
     # ── コンテンツ模擬ライン ────────────────────────────────
-    line_left  = DL + pad
-    line_right = DR - FOLD - int(s * 0.04)
-    line_h     = max(2, int(s * 0.022))
-    gap        = int(s * 0.065)
-    ratios     = [0.88, 0.70, 0.92, 0.58]
-
-    y = LB + int(s * 0.075)
-    for ratio in ratios:
-        w = int((line_right - line_left) * ratio)
-        rect_r = line_h // 2
-        draw_rounded_rect(d, [line_left, y, line_left + w, y + line_h], rect_r, LINE_BLUE)
+    line_l = DL + pad
+    line_r = DR - FOLD - int(s * 0.04)
+    line_h = max(6, int(s * 0.022))
+    gap    = int(s * 0.065)
+    y      = LB + int(s * 0.075)
+    for ratio in [0.88, 0.70, 0.92, 0.58]:
+        w = int((line_r - line_l) * ratio)
+        d.rounded_rectangle([line_l, y, line_l + w, y + line_h],
+                            radius=line_h // 2, fill=LINE_BLUE)
         y += gap
         if y + line_h > DB - int(s * 0.04):
             break
@@ -112,12 +94,23 @@ def create_icon(size: int = 256) -> Image.Image:
     return img
 
 
-def save_ico(img_256: Image.Image, path: str):
+def downscale(master: Image.Image, size: int) -> Image.Image:
+    """LANCZOS + UnsharpMask でシャープに縮小する。
+    UnsharpMask は RGBA 非対応なので RGB/alpha を分離して処理する。
+    """
+    resized = master.resize((size, size), Image.LANCZOS)
+    if size >= 32 and resized.mode == "RGBA":
+        r, g, b, a = resized.split()
+        rgb = Image.merge("RGB", (r, g, b))
+        rgb = rgb.filter(ImageFilter.UnsharpMask(radius=0.6, percent=130, threshold=2))
+        r, g, b = rgb.split()
+        resized = Image.merge("RGBA", (r, g, b, a))
+    return resized
+
+
+def save_ico(master: Image.Image, path: str):
     sizes  = [16, 24, 32, 48, 64, 128, 256]
-    frames = []
-    for sz in sizes:
-        resized = img_256.resize((sz, sz), Image.LANCZOS)
-        frames.append(resized)
+    frames = [downscale(master, sz) for sz in sizes]
     frames[0].save(
         path, format="ICO",
         sizes=[(sz, sz) for sz in sizes],
@@ -128,13 +121,13 @@ def save_ico(img_256: Image.Image, path: str):
 if __name__ == "__main__":
     os.makedirs("resources", exist_ok=True)
 
-    icon = create_icon(256)
+    master = create_master()
 
-    png_path = "resources/app_icon.png"
     ico_path = "resources/app_icon.ico"
+    png_path = "resources/app_icon.png"
 
-    icon.save(png_path)
-    save_ico(icon, ico_path)
+    save_ico(master, ico_path)
+    downscale(master, 256).save(png_path)
 
-    print(f"✓ {png_path}")
-    print(f"✓ {ico_path}")
+    print(f"OK  {png_path}")
+    print(f"OK  {ico_path}")

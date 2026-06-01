@@ -16,6 +16,7 @@ a = Analysis(
     datas=[
         ('resources/icons/*.png', 'resources/icons'),
         ('resources/app_icon.png', 'resources'),
+        ('resources/app_icon.ico', 'resources'),
     ],
     hiddenimports=[
         # PyMuPDF
