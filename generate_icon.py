@@ -109,13 +109,10 @@ def downscale(master: Image.Image, size: int) -> Image.Image:
 
 
 def save_ico(master: Image.Image, path: str):
-    sizes  = [16, 24, 32, 48, 64, 128, 256]
-    frames = [downscale(master, sz) for sz in sizes]
-    frames[0].save(
-        path, format="ICO",
-        sizes=[(sz, sz) for sz in sizes],
-        append_images=frames[1:],
-    )
+    # 旧実装のバグ: frames[0]（16px）を sizes で引き伸ばしていた → ボケの原因
+    # 修正: 1024px マスターを渡し、Pillow に LANCZOS で各サイズへ縮小させる
+    sizes = [(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)]
+    master.save(path, format="ICO", sizes=sizes)
 
 
 if __name__ == "__main__":
