@@ -14,8 +14,8 @@ a = Analysis(
     pathex=['.'],
     binaries=[],
     datas=[
-        # アイコン画像をバンドル
         ('resources/icons/*.png', 'resources/icons'),
+        ('resources/app_icon.png', 'resources'),
     ],
     hiddenimports=[
         # PyMuPDF
@@ -76,5 +76,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon='resources/icons/open.png',  # .ico ファイルがあればここに指定
+    icon='resources/app_icon.ico',
 )
