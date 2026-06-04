@@ -3,7 +3,7 @@ ThumbnailPanel (QTreeWidget version)
 - Grouped by original PDF file (collapsible top-level items)
 - Drag & drop reordering with animated insertion gap
 """
-from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QHeaderView, QStyle
+from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QHeaderView, QStyle, QMenu
 from PySide6.QtCore import Qt, Signal, QSize, QTimer, QRect
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QIcon, QFont
 from collections import defaultdict
@@ -62,12 +62,14 @@ class _ThumbnailDelegate(QStyledItemDelegate):
 
 class ThumbnailPanel(QTreeWidget):
     page_reordered = Signal(list)
+    pdf_extract_requested = Signal(list)   # list of selected page indices for PDF cut-out
+    image_extract_requested = Signal(list) # list of selected page indices for image export
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setHeaderHidden(True)
         self.setDragDropMode(QTreeWidget.InternalMove)
-        self.setSelectionMode(QTreeWidget.SingleSelection)
+        self.setSelectionMode(QTreeWidget.ExtendedSelection)
         self.setExpandsOnDoubleClick(True)
         self.setAnimated(False)
 
@@ -101,6 +103,10 @@ class ThumbnailPanel(QTreeWidget):
                 background: #3a6ea5;
             }
         """)
+
+        # Context menu for quick export etc.
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
 
     def set_pdf_manager(self, manager: PDFManager):
         self.pdf_manager = manager
@@ -367,3 +373,32 @@ class ThumbnailPanel(QTreeWidget):
         row = file_item.indexOfChild(item)
         rect = self.visualItemRect(item)
         return file_item, row + 1 if pos.y() > rect.center().y() else row
+
+    # --- Context menu & selection helpers for export etc. ---
+
+    def _show_context_menu(self, pos):
+        if not self.pdf_manager or self.topLevelItemCount() == 0:
+            return
+        selected = self.get_selected_page_indices()
+        menu = QMenu(self)
+        # Two choices as requested: PDF cut-out or Image cut-out
+        pdf_label = f"PDFを切り出し... ({len(selected)}ページ)" if selected else "PDFを切り出し..."
+        img_label = f"画像を切り出し (PNG/JPG)... ({len(selected)}ページ)" if selected else "画像を切り出し (PNG/JPG)..."
+        pdf_act = menu.addAction(pdf_label)
+        pdf_act.triggered.connect(lambda: self.pdf_extract_requested.emit(selected))
+        img_act = menu.addAction(img_label)
+        img_act.triggered.connect(lambda: self.image_extract_requested.emit(selected))
+        menu.exec(self.viewport().mapToGlobal(pos))
+
+    def get_selected_page_indices(self) -> list[int]:
+        """Return currently selected page indices in visual (tree) order. Supports multi-select."""
+        selected = []
+        for i in range(self.topLevelItemCount()):
+            file_item = self.topLevelItem(i)
+            for j in range(file_item.childCount()):
+                child = file_item.child(j)
+                if child.isSelected():
+                    idx = child.data(0, Qt.UserRole)
+                    if idx is not None:
+                        selected.append(idx)
+        return selected

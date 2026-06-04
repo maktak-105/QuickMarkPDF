@@ -270,3 +270,102 @@ class PDFManager:
         except Exception as e:
             print(f"[Split] Failed: {e}")
             return False
+
+    # =====================
+    # Image Export (PNG/JPG)
+    # =====================
+
+    def export_pages_to_images(
+        self,
+        indices: Optional[List[int]] = None,
+        output_dir: Path = Path("."),
+        fmt: str = "png",
+        dpi: int = 150,
+        jpeg_quality: int = 90,
+        prefix: str = "page",
+    ) -> Tuple[int, int, List[str]]:
+        """Export pages (all or specified indices in order) to image files.
+
+        Uses current page state (rotation + any header/footer already applied).
+        PNG is lossless; JPEG uses the provided quality (1-100).
+        File names are zero-padded sequential based on export order: {prefix}_0001.png etc.
+        Existing files are auto-renamed to avoid overwrite.
+
+        Returns: (success_count, attempted_count, error_messages)
+        """
+        if indices is None:
+            indices = list(range(len(self.all_pages)))
+        if not indices or not self.all_pages:
+            return 0, 0, []
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        ext = "png" if fmt.lower() == "png" else "jpg"
+        zoom = dpi / 72.0
+        mat = fitz.Matrix(zoom, zoom)
+
+        success = 0
+        errors: List[str] = []
+
+        for seq, page_idx in enumerate(indices, start=1):
+            if not (0 <= page_idx < len(self.all_pages)):
+                errors.append(f"無効なページインデックス: {page_idx}")
+                continue
+            page = self.all_pages[page_idx]
+            try:
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+
+                # Name by export sequence (not original index) so output is naturally ordered
+                base = f"{prefix}_{seq:04d}" if prefix and prefix.strip() else f"{seq:04d}"
+                out_path = output_dir / f"{base}.{ext}"
+
+                # De-dupe if target exists
+                if out_path.exists():
+                    k = 1
+                    while out_path.exists():
+                        out_path = output_dir / f"{base}_{k}.{ext}"
+                        k += 1
+
+                if ext == "png":
+                    pix.save(str(out_path))
+                else:
+                    # JPEG bytes with quality
+                    jpg_data = pix.tobytes("jpg", jpg_quality=jpeg_quality)
+                    out_path.write_bytes(jpg_data)
+
+                success += 1
+            except Exception as e:
+                errors.append(f"p.{page_idx + 1}: {e}")
+
+        return success, len(indices), errors
+
+    def get_source_dir_for_pages(self, indices: list[int]) -> Path:
+        """Return the directory of the original file for the first page in indices.
+        Falls back to current working directory if unknown.
+        """
+        if not indices or not self.page_infos:
+            return Path.cwd()
+        idx = indices[0]
+        if 0 <= idx < len(self.page_infos):
+            return self.page_infos[idx].source_doc_path.parent
+        return Path.cwd()
+
+    def suggest_export_basename(self, indices: list[int], for_images: bool = False) -> str:
+        """Suggest a sensible base name (no extension) for exported file(s) based on source docs."""
+        if not indices or not self.page_infos:
+            return "selected"
+        infos = []
+        for i in indices:
+            if 0 <= i < len(self.page_infos):
+                infos.append(self.page_infos[i])
+        if not infos:
+            return "selected"
+        unique_src = {inf.source_doc_path for inf in infos}
+        if len(unique_src) == 1:
+            stem = list(unique_src)[0].stem
+            if len(infos) == 1:
+                orig_p = infos[0].original_page_index + 1
+                return f"{stem}_p{orig_p:03d}"
+            return f"{stem}_selected"
+        return "selected_pages"

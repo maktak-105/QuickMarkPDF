@@ -8,7 +8,8 @@ Layout (per spec):
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea,
     QToolBar, QStatusBar, QFileDialog, QMessageBox, QInputDialog, QSplitter,
-    QDialog, QGroupBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QPushButton
+    QDialog, QGroupBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QPushButton,
+    QComboBox, QSlider, QSpinBox
 )
 from PySide6.QtCore import Qt, QSize, QEvent
 from PySide6.QtGui import QAction, QPixmap, QImage, QIcon
@@ -136,6 +137,193 @@ class HeaderFooterDialog(QDialog):
         }
 
 
+class ExportDialog(QDialog):
+    """Dialog for exporting pages as PNG or JPEG images.
+    Supports scope (all/selected), format, DPI (incl. custom), JPEG quality, output folder (defaults to original file dir), prefix.
+    """
+
+    def __init__(
+        self,
+        parent=None,
+        total_pages: int = 0,
+        selected_pages: int = 0,
+        initial_dir: str = "",
+        suggested_prefix: str = "page",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("画像としてエクスポート")
+        self.setMinimumWidth(480)
+
+        self._total = max(0, total_pages)
+        self._selected = max(0, selected_pages)
+
+        root = QVBoxLayout(self)
+
+        # ── 出力対象 ─────────────────────────────────────
+        scope_box = QGroupBox("出力対象")
+        sl = QVBoxLayout(scope_box)
+        self.scope_all = QRadioButton(f"すべてのページ（{self._total}ページ）")
+        self.scope_sel = QRadioButton(f"選択中のページ（{self._selected}ページ）")
+        if self._selected > 0:
+            self.scope_sel.setChecked(True)
+        else:
+            self.scope_all.setChecked(True)
+            self.scope_sel.setEnabled(False)
+        sl.addWidget(self.scope_all)
+        sl.addWidget(self.scope_sel)
+        root.addWidget(scope_box)
+
+        # ── 画像設定 ─────────────────────────────────────
+        img_box = QGroupBox("画像設定")
+        il = QVBoxLayout(img_box)
+
+        # Format
+        fmt_row = QHBoxLayout()
+        fmt_row.addWidget(QLabel("形式:"))
+        self.fmt_combo = QComboBox()
+        self.fmt_combo.addItem("PNG（可逆・高品質）", "png")
+        self.fmt_combo.addItem("JPEG（圧縮）", "jpg")
+        self.fmt_combo.currentIndexChanged.connect(self._on_format_changed)
+        fmt_row.addWidget(self.fmt_combo)
+        fmt_row.addStretch()
+        il.addLayout(fmt_row)
+
+        # DPI
+        dpi_row = QHBoxLayout()
+        dpi_row.addWidget(QLabel("解像度 (DPI):"))
+        self.dpi_combo = QComboBox()
+        self.dpi_combo.addItem("72（画面・軽量）", 72)
+        self.dpi_combo.addItem("150（標準）", 150)
+        self.dpi_combo.addItem("300（印刷品質）", 300)
+        self.dpi_combo.addItem("カスタム...", 0)
+        self.dpi_combo.currentIndexChanged.connect(self._on_dpi_changed)
+        dpi_row.addWidget(self.dpi_combo)
+
+        self.dpi_spin = QSpinBox()
+        self.dpi_spin.setRange(50, 1200)
+        self.dpi_spin.setValue(150)
+        self.dpi_spin.setSuffix(" DPI")
+        self.dpi_spin.setEnabled(False)
+        dpi_row.addWidget(self.dpi_spin)
+        dpi_row.addStretch()
+        il.addLayout(dpi_row)
+
+        # JPEG quality (only for JPEG)
+        self.quality_row = QHBoxLayout()
+        self.quality_row.addWidget(QLabel("JPEG画質:"))
+        self.quality_slider = QSlider(Qt.Horizontal)
+        self.quality_slider.setRange(60, 100)
+        self.quality_slider.setValue(90)
+        self.quality_slider.setTickInterval(10)
+        self.quality_slider.setTickPosition(QSlider.TicksBelow)
+        self.quality_slider.valueChanged.connect(self._on_quality_changed)
+        self.quality_row.addWidget(self.quality_slider)
+        self.quality_label = QLabel("90")
+        self.quality_label.setMinimumWidth(30)
+        self.quality_row.addWidget(self.quality_label)
+        il.addLayout(self.quality_row)
+
+        root.addWidget(img_box)
+
+        # ── 保存先 ───────────────────────────────────────
+        save_box = QGroupBox("保存先")
+        svl = QVBoxLayout(save_box)
+
+        dir_row = QHBoxLayout()
+        dir_row.addWidget(QLabel("フォルダ:"))
+        self.dir_edit = QLineEdit(initial_dir or str(Path.cwd()))
+        self.dir_edit.setReadOnly(False)
+        dir_row.addWidget(self.dir_edit, 1)
+        browse_btn = QPushButton("参照...")
+        browse_btn.clicked.connect(self._browse_dir)
+        dir_row.addWidget(browse_btn)
+        svl.addLayout(dir_row)
+
+        prefix_row = QHBoxLayout()
+        prefix_row.addWidget(QLabel("接頭辞:"))
+        self.prefix_edit = QLineEdit(suggested_prefix)
+        self.prefix_edit.setPlaceholderText("page など")
+        self.prefix_edit.textChanged.connect(self._update_example)
+        prefix_row.addWidget(self.prefix_edit)
+        svl.addLayout(prefix_row)
+
+        self.example_label = QLabel()
+        self.example_label.setStyleSheet("color: #666; font-size: 11px;")
+        svl.addWidget(self.example_label)
+
+        root.addWidget(save_box)
+
+        # ── Buttons ─────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("キャンセル")
+        cancel_btn.clicked.connect(self.reject)
+        export_btn = QPushButton("エクスポート実行")
+        export_btn.setDefault(True)
+        export_btn.clicked.connect(self.accept)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(export_btn)
+        root.addLayout(btn_row)
+
+        # init UI state
+        self._on_format_changed(0)
+        self._on_dpi_changed(0)
+        self._update_example()
+
+    def _on_format_changed(self, _idx: int):
+        is_jpg = self.fmt_combo.currentData() == "jpg"
+        self.quality_slider.setEnabled(is_jpg)
+        self.quality_label.setEnabled(is_jpg)
+        for i in range(self.quality_row.count()):
+            w = self.quality_row.itemAt(i).widget()
+            if w:
+                w.setEnabled(is_jpg)
+        self._update_example()
+
+    def _on_dpi_changed(self, _idx: int):
+        is_custom = self.dpi_combo.currentData() == 0
+        self.dpi_spin.setEnabled(is_custom)
+        if is_custom:
+            self.dpi_spin.setFocus()
+            self.dpi_spin.selectAll()
+
+    def _on_quality_changed(self, val: int):
+        self.quality_label.setText(str(val))
+
+    def _browse_dir(self):
+        start = self.dir_edit.text() or str(Path.cwd())
+        d = QFileDialog.getExistingDirectory(self, "保存先フォルダを選択", start)
+        if d:
+            self.dir_edit.setText(d)
+            self._update_example()
+
+    def _update_example(self):
+        prefix = self.prefix_edit.text().strip() or "page"
+        fmt = "png" if self.fmt_combo.currentData() == "png" else "jpg"
+        ex1 = f"{prefix}_0001.{fmt}"
+        ex2 = f"{prefix}_0002.{fmt}"
+        self.example_label.setText(f"出力例: {ex1}  {ex2}  ...")
+
+    def _get_dpi(self) -> int:
+        data = self.dpi_combo.currentData()
+        if data == 0:
+            return self.dpi_spin.value()
+        return int(data) if data else 150
+
+    def get_settings(self) -> dict:
+        """Return export config."""
+        scope = "selected" if self.scope_sel.isChecked() and self.scope_sel.isEnabled() else "all"
+        fmt = self.fmt_combo.currentData() or "png"
+        return {
+            "scope": scope,
+            "format": fmt,
+            "dpi": self._get_dpi(),
+            "jpeg_quality": self.quality_slider.value(),
+            "output_dir": self.dir_edit.text().strip() or str(Path.cwd()),
+            "prefix": self.prefix_edit.text().strip() or "page",
+        }
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -160,6 +348,8 @@ class MainWindow(QMainWindow):
         self.thumbnail_panel = ThumbnailPanel()
         self.thumbnail_panel.set_pdf_manager(self.pdf_manager)
         self.thumbnail_panel.page_reordered.connect(self._on_page_reordered)
+        self.thumbnail_panel.pdf_extract_requested.connect(self._on_pdf_extract_requested)
+        self.thumbnail_panel.image_extract_requested.connect(self._on_image_extract_requested)
         self.splitter.addWidget(self.thumbnail_panel)
 
         # Right: Preview (with scroll + zoom support)
@@ -238,11 +428,17 @@ class MainWindow(QMainWindow):
         merge_action.triggered.connect(self.merge_documents)
         toolbar.addAction(merge_action)
 
-        # Split (stub)
-        split_action = QAction(self._load_icon("split"), "分割", self)
-        split_action.setToolTip("PDFを分割（未実装）")
+        # Split / PDF cut-out
+        split_action = QAction(self._load_icon("split"), "PDF切り出し", self)
+        split_action.setToolTip("選択ページを新しいPDFとして保存（切り出し）")
         split_action.triggered.connect(self.split_document)
         toolbar.addAction(split_action)
+
+        # Image export (text button for now; primary access is also via thumbnail right-click)
+        img_export_action = QAction("画像出力", self)
+        img_export_action.setToolTip("ページをPNG/JPG画像としてエクスポート（右クリックメニューからも可）")
+        img_export_action.triggered.connect(self.export_images)
+        toolbar.addAction(img_export_action)
 
         toolbar.addSeparator()
 
@@ -470,27 +666,139 @@ class MainWindow(QMainWindow):
         self.save_pdf()
 
     def split_document(self):
-        """Split: Save the currently selected pages as a new PDF (in current visual order)."""
-        selected_pages = self._get_selected_page_indices_in_order()
-        if not selected_pages:
-            QMessageBox.information(self, "情報", "分割したいページをサムネイルで選択してください")
+        """Toolbar: PDF cut-out using current selection (delegates to smart default path)."""
+        selected = self._get_selected_page_indices_in_order()
+        if not selected:
+            QMessageBox.information(self, "情報", "PDFを切り出したいページをサムネイルで選択してください")
             return
+        self._export_selected_as_pdf(selected)
+
+    def _export_selected_as_pdf(self, indices: list[int]):
+        """PDF export (切り出し) with default location = original file's folder."""
+        if not indices:
+            return
+        default_dir = self.pdf_manager.get_source_dir_for_pages(indices)
+        base = self.pdf_manager.suggest_export_basename(indices, for_images=False)
+        default_file = str(default_dir / f"{base}.pdf")
 
         output_path, _ = QFileDialog.getSaveFileName(
             self,
-            "分割したPDFを保存",
-            "split_pages.pdf",
+            "PDFを切り出して保存",
+            default_file,
             "PDF Files (*.pdf)"
         )
         if not output_path:
             return
 
-        success = self.pdf_manager.save_selected_pages(selected_pages, Path(output_path))
+        success = self.pdf_manager.save_selected_pages(indices, Path(output_path))
         if success:
-            self.statusBar().showMessage(f"選択ページを分割して保存しました: {output_path}")
-            QMessageBox.information(self, "完了", f"{len(selected_pages)}ページを新しいPDFとして保存しました。\n{output_path}")
+            self.statusBar().showMessage(f"PDFを切り出しました: {output_path}")
+            QMessageBox.information(self, "完了", f"{len(indices)}ページを新しいPDFとして保存しました。\n{output_path}")
         else:
-            QMessageBox.warning(self, "エラー", "分割保存に失敗しました")
+            QMessageBox.warning(self, "エラー", "PDFの切り出し保存に失敗しました")
+
+    def _on_pdf_extract_requested(self, indices: list[int]):
+        """Context menu (thumbnail right-click) → PDFを切り出し"""
+        if not indices:
+            indices = self.thumbnail_panel.get_selected_page_indices()
+        if not indices:
+            cur = self.thumbnail_panel.currentRow()
+            if cur >= 0:
+                indices = [cur]
+        if not indices:
+            QMessageBox.information(self, "情報", "PDFを切り出したいページを選択してください")
+            return
+        self._export_selected_as_pdf(indices)
+
+    def export_images(self):
+        """Toolbar action: open image export dialog (respects current selection for default scope/dir)."""
+        if self.pdf_manager.get_page_count() == 0:
+            QMessageBox.information(self, "情報", "PDFを先に開いてください")
+            return
+        selected = self._get_selected_page_indices_in_order()
+        total = self.pdf_manager.get_page_count()
+        sel_count = len(selected)
+        default_dir = str(
+            self.pdf_manager.get_source_dir_for_pages(selected)
+            if selected else self.pdf_manager.get_source_dir_for_pages(list(range(total)))
+        )
+        suggested_prefix = self.pdf_manager.suggest_export_basename(
+            selected or list(range(min(3, total))), for_images=True
+        )
+        dialog = ExportDialog(
+            self,
+            total_pages=total,
+            selected_pages=sel_count,
+            initial_dir=default_dir,
+            suggested_prefix=suggested_prefix,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        cfg = dialog.get_settings()
+        use_indices = selected if (cfg["scope"] == "selected" and selected) else list(range(total))
+        success, attempted, errs = self.pdf_manager.export_pages_to_images(
+            indices=use_indices,
+            output_dir=Path(cfg["output_dir"]),
+            fmt=cfg["format"],
+            dpi=cfg["dpi"],
+            jpeg_quality=cfg.get("jpeg_quality", 90),
+            prefix=cfg["prefix"],
+        )
+        out_dir = cfg["output_dir"]
+        if success > 0:
+            msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
+            if errs:
+                msg += f"\n（{len(errs)}件のエラーあり。詳細はコンソール）"
+            self.statusBar().showMessage(f"画像エクスポート完了: {out_dir}")
+            QMessageBox.information(self, "完了", msg)
+        else:
+            QMessageBox.warning(self, "エラー", "画像エクスポートに失敗しました")
+
+    def _on_image_extract_requested(self, indices: list[int]):
+        """Context menu (thumbnail right-click) → 画像を切り出し (PNG/JPG)"""
+        if not indices:
+            indices = self.thumbnail_panel.get_selected_page_indices()
+        if not indices:
+            cur = self.thumbnail_panel.currentRow()
+            if cur >= 0:
+                indices = [cur]
+        total = self.pdf_manager.get_page_count()
+        sel_count = len(indices)
+        if total == 0 or sel_count == 0 and total > 0:
+            # fallback to dialog with all if no specific selection
+            sel_count = 0
+        default_dir = str(
+            self.pdf_manager.get_source_dir_for_pages(indices) if indices else Path.cwd()
+        )
+        suggested_prefix = self.pdf_manager.suggest_export_basename(indices or [], for_images=True)
+        dialog = ExportDialog(
+            self,
+            total_pages=total,
+            selected_pages=sel_count,
+            initial_dir=default_dir,
+            suggested_prefix=suggested_prefix,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        cfg = dialog.get_settings()
+        use_indices = indices if (cfg["scope"] == "selected" and indices) else list(range(total))
+        success, attempted, errs = self.pdf_manager.export_pages_to_images(
+            indices=use_indices,
+            output_dir=Path(cfg["output_dir"]),
+            fmt=cfg["format"],
+            dpi=cfg["dpi"],
+            jpeg_quality=cfg.get("jpeg_quality", 90),
+            prefix=cfg["prefix"],
+        )
+        out_dir = cfg["output_dir"]
+        if success > 0:
+            msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
+            if errs:
+                msg += f"\n（{len(errs)}件のエラーあり）"
+            self.statusBar().showMessage(f"画像エクスポート完了: {out_dir}")
+            QMessageBox.information(self, "完了", msg)
+        else:
+            QMessageBox.warning(self, "エラー", "画像エクスポートに失敗しました")
 
     def rotate_current_page(self, degrees: int):
         """Rotate the currently selected page by the given degrees. Keep selection."""
@@ -590,14 +898,5 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"サムネイルサイズを「{size_name}」に変更しました")
 
     def _get_selected_page_indices_in_order(self):
-        """Return list of page indices currently selected in the tree, in visual order."""
-        selected = []
-        for i in range(self.thumbnail_panel.topLevelItemCount()):
-            file_item = self.thumbnail_panel.topLevelItem(i)
-            for j in range(file_item.childCount()):
-                child = file_item.child(j)
-                if child.isSelected():
-                    idx = child.data(0, Qt.UserRole)
-                    if idx is not None:
-                        selected.append(idx)
-        return selected
+        """Return list of page indices currently selected in the tree, in visual order (delegates to panel)."""
+        return self.thumbnail_panel.get_selected_page_indices()
