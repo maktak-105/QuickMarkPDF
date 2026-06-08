@@ -3,10 +3,13 @@ PDF Manager - Core PDF handling using PyMuPDF (fitz)
 Responsible for loading, reordering, rotating, and rendering pages.
 """
 from __future__ import annotations
+import logging
 import fitz  # PyMuPDF
 from pathlib import Path
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,7 +34,7 @@ class PDFDocument:
             self.pages = [self.doc[i] for i in range(len(self.doc))]
             return True
         except Exception as e:
-            print(f"[PDF] Failed to open {self.path}: {e}")
+            logger.exception(f"Failed to open {self.path}")
             return False
 
     def close(self):
@@ -54,6 +57,8 @@ class PDFManager:
         """Load one or more PDF files. Returns number of successfully loaded files."""
         loaded_count = 0
         for path in paths:
+            # Normalize to absolute resolved path for reliable matching later (e.g. close)
+            path = path.resolve()
             doc = PDFDocument(path)
             if doc.open():
                 start_index = len(self.all_pages)
@@ -245,7 +250,7 @@ class PDFManager:
             new_doc.close()
             return True
         except Exception as e:
-            print(f"[Save] Failed: {e}")
+            logger.exception("Failed to save PDF")
             return False
 
     def save_selected_pages(self, indices: list[int], output_path: Path) -> bool:
@@ -268,7 +273,7 @@ class PDFManager:
             new_doc.close()
             return True
         except Exception as e:
-            print(f"[Split] Failed: {e}")
+            logger.exception("Failed to save selected pages")
             return False
 
     # =====================
@@ -369,3 +374,43 @@ class PDFManager:
                 return f"{stem}_p{orig_p:03d}"
             return f"{stem}_selected"
         return "selected_pages"
+
+    def close_document(self, path: Path) -> bool:
+        """Close a specific source PDF file and remove all its pages from the current view.
+
+        Returns True if the document was found and closed.
+        """
+        # Normalize for reliable matching (load_pdfs stores resolved paths)
+        path = path.resolve()
+        target_str = str(path)
+
+        doc_to_remove = None
+        for doc in self.documents:
+            if doc.path == path or str(doc.path) == target_str:
+                doc_to_remove = doc
+                break
+
+        if not doc_to_remove:
+            return False
+
+        # Keep only pages that do not belong to this document
+        remaining_pages: list[fitz.Page] = []
+        remaining_infos: list[PageInfo] = []
+        for page, info in zip(self.all_pages, self.page_infos):
+            if str(info.source_doc_path) != target_str:
+                remaining_pages.append(page)
+                remaining_infos.append(info)
+
+        # Close the document
+        doc_to_remove.close()
+        self.documents.remove(doc_to_remove)
+
+        self.all_pages = remaining_pages
+        self.page_infos = remaining_infos
+
+        # Renumber page indices
+        for i, info in enumerate(self.page_infos):
+            info.page_number = i
+
+        self._thumb_cache.clear()
+        return True

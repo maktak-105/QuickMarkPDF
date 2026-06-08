@@ -1,0 +1,131 @@
+"""
+Basic tests for PDFManager with emphasis on preserving Header/Footer behavior.
+Run with:
+    python -m unittest tests.test_pdf_manager
+"""
+import unittest
+from pathlib import Path
+import tempfile
+import os
+
+import fitz
+
+from src.pdf_editor.pdf.pdf_manager import PDFManager
+
+
+def _make_minimal_pdf(path: Path, pages: int = 2) -> None:
+    """Create a tiny multi-page PDF for testing."""
+    doc = fitz.open()
+    for i in range(pages):
+        page = doc.new_page(width=200, height=300)
+        page.insert_text((20, 40), f"Page {i+1}")
+    doc.save(str(path))
+    doc.close()
+
+
+class TestPDFManagerBasic(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.pdf1 = self.tmpdir / "doc1.pdf"
+        self.pdf2 = self.tmpdir / "doc2.pdf"
+        _make_minimal_pdf(self.pdf1, 3)
+        _make_minimal_pdf(self.pdf2, 2)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_load_and_count(self):
+        mgr = PDFManager()
+        loaded = mgr.load_pdfs([self.pdf1, self.pdf2])
+        self.assertEqual(loaded, 2)
+        self.assertEqual(mgr.get_page_count(), 5)
+
+    def test_reorder_and_save(self):
+        mgr = PDFManager()
+        mgr.load_pdfs([self.pdf1])
+        # Reverse order
+        mgr.reorder_pages([2, 1, 0])
+        out = self.tmpdir / "reordered.pdf"
+        ok = mgr.save_as(out)
+        self.assertTrue(ok)
+        self.assertTrue(out.exists())
+
+    def test_rotate_and_save(self):
+        mgr = PDFManager()
+        mgr.load_pdfs([self.pdf1])
+        mgr.rotate_page(0, 90)
+        out = self.tmpdir / "rotated.pdf"
+        ok = mgr.save_as(out)
+        self.assertTrue(ok)
+
+
+class TestHeaderFooterBehavior(unittest.TestCase):
+    """These tests exist to protect the current (destructive) HF specification."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.src = self.tmpdir / "source.pdf"
+        _make_minimal_pdf(self.src, 2)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_add_header_footer_bakes_text(self):
+        mgr = PDFManager()
+        mgr.load_pdfs([self.src])
+
+        mgr.add_header_footer(
+            header_enabled=True,
+            header_text="CONFIDENTIAL",
+            footer_page_num=True,
+        )
+
+        # After add, the page should contain the text when rendered
+        pix = mgr.get_preview_pixmap(0, zoom=1.0)
+        self.assertIsNotNone(pix)
+
+        # Save and re-open to verify text is persisted in the PDF content
+        out = self.tmpdir / "with_hf.pdf"
+        self.assertTrue(mgr.save_as(out))
+
+        doc2 = fitz.open(str(out))
+        page0 = doc2[0]
+        text = page0.get_text()
+        self.assertIn("CONFIDENTIAL", text)
+        self.assertIn("1 / 2", text)
+        doc2.close()
+
+    def test_remove_header_footer_restores_original_content(self):
+        mgr = PDFManager()
+        mgr.load_pdfs([self.src])
+
+        # Apply HF
+        mgr.add_header_footer(header_enabled=True, header_text="DRAFT")
+
+        # Remove should bring back original content (by reloading from disk + re-applying rotations)
+        mgr.remove_header_footer()
+
+        out = self.tmpdir / "after_remove.pdf"
+        self.assertTrue(mgr.save_as(out))
+
+        doc2 = fitz.open(str(out))
+        text = doc2[0].get_text()
+        self.assertNotIn("DRAFT", text)
+        doc2.close()
+
+    def test_remove_preserves_rotation(self):
+        mgr = PDFManager()
+        mgr.load_pdfs([self.src])
+
+        mgr.rotate_page(0, 180)
+        mgr.add_header_footer(header_enabled=True, header_text="ROT+HF")
+        mgr.remove_header_footer()
+
+        # After remove, rotation should still be 180
+        self.assertEqual(mgr.all_pages[0].rotation, 180)
+
+
+if __name__ == "__main__":
+    unittest.main()
