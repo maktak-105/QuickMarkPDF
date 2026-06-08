@@ -14,17 +14,43 @@ Output:
 import sys
 from pathlib import Path
 
+try:
+    from PyInstaller.utils.hooks import collect_all
+except ImportError:
+    collect_all = None
+
 block_cipher = None
+
+# 強制的に PySide6 と pymupdf を丸ごと収集（hiddenimportsだけでは足りない場合がある）
+extra_datas = []
+extra_binaries = []
+extra_hiddenimports = []
+if collect_all:
+    try:
+        pyside_datas, pyside_binaries, pyside_hiddens = collect_all('PySide6')
+        extra_datas += pyside_datas
+        extra_binaries += pyside_binaries
+        extra_hiddenimports += pyside_hiddens
+    except Exception:
+        pass
+
+    try:
+        pymupdf_datas, pymupdf_binaries, pymupdf_hiddens = collect_all('pymupdf')
+        extra_datas += pymupdf_datas
+        extra_binaries += pymupdf_binaries
+        extra_hiddenimports += pymupdf_hiddens
+    except Exception:
+        pass
 
 a = Analysis(
     ['main.py'],
     pathex=['.'],
-    binaries=[],
+    binaries=extra_binaries,
     datas=[
         ('resources/icons/*.png', 'resources/icons'),
         ('resources/app_icon.png', 'resources'),
         ('resources/app_icon.ico', 'resources'),
-    ],
+    ] + extra_datas,
     hiddenimports=[
         # PyMuPDF
         'fitz',
@@ -41,7 +67,7 @@ a = Analysis(
         'src.pdf_editor.ui',
         'src.pdf_editor.ui.main_window',
         'src.pdf_editor.ui.thumbnail_panel',
-    ],
+    ] + extra_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -61,6 +87,7 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
