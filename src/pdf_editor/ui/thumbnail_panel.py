@@ -9,6 +9,7 @@ from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QIcon, QFont
 from collections import defaultdict
 
 from src.pdf_editor.pdf.pdf_manager import PDFManager
+from pathlib import Path
 
 TEXT_H = 14        # pixels for page label strip at the bottom of each canvas
 _INDENT = 20       # indentation (= expand button area width)
@@ -64,6 +65,7 @@ class ThumbnailPanel(QTreeWidget):
     page_reordered = Signal(list)
     pdf_extract_requested = Signal(list)   # list of selected page indices for PDF cut-out
     image_extract_requested = Signal(list) # list of selected page indices for image export
+    file_close_requested = Signal(Path)    # emit the source path of the file to close (for right-click on file header)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -377,18 +379,32 @@ class ThumbnailPanel(QTreeWidget):
     # --- Context menu & selection helpers for export etc. ---
 
     def _show_context_menu(self, pos):
-        if not self.pdf_manager or self.topLevelItemCount() == 0:
+        item = self.itemAt(pos)
+        if not item or not self.pdf_manager or self.topLevelItemCount() == 0:
             return
-        selected = self.get_selected_page_indices()
+
         menu = QMenu(self)
-        # Two choices as requested: PDF cut-out or Image cut-out
-        pdf_label = f"PDFを切り出し... ({len(selected)}ページ)" if selected else "PDFを切り出し..."
-        img_label = f"画像を切り出し (PNG/JPG)... ({len(selected)}ページ)" if selected else "画像を切り出し (PNG/JPG)..."
-        pdf_act = menu.addAction(pdf_label)
-        pdf_act.triggered.connect(lambda: self.pdf_extract_requested.emit(selected))
-        img_act = menu.addAction(img_label)
-        img_act.triggered.connect(lambda: self.image_extract_requested.emit(selected))
-        menu.exec(self.viewport().mapToGlobal(pos))
+
+        if item.parent() is None:
+            # Right-clicked on a file header (top-level item) → offer close
+            path_str = item.data(0, Qt.UserRole)
+            if path_str:
+                file_path = Path(path_str).resolve()
+                close_label = f"「{item.text(0)}」を閉じる"
+                close_act = menu.addAction(close_label)
+                close_act.triggered.connect(lambda checked=False, p=file_path: self.file_close_requested.emit(p))
+        else:
+            # Right-clicked on a page item → extract options
+            selected = self.get_selected_page_indices()
+            pdf_label = f"PDFを切り出し... ({len(selected)}ページ)" if selected else "PDFを切り出し..."
+            img_label = f"画像を切り出し (PNG/JPG)... ({len(selected)}ページ)" if selected else "画像を切り出し (PNG/JPG)..."
+            pdf_act = menu.addAction(pdf_label)
+            pdf_act.triggered.connect(lambda: self.pdf_extract_requested.emit(selected))
+            img_act = menu.addAction(img_label)
+            img_act.triggered.connect(lambda: self.image_extract_requested.emit(selected))
+
+        if menu.actions():
+            menu.exec(self.viewport().mapToGlobal(pos))
 
     def get_selected_page_indices(self) -> list[int]:
         """Return currently selected page indices in visual (tree) order. Supports multi-select."""

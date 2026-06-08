@@ -369,3 +369,43 @@ class PDFManager:
                 return f"{stem}_p{orig_p:03d}"
             return f"{stem}_selected"
         return "selected_pages"
+
+    def close_document(self, path: Path) -> bool:
+        """Close a specific source PDF file and remove all its pages from the current view.
+
+        Returns True if the document was found and closed.
+        """
+        # Normalize for reliable matching (load_pdfs stores resolved paths)
+        path = path.resolve()
+        target_str = str(path)
+
+        doc_to_remove = None
+        for doc in self.documents:
+            if doc.path == path or str(doc.path) == target_str:
+                doc_to_remove = doc
+                break
+
+        if not doc_to_remove:
+            return False
+
+        # Keep only pages that do not belong to this document
+        remaining_pages: list[fitz.Page] = []
+        remaining_infos: list[PageInfo] = []
+        for page, info in zip(self.all_pages, self.page_infos):
+            if str(info.source_doc_path) != target_str:
+                remaining_pages.append(page)
+                remaining_infos.append(info)
+
+        # Close the document
+        doc_to_remove.close()
+        self.documents.remove(doc_to_remove)
+
+        self.all_pages = remaining_pages
+        self.page_infos = remaining_infos
+
+        # Renumber page indices
+        for i, info in enumerate(self.page_infos):
+            info.page_number = i
+
+        self._thumb_cache.clear()
+        return True

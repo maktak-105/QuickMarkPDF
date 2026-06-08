@@ -350,6 +350,7 @@ class MainWindow(QMainWindow):
         self.thumbnail_panel.page_reordered.connect(self._on_page_reordered)
         self.thumbnail_panel.pdf_extract_requested.connect(self._on_pdf_extract_requested)
         self.thumbnail_panel.image_extract_requested.connect(self._on_image_extract_requested)
+        self.thumbnail_panel.file_close_requested.connect(self._on_file_close_requested)
         self.splitter.addWidget(self.thumbnail_panel)
 
         # Right: Preview (with scroll + zoom support)
@@ -900,3 +901,50 @@ class MainWindow(QMainWindow):
     def _get_selected_page_indices_in_order(self):
         """Return list of page indices currently selected in the tree, in visual order (delegates to panel)."""
         return self.thumbnail_panel.get_selected_page_indices()
+
+    def _on_file_close_requested(self, path: Path):
+        """Close an entire PDF file that was opened (right-click on file header in tree)."""
+        if self.pdf_manager.close_document(path):
+            # Block tree signals during refresh + selection to prevent any stale
+            # currentItemChanged from re-setting an old preview pixmap.
+            self.thumbnail_panel.blockSignals(True)
+            try:
+                self.thumbnail_panel.refresh()
+
+                # Always clear the preview from the closed file first.
+                # This ensures the right-side page view no longer shows content from the closed file.
+                self.preview_label.clear()
+                self.preview_label.setText("PDFページをここに表示します")
+                self.current_preview_pixmap = None
+                self.preview_label.repaint()  # Force immediate visual update
+                self.preview_scroll.repaint()
+
+                if self.pdf_manager.get_page_count() > 0:
+                    # Directly load preview for the first remaining page from the manager.
+                    # This bypasses tree selection entirely to guarantee the old closed page's image is replaced.
+                    pix = self.pdf_manager.get_preview_pixmap(0, zoom=1.5)
+                    if pix is not None:
+                        img_data = pix.tobytes("png")
+                        qimage = QImage.fromData(img_data, "PNG")
+                        self.current_preview_pixmap = QPixmap.fromImage(qimage)
+                        self._fit_to_width()
+                    else:
+                        # Fallback if pixmap generation fails for some reason
+                        self.preview_label.clear()
+                        self.preview_label.setText("PDFページをここに表示します")
+                        self.current_preview_pixmap = None
+
+                # Now set the tree selection (signals are blocked so it won't trigger preview update)
+                if self.thumbnail_panel.topLevelItemCount() > 0:
+                    first_file = self.thumbnail_panel.topLevelItem(0)
+                    first_file.setExpanded(True)
+                    if first_file.childCount() > 0:
+                        first_page_item = first_file.child(0)
+                        self.thumbnail_panel.setCurrentItem(first_page_item)
+
+            finally:
+                self.thumbnail_panel.blockSignals(False)
+
+            self.statusBar().showMessage(f"{path.name} を閉じました")
+        else:
+            QMessageBox.warning(self, "エラー", f"{path.name} のクローズに失敗しました")
