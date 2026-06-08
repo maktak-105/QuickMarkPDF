@@ -3,12 +3,17 @@ ThumbnailPanel (QTreeWidget version)
 - Grouped by original PDF file (collapsible top-level items)
 - Drag & drop reordering with animated insertion gap
 """
+import logging
+from pathlib import Path
+
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QHeaderView, QStyle, QMenu
 from PySide6.QtCore import Qt, Signal, QSize, QTimer, QRect
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QIcon, QFont
 from collections import defaultdict
 
 from src.pdf_editor.pdf.pdf_manager import PDFManager
+
+logger = logging.getLogger(__name__)
 
 TEXT_H = 14        # pixels for page label strip at the bottom of each canvas
 _INDENT = 20       # indentation (= expand button area width)
@@ -64,6 +69,7 @@ class ThumbnailPanel(QTreeWidget):
     page_reordered = Signal(list)
     pdf_extract_requested = Signal(list)   # list of selected page indices for PDF cut-out
     image_extract_requested = Signal(list) # list of selected page indices for image export
+    file_close_requested = Signal(Path)    # emit the source path of the file to close
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -297,11 +303,14 @@ class ThumbnailPanel(QTreeWidget):
     def dropEvent(self, event):
         super().dropEvent(event)
 
+        # After Qt's InternalMove, we reconstruct the flat visual order from the tree.
+        # This is fragile when files are collapsed or multi-file drag happens;
+        # we have a safety fallback below.
         new_order = self._collect_flat_order()
         expected = self._get_total_page_count()
 
         if len(new_order) != expected:
-            print("[ThumbnailPanel] Drop produced inconsistent order length — falling back to no change")
+            logger.warning("Drop produced inconsistent order length — falling back to no change")
             new_order = list(range(expected))
 
         self.page_reordered.emit(new_order)
@@ -377,18 +386,33 @@ class ThumbnailPanel(QTreeWidget):
     # --- Context menu & selection helpers for export etc. ---
 
     def _show_context_menu(self, pos):
-        if not self.pdf_manager or self.topLevelItemCount() == 0:
+        item = self.itemAt(pos)
+        if not item or not self.pdf_manager or self.topLevelItemCount() == 0:
             return
-        selected = self.get_selected_page_indices()
+
         menu = QMenu(self)
-        # Two choices as requested: PDF cut-out or Image cut-out
-        pdf_label = f"PDFを切り出し... ({len(selected)}ページ)" if selected else "PDFを切り出し..."
-        img_label = f"画像を切り出し (PNG/JPG)... ({len(selected)}ページ)" if selected else "画像を切り出し (PNG/JPG)..."
-        pdf_act = menu.addAction(pdf_label)
-        pdf_act.triggered.connect(lambda: self.pdf_extract_requested.emit(selected))
-        img_act = menu.addAction(img_label)
-        img_act.triggered.connect(lambda: self.image_extract_requested.emit(selected))
-        menu.exec(self.viewport().mapToGlobal(pos))
+
+        if item.parent() is None:
+            # Right-clicked on a file header (top-level item)
+            path_str = item.data(0, Qt.UserRole)
+            if path_str:
+                file_path = Path(path_str).resolve()
+                close_label = f"「{item.text(0)}」を閉じる"
+                close_act = menu.addAction(close_label)
+                close_act.triggered.connect(lambda checked=False, p=file_path: self.file_close_requested.emit(p))
+        else:
+            # Right-clicked on a page item
+            selected = self.get_selected_page_indices()
+            # Two choices as requested: PDF cut-out or Image cut-out
+            pdf_label = f"PDFを切り出し... ({len(selected)}ページ)" if selected else "PDFを切り出し..."
+            img_label = f"画像を切り出し (PNG/JPG)... ({len(selected)}ページ)" if selected else "画像を切り出し (PNG/JPG)..."
+            pdf_act = menu.addAction(pdf_label)
+            pdf_act.triggered.connect(lambda: self.pdf_extract_requested.emit(selected))
+            img_act = menu.addAction(img_label)
+            img_act.triggered.connect(lambda: self.image_extract_requested.emit(selected))
+
+        if menu.actions():
+            menu.exec(self.viewport().mapToGlobal(pos))
 
     def get_selected_page_indices(self) -> list[int]:
         """Return currently selected page indices in visual (tree) order. Supports multi-select."""
