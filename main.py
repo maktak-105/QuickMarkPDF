@@ -35,6 +35,16 @@ def main():
     window = MainWindow()
     window.show()
 
+    # コマンドライン引数にPDFファイルがある場合、それを自動で開く
+    if len(sys.argv) > 1:
+        pdf_files = []
+        for arg in sys.argv[1:]:
+            path = Path(arg)
+            if path.exists() and path.suffix.lower() == ".pdf":
+                pdf_files.append(str(path))
+        if pdf_files:
+            window.open_pdfs(pdf_files)
+
     sys.exit(app.exec())
 
 

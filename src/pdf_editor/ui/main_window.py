@@ -648,16 +648,17 @@ class MainWindow(QMainWindow):
         large_action.triggered.connect(lambda: self.set_thumbnail_size("large"))
         toolbar.addAction(large_action)
 
-    def open_pdfs(self):
+    def open_pdfs(self, files=None):
         """Open one or more PDF files."""
-        files, _ = QFileDialog.getOpenFileNames(
-            self,
-            "PDFファイルを選択",
-            "",
-            "PDF Files (*.pdf);;All Files (*)"
-        )
         if not files:
-            return
+            files, _ = QFileDialog.getOpenFileNames(
+                self,
+                "PDFファイルを選択",
+                "",
+                "PDF Files (*.pdf);;All Files (*)"
+            )
+            if not files:
+                return
 
         paths = [Path(f) for f in files]
         loaded = self.pdf_manager.load_pdfs(paths)
