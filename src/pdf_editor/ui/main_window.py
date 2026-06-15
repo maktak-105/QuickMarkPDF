@@ -9,15 +9,148 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea,
     QToolBar, QStatusBar, QFileDialog, QMessageBox, QInputDialog, QSplitter,
     QDialog, QGroupBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QPushButton,
-    QComboBox, QSlider, QSpinBox
+    QComboBox, QSlider, QSpinBox, QRubberBand
 )
-from PySide6.QtCore import Qt, QSize, QEvent
+from PySide6.QtCore import Qt, QSize, QEvent, QPoint, QRect
 from PySide6.QtGui import QAction, QPixmap, QImage, QIcon
 from pathlib import Path
 import os
+import fitz
 
 from src.pdf_editor.ui.thumbnail_panel import ThumbnailPanel
 from src.pdf_editor.pdf.pdf_manager import PDFManager
+
+
+class PreviewLabel(QLabel):
+    """Custom QLabel that allows selecting a crop area using mouse left drag."""
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.rubber_band: QRubberBand | None = None
+        self.origin = QPoint()
+        # Selected region relative to the base_pixmap coordinates (1.5x scale)
+        self.selected_rect: QRect | None = None
+        self.base_pixmap: QPixmap | None = None
+        self.zoom = 1.0
+
+    def set_base_pixmap(self, pixmap: QPixmap | None):
+        self.base_pixmap = pixmap
+        self.selected_rect = None
+        if self.rubber_band:
+            self.rubber_band.hide()
+        self.update_display()
+
+    def set_zoom(self, zoom: float):
+        self.zoom = zoom
+        self.update_display()
+        self.update_rubber_band()
+
+    def update_display(self):
+        if not self.base_pixmap:
+            self.clear()
+            self.setText("PDFページをここに表示します")
+            return
+
+        scaled = self.base_pixmap.scaled(
+            self.base_pixmap.size() * self.zoom,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        self.setPixmap(scaled)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.base_pixmap:
+            scaled_size = self.base_pixmap.size() * self.zoom
+            img_x = (self.width() - scaled_size.width()) // 2
+            img_y = (self.height() - scaled_size.height()) // 2
+
+            pos = event.position().toPoint()
+            # Check if clicked inside the rendered page image
+            if img_x <= pos.x() < img_x + scaled_size.width() and img_y <= pos.y() < img_y + scaled_size.height():
+                self.origin = pos
+                if not self.rubber_band:
+                    self.rubber_band = QRubberBand(QRubberBand.Rectangle, self)
+                self.rubber_band.setGeometry(QRect(self.origin, QSize()))
+                self.rubber_band.show()
+            else:
+                self.clear_selection()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.rubber_band and self.rubber_band.isVisible() and self.base_pixmap:
+            pos = event.position().toPoint()
+            scaled_size = self.base_pixmap.size() * self.zoom
+            img_x = (self.width() - scaled_size.width()) // 2
+            img_y = (self.height() - scaled_size.height()) // 2
+
+            # Constrain selection within the page boundaries
+            x = max(img_x, min(pos.x(), img_x + scaled_size.width()))
+            y = max(img_y, min(pos.y(), img_y + scaled_size.height()))
+
+            self.rubber_band.setGeometry(QRect(self.origin, QPoint(x, y)).normalized())
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.rubber_band and self.rubber_band.isVisible() and self.base_pixmap:
+            geom = self.rubber_band.geometry()
+            # If the selected area is tiny, treat it as a click to clear selection
+            if geom.width() > 5 and geom.height() > 5:
+                scaled_size = self.base_pixmap.size() * self.zoom
+                img_x = (self.width() - scaled_size.width()) // 2
+                img_y = (self.height() - scaled_size.height()) // 2
+
+                # Convert to base_pixmap coordinates
+                rx = (geom.x() - img_x) / self.zoom
+                ry = (geom.y() - img_y) / self.zoom
+                rw = geom.width() / self.zoom
+                rh = geom.height() / self.zoom
+
+                self.selected_rect = QRect(int(rx), int(ry), int(rw), int(rh))
+            else:
+                self.clear_selection()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_rubber_band()
+
+    def update_rubber_band(self):
+        if not self.selected_rect or not self.rubber_band or not self.base_pixmap:
+            if self.rubber_band:
+                self.rubber_band.hide()
+            return
+
+        scaled_size = self.base_pixmap.size() * self.zoom
+        img_x = (self.width() - scaled_size.width()) // 2
+        img_y = (self.height() - scaled_size.height()) // 2
+
+        x = int(self.selected_rect.x() * self.zoom + img_x)
+        y = int(self.selected_rect.y() * self.zoom + img_y)
+        w = int(self.selected_rect.width() * self.zoom)
+        h = int(self.selected_rect.height() * self.zoom)
+
+        self.rubber_band.setGeometry(QRect(x, y, w, h))
+        self.rubber_band.show()
+
+    def clear_selection(self):
+        self.selected_rect = None
+        if self.rubber_band:
+            self.rubber_band.hide()
+
+    def get_pdf_clip_rect(self) -> fitz.Rect | None:
+        """Get selection as fitz.Rect (in PDF points, relative to current page)."""
+        if not self.selected_rect or not self.base_pixmap:
+            return None
+        # base_pixmap uses Matrix(1.5, 1.5), meaning 1 point = 1.5 pixels.
+        # Scale back to PDF points by dividing by 1.5.
+        x0 = self.selected_rect.x() / 1.5
+        y0 = self.selected_rect.y() / 1.5
+        x1 = (self.selected_rect.x() + self.selected_rect.width()) / 1.5
+        y1 = (self.selected_rect.y() + self.selected_rect.height()) / 1.5
+        return fitz.Rect(x0, y0, x1, y1)
 
 
 class HeaderFooterDialog(QDialog):
@@ -149,6 +282,7 @@ class ExportDialog(QDialog):
         selected_pages: int = 0,
         initial_dir: str = "",
         suggested_prefix: str = "page",
+        has_crop: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle("画像としてエクスポート")
@@ -172,6 +306,21 @@ class ExportDialog(QDialog):
         sl.addWidget(self.scope_all)
         sl.addWidget(self.scope_sel)
         root.addWidget(scope_box)
+
+        # ── 出力領域 ─────────────────────────────────────
+        area_box = QGroupBox("出力領域")
+        al = QVBoxLayout(area_box)
+        self.area_all = QRadioButton("ページ全体")
+        self.area_crop = QRadioButton("クロップした範囲")
+        if has_crop:
+            self.area_crop.setChecked(True)
+        else:
+            self.area_all.setChecked(True)
+            self.area_crop.setEnabled(False)
+            self.area_crop.setToolTip("プレビュー上で左ドラッグして範囲を選択すると利用可能になります")
+        al.addWidget(self.area_all)
+        al.addWidget(self.area_crop)
+        root.addWidget(area_box)
 
         # ── 画像設定 ─────────────────────────────────────
         img_box = QGroupBox("画像設定")
@@ -313,9 +462,11 @@ class ExportDialog(QDialog):
     def get_settings(self) -> dict:
         """Return export config."""
         scope = "selected" if self.scope_sel.isChecked() and self.scope_sel.isEnabled() else "all"
+        area = "crop" if self.area_crop.isChecked() and self.area_crop.isEnabled() else "all"
         fmt = self.fmt_combo.currentData() or "png"
         return {
             "scope": scope,
+            "area": area,
             "format": fmt,
             "dpi": self._get_dpi(),
             "jpeg_quality": self.quality_slider.value(),
@@ -354,7 +505,7 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.thumbnail_panel)
 
         # Right: Preview (with scroll + zoom support)
-        self.preview_label = QLabel("PDFページをここに表示します")
+        self.preview_label = PreviewLabel("PDFページをここに表示します")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet(
             "background-color: #1e1e1e; color: #aaaaaa; font-size: 20px; border: 1px solid #333;"
@@ -435,8 +586,8 @@ class MainWindow(QMainWindow):
         split_action.triggered.connect(self.split_document)
         toolbar.addAction(split_action)
 
-        # Image export (text button for now; primary access is also via thumbnail right-click)
-        img_export_action = QAction("画像出力", self)
+        # Image export
+        img_export_action = QAction(self._load_icon("image_export"), "画像出力", self)
         img_export_action.setToolTip("ページをPNG/JPG画像としてエクスポート（右クリックメニューからも可）")
         img_export_action.triggered.connect(self.export_images)
         toolbar.addAction(img_export_action)
@@ -547,6 +698,7 @@ class MainWindow(QMainWindow):
         img_data = pix.tobytes("png")
         qimage = QImage.fromData(img_data, "PNG")
         self.current_preview_pixmap = QPixmap.fromImage(qimage)
+        self.preview_label.set_base_pixmap(self.current_preview_pixmap)
 
         # Default to fit document width to the preview area
         self._fit_to_width()
@@ -555,14 +707,7 @@ class MainWindow(QMainWindow):
         """Apply current zoom to the preview label."""
         if self.current_preview_pixmap is None:
             return
-
-        scaled = self.current_preview_pixmap.scaled(
-            self.current_preview_pixmap.size() * self.current_zoom,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
-        self.preview_label.setPixmap(scaled)
-        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.set_zoom(self.current_zoom)
 
     def _fit_to_width(self):
         """Set zoom so the page width fits the available preview width."""
@@ -726,17 +871,20 @@ class MainWindow(QMainWindow):
         suggested_prefix = self.pdf_manager.suggest_export_basename(
             selected or list(range(min(3, total))), for_images=True
         )
+        has_crop = self.preview_label.selected_rect is not None
         dialog = ExportDialog(
             self,
             total_pages=total,
             selected_pages=sel_count,
             initial_dir=default_dir,
             suggested_prefix=suggested_prefix,
+            has_crop=has_crop,
         )
         if dialog.exec() != QDialog.Accepted:
             return
         cfg = dialog.get_settings()
         use_indices = selected if (cfg["scope"] == "selected" and selected) else list(range(total))
+        clip = self.preview_label.get_pdf_clip_rect() if cfg["area"] == "crop" else None
         success, attempted, errs = self.pdf_manager.export_pages_to_images(
             indices=use_indices,
             output_dir=Path(cfg["output_dir"]),
@@ -744,9 +892,12 @@ class MainWindow(QMainWindow):
             dpi=cfg["dpi"],
             jpeg_quality=cfg.get("jpeg_quality", 90),
             prefix=cfg["prefix"],
+            clip=clip,
         )
         out_dir = cfg["output_dir"]
         if success > 0:
+            # Clear selection rubber band after export
+            self.preview_label.clear_selection()
             msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
             if errs:
                 msg += f"\n（{len(errs)}件のエラーあり。詳細はコンソール）"
@@ -772,17 +923,20 @@ class MainWindow(QMainWindow):
             self.pdf_manager.get_source_dir_for_pages(indices) if indices else Path.cwd()
         )
         suggested_prefix = self.pdf_manager.suggest_export_basename(indices or [], for_images=True)
+        has_crop = self.preview_label.selected_rect is not None
         dialog = ExportDialog(
             self,
             total_pages=total,
             selected_pages=sel_count,
             initial_dir=default_dir,
             suggested_prefix=suggested_prefix,
+            has_crop=has_crop,
         )
         if dialog.exec() != QDialog.Accepted:
             return
         cfg = dialog.get_settings()
         use_indices = indices if (cfg["scope"] == "selected" and indices) else list(range(total))
+        clip = self.preview_label.get_pdf_clip_rect() if cfg["area"] == "crop" else None
         success, attempted, errs = self.pdf_manager.export_pages_to_images(
             indices=use_indices,
             output_dir=Path(cfg["output_dir"]),
@@ -790,9 +944,11 @@ class MainWindow(QMainWindow):
             dpi=cfg["dpi"],
             jpeg_quality=cfg.get("jpeg_quality", 90),
             prefix=cfg["prefix"],
+            clip=clip,
         )
         out_dir = cfg["output_dir"]
         if success > 0:
+            self.preview_label.clear_selection()
             msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
             if errs:
                 msg += f"\n（{len(errs)}件のエラーあり）"

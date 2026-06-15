@@ -126,6 +126,35 @@ class TestHeaderFooterBehavior(unittest.TestCase):
         # After remove, rotation should still be 180
         self.assertEqual(mgr.all_pages[0].rotation, 180)
 
+    def test_export_images_with_clip(self):
+        mgr = PDFManager()
+        mgr.load_pdfs([self.src])
+
+        # Define crop rect (100x100 points)
+        clip_rect = fitz.Rect(10, 10, 110, 110)
+        out_dir = self.tmpdir / "exported_images"
+
+        success_cnt, attempted_cnt, errors = mgr.export_pages_to_images(
+            indices=[0],
+            output_dir=out_dir,
+            fmt="png",
+            dpi=72,  # at 72 DPI, 1 point = 1 pixel
+            prefix="test_clip",
+            clip=clip_rect
+        )
+
+        self.assertEqual(success_cnt, 1)
+        self.assertEqual(attempted_cnt, 1)
+        self.assertEqual(len(errors), 0)
+
+        img_path = out_dir / "test_clip_0001.png"
+        self.assertTrue(img_path.exists())
+
+        # Verify image dimensions using Pillow
+        from PIL import Image
+        with Image.open(img_path) as img:
+            self.assertEqual(img.size, (100, 100))
+
 
 if __name__ == "__main__":
     unittest.main()

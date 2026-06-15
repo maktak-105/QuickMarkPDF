@@ -54,7 +54,8 @@ class PDFManager:
         """Load one or more PDF files. Returns number of successfully loaded files."""
         loaded_count = 0
         for path in paths:
-            doc = PDFDocument(path)
+            resolved_path = path.resolve()
+            doc = PDFDocument(resolved_path)
             if doc.open():
                 start_index = len(self.all_pages)
                 self.documents.append(doc)
@@ -63,7 +64,7 @@ class PDFManager:
                 for i, page in enumerate(doc.pages):
                     self.page_infos.append(PageInfo(
                         page_number=start_index + i,
-                        source_doc_path=path,
+                        source_doc_path=resolved_path,
                         original_page_index=i
                     ))
                 loaded_count += 1
@@ -283,6 +284,7 @@ class PDFManager:
         dpi: int = 150,
         jpeg_quality: int = 90,
         prefix: str = "page",
+        clip: Optional[fitz.Rect] = None,
     ) -> Tuple[int, int, List[str]]:
         """Export pages (all or specified indices in order) to image files.
 
@@ -314,7 +316,7 @@ class PDFManager:
                 continue
             page = self.all_pages[page_idx]
             try:
-                pix = page.get_pixmap(matrix=mat, alpha=False)
+                pix = page.get_pixmap(matrix=mat, alpha=False, clip=clip)
 
                 # Name by export sequence (not original index) so output is naturally ordered
                 base = f"{prefix}_{seq:04d}" if prefix and prefix.strip() else f"{seq:04d}"
