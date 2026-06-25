@@ -50,6 +50,8 @@ a = Analysis(
         ('resources/icons/*.png', 'resources/icons'),
         ('resources/app_icon.png', 'resources'),
         ('resources/app_icon.ico', 'resources'),
+        ('resources/vendor/mermaid/*', 'resources/vendor/mermaid'),
+        ('resources/vendor/mathjax/*', 'resources/vendor/mathjax'),
     ] + extra_datas,
     hiddenimports=[
         # PyMuPDF
@@ -60,8 +62,13 @@ a = Analysis(
         'PySide6.QtGui',
         'PySide6.QtWidgets',
         'PySide6.QtPrintSupport',
+        'PySide6.QtWebEngineCore',
+        'PySide6.QtWebEngineWidgets',
         # src パッケージ
+        'markdown',
         'src.pdf_editor',
+        'src.pdf_editor.markdown',
+        'src.pdf_editor.markdown.markdown_manager',
         'src.pdf_editor.pdf',
         'src.pdf_editor.pdf.pdf_manager',
         'src.pdf_editor.ui',

@@ -9,16 +9,25 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea,
     QToolBar, QStatusBar, QFileDialog, QMessageBox, QInputDialog, QSplitter,
     QDialog, QGroupBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QPushButton,
-    QComboBox, QSlider, QSpinBox, QRubberBand
+    QComboBox, QSlider, QSpinBox, QRubberBand, QStackedWidget
 )
-from PySide6.QtCore import Qt, QSize, QEvent, QPoint, QRect
-from PySide6.QtGui import QAction, QPixmap, QImage, QIcon
+from PySide6.QtCore import Qt, QSize, QEvent, QPoint, QRect, QTimer, QUrl, QMarginsF
+from PySide6.QtGui import QAction, QPixmap, QImage, QIcon, QPageLayout, QPageSize
 from pathlib import Path
 import os
 import fitz
 
 from src.pdf_editor.ui.thumbnail_panel import ThumbnailPanel
 from src.pdf_editor.pdf.pdf_manager import PDFManager
+from src.pdf_editor.markdown.markdown_manager import MarkdownManager
+from src.pdf_editor.utils.resources import resource_path
+
+try:
+    from PySide6.QtWebEngineCore import QWebEngineSettings
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+except ImportError:
+    QWebEngineSettings = None
+    QWebEngineView = None
 
 
 class PreviewLabel(QLabel):
@@ -483,6 +492,11 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 600)  # Allow reasonable resizing
 
         self.pdf_manager = PDFManager()
+        self.markdown_manager = MarkdownManager()
+        self.current_mode = "pdf"
+        self.current_markdown_document = None
+        self._pending_markdown_pdf_path: Path | None = None
+        self._last_pdf_panel_width = 320
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -517,6 +531,24 @@ class MainWindow(QMainWindow):
         self.preview_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.preview_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
+        self.preview_stack = QStackedWidget()
+        self.preview_stack.addWidget(self.preview_scroll)
+
+        self.markdown_view = QWebEngineView() if QWebEngineView else None
+        if self.markdown_view is not None:
+            settings = self.markdown_view.settings()
+            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+            self.preview_stack.addWidget(self.markdown_view)
+            self.markdown_view.page().pdfPrintingFinished.connect(self._on_markdown_pdf_finished)
+        else:
+            markdown_placeholder = QLabel("この環境では Markdown プレビューを利用できません")
+            markdown_placeholder.setAlignment(Qt.AlignCenter)
+            markdown_placeholder.setStyleSheet(
+                "background-color: #f7f1e8; color: #6b6156; font-size: 18px; border: 1px solid #d8cfbf;"
+            )
+            self.preview_stack.addWidget(markdown_placeholder)
+
         self.current_preview_pixmap = None
         self.current_zoom = 1.0
 
@@ -533,7 +565,7 @@ class MainWindow(QMainWindow):
         viewport = self.preview_scroll.viewport()
         viewport.installEventFilter(self)
 
-        self.splitter.addWidget(self.preview_scroll)
+        self.splitter.addWidget(self.preview_stack)
 
         # Thumbnail panel: fixed size on window resize; preview takes all extra space
         self.splitter.setStretchFactor(0, 0)
@@ -545,7 +577,7 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self.setStatusBar(QStatusBar())
-        self.statusBar().showMessage("準備完了 - PDFファイルを開いてください")
+        self.statusBar().showMessage("準備完了 - PDF または Markdown ファイルを開いてください")
 
         # Connect selection (now using QTreeWidget)
         self.thumbnail_panel.currentItemChanged.connect(self._on_thumbnail_selected)
@@ -559,6 +591,85 @@ class MainWindow(QMainWindow):
             return QIcon(icon_path)
         return QIcon()  # empty icon as fallback
 
+    def _clear_pdf_preview(self):
+        self.preview_label.clear_selection()
+        self.preview_label.clear()
+        self.preview_label.setText("PDFページをここに表示します")
+        self.current_preview_pixmap = None
+        self.current_zoom = 1.0
+
+    def _set_mode(self, mode: str):
+        self.current_mode = mode
+        is_pdf = mode == "pdf"
+        self.preview_stack.setCurrentIndex(0 if is_pdf else 1)
+        self.thumbnail_panel.setVisible(is_pdf)
+        total_width = max(300, sum(self.splitter.sizes()) or self.width())
+        if is_pdf:
+            left_width = max(220, self._last_pdf_panel_width or self.thumbnail_panel._panel_width)
+            self.splitter.setSizes([left_width, max(200, total_width - left_width)])
+        else:
+            current_sizes = self.splitter.sizes()
+            if current_sizes and current_sizes[0] > 0:
+                self._last_pdf_panel_width = current_sizes[0]
+            self.splitter.setSizes([0, total_width])
+
+        for action in (
+            getattr(self, "merge_action", None),
+            getattr(self, "split_action", None),
+            getattr(self, "img_export_action", None),
+            getattr(self, "rotate_right_action", None),
+            getattr(self, "rotate_left_action", None),
+            getattr(self, "rotate_180_action", None),
+            getattr(self, "header_action", None),
+            getattr(self, "small_action", None),
+            getattr(self, "medium_action", None),
+            getattr(self, "large_action", None),
+            getattr(self, "size_label_action", None),
+        ):
+            if action is not None:
+                action.setEnabled(is_pdf)
+
+    def _load_markdown_document(self, path: Path):
+        if self.markdown_view is None:
+            QMessageBox.warning(
+                self,
+                "未対応",
+                "この実行環境には Qt WebEngine が見つからないため、Markdown のプレビューを表示できません。"
+            )
+            return
+
+        try:
+            document = self.markdown_manager.load_markdown(path)
+            html = self.markdown_manager.render_html_document(
+                document,
+                asset_urls=self._get_markdown_asset_urls(),
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "エラー", f"Markdown の読み込みに失敗しました。\n{exc}")
+            return
+
+        self.pdf_manager.close_all()
+        self.thumbnail_panel.refresh()
+        self.thumbnail_panel.clearSelection()
+        self.current_markdown_document = document
+        self._clear_pdf_preview()
+
+        base_url = QUrl.fromLocalFile(str(path.parent) + os.sep)
+        self.markdown_view.setHtml(html, base_url)
+        self._set_mode("markdown")
+        self.setWindowTitle(f"PDF Editor - {path.name}")
+        self.statusBar().showMessage(f"Markdown を読み込みました: {path.name}")
+
+    def _get_markdown_asset_urls(self) -> dict[str, str]:
+        mermaid_path = resource_path("resources/vendor/mermaid/mermaid.min.js")
+        mathjax_path = resource_path("resources/vendor/mathjax/tex-svg.js")
+        asset_urls: dict[str, str] = {}
+        if mermaid_path.exists():
+            asset_urls["mermaid_js_url"] = QUrl.fromLocalFile(str(mermaid_path)).toString()
+        if mathjax_path.exists():
+            asset_urls["mathjax_js_url"] = QUrl.fromLocalFile(str(mathjax_path)).toString()
+        return asset_urls
+
     def _create_toolbar(self):
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
@@ -567,86 +678,126 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.TopToolBarArea, toolbar)
 
         # Open
-        open_action = QAction(self._load_icon("open"), "開く", self)
-        open_action.setToolTip("PDFファイルを開く")
-        open_action.triggered.connect(self.open_pdfs)
-        toolbar.addAction(open_action)
+        self.open_action = QAction(self._load_icon("open"), "開く", self)
+        self.open_action.setToolTip("PDF または Markdown ファイルを開く")
+        self.open_action.triggered.connect(self.open_documents)
+        toolbar.addAction(self.open_action)
 
         toolbar.addSeparator()
 
         # Merge
-        merge_action = QAction(self._load_icon("merge"), "連結", self)
-        merge_action.setToolTip("現在の状態を1つのPDFとして保存（連結）")
-        merge_action.triggered.connect(self.merge_documents)
-        toolbar.addAction(merge_action)
+        self.merge_action = QAction(self._load_icon("merge"), "連結", self)
+        self.merge_action.setToolTip("現在の状態を1つのPDFとして保存（連結）")
+        self.merge_action.triggered.connect(self.merge_documents)
+        toolbar.addAction(self.merge_action)
 
         # Split / PDF cut-out
-        split_action = QAction(self._load_icon("split"), "PDF切り出し", self)
-        split_action.setToolTip("選択ページを新しいPDFとして保存（切り出し）")
-        split_action.triggered.connect(self.split_document)
-        toolbar.addAction(split_action)
+        self.split_action = QAction(self._load_icon("split"), "PDF切り出し", self)
+        self.split_action.setToolTip("選択ページを新しいPDFとして保存（切り出し）")
+        self.split_action.triggered.connect(self.split_document)
+        toolbar.addAction(self.split_action)
 
         # Image export
-        img_export_action = QAction(self._load_icon("image_export"), "画像出力", self)
-        img_export_action.setToolTip("ページをPNG/JPG画像としてエクスポート（右クリックメニューからも可）")
-        img_export_action.triggered.connect(self.export_images)
-        toolbar.addAction(img_export_action)
+        self.img_export_action = QAction(self._load_icon("image_export"), "画像出力", self)
+        self.img_export_action.setToolTip("ページをPNG/JPG画像としてエクスポート（右クリックメニューからも可）")
+        self.img_export_action.triggered.connect(self.export_images)
+        toolbar.addAction(self.img_export_action)
 
         toolbar.addSeparator()
 
         # Rotation
-        rotate_right = QAction(self._load_icon("rotate_right"), "右90°", self)
-        rotate_right.setToolTip("選択ページを右に90度回転")
-        rotate_right.triggered.connect(lambda: self.rotate_current_page(90))
-        toolbar.addAction(rotate_right)
+        self.rotate_right_action = QAction(self._load_icon("rotate_right"), "右90°", self)
+        self.rotate_right_action.setToolTip("選択ページを右に90度回転")
+        self.rotate_right_action.triggered.connect(lambda: self.rotate_current_page(90))
+        toolbar.addAction(self.rotate_right_action)
 
-        rotate_left = QAction(self._load_icon("rotate_left"), "左90°", self)
-        rotate_left.setToolTip("選択ページを左に90度回転")
-        rotate_left.triggered.connect(lambda: self.rotate_current_page(-90))
-        toolbar.addAction(rotate_left)
+        self.rotate_left_action = QAction(self._load_icon("rotate_left"), "左90°", self)
+        self.rotate_left_action.setToolTip("選択ページを左に90度回転")
+        self.rotate_left_action.triggered.connect(lambda: self.rotate_current_page(-90))
+        toolbar.addAction(self.rotate_left_action)
 
-        rotate_180 = QAction(self._load_icon("rotate_180"), "180°", self)
-        rotate_180.setToolTip("選択ページを180度回転")
-        rotate_180.triggered.connect(lambda: self.rotate_current_page(180))
-        toolbar.addAction(rotate_180)
+        self.rotate_180_action = QAction(self._load_icon("rotate_180"), "180°", self)
+        self.rotate_180_action.setToolTip("選択ページを180度回転")
+        self.rotate_180_action.triggered.connect(lambda: self.rotate_current_page(180))
+        toolbar.addAction(self.rotate_180_action)
 
         toolbar.addSeparator()
 
         # Header/Footer
-        header_action = QAction(self._load_icon("header_footer"), "ヘッダー/フッター", self)
-        header_action.setToolTip("ページ番号やタイトルを追加")
-        header_action.triggered.connect(self.edit_header_footer)
-        toolbar.addAction(header_action)
+        self.header_action = QAction(self._load_icon("header_footer"), "ヘッダー/フッター", self)
+        self.header_action.setToolTip("ページ番号やタイトルを追加")
+        self.header_action.triggered.connect(self.edit_header_footer)
+        toolbar.addAction(self.header_action)
 
         toolbar.addSeparator()
 
         # Save
-        save_action = QAction(self._load_icon("save"), "保存", self)
-        save_action.setToolTip("編集後のPDFを保存")
-        save_action.triggered.connect(self.save_pdf)
-        toolbar.addAction(save_action)
+        self.save_action = QAction(self._load_icon("save"), "保存", self)
+        self.save_action.setToolTip("PDF または Markdown を PDF として保存")
+        self.save_action.triggered.connect(self.save_pdf)
+        toolbar.addAction(self.save_action)
 
         toolbar.addSeparator()
 
         # Thumbnail size
-        size_label = QAction("サムネ", self)
-        size_label.setEnabled(False)
-        toolbar.addAction(size_label)
+        self.size_label_action = QAction("サムネ", self)
+        self.size_label_action.setEnabled(False)
+        toolbar.addAction(self.size_label_action)
 
-        small_action = QAction("小", self)
-        small_action.setToolTip("サムネイルを小さく")
-        small_action.triggered.connect(lambda: self.set_thumbnail_size("small"))
-        toolbar.addAction(small_action)
+        self.small_action = QAction("小", self)
+        self.small_action.setToolTip("サムネイルを小さく")
+        self.small_action.triggered.connect(lambda: self.set_thumbnail_size("small"))
+        toolbar.addAction(self.small_action)
 
-        medium_action = QAction("中", self)
-        medium_action.setToolTip("標準サイズ")
-        medium_action.triggered.connect(lambda: self.set_thumbnail_size("medium"))
-        toolbar.addAction(medium_action)
+        self.medium_action = QAction("中", self)
+        self.medium_action.setToolTip("標準サイズ")
+        self.medium_action.triggered.connect(lambda: self.set_thumbnail_size("medium"))
+        toolbar.addAction(self.medium_action)
 
-        large_action = QAction("大", self)
-        large_action.setToolTip("サムネイルを大きく")
-        large_action.triggered.connect(lambda: self.set_thumbnail_size("large"))
-        toolbar.addAction(large_action)
+        self.large_action = QAction("大", self)
+        self.large_action.setToolTip("サムネイルを大きく")
+        self.large_action.triggered.connect(lambda: self.set_thumbnail_size("large"))
+        toolbar.addAction(self.large_action)
+
+    def open_documents(self, files=None):
+        """Open PDF files or a single Markdown document."""
+        if not files:
+            files, _ = QFileDialog.getOpenFileNames(
+                self,
+                "ファイルを選択",
+                "",
+                "Supported Files (*.pdf *.md *.markdown);;PDF Files (*.pdf);;Markdown Files (*.md *.markdown);;All Files (*)"
+            )
+            if not files:
+                return
+
+        paths = [Path(f) for f in files]
+        markdown_paths = [path for path in paths if path.suffix.lower() in {".md", ".markdown"}]
+        pdf_paths = [path for path in paths if path.suffix.lower() == ".pdf"]
+
+        if markdown_paths and pdf_paths:
+            QMessageBox.information(
+                self,
+                "読み込み方法",
+                "Markdown と PDF の同時読み込みは未対応です。どちらか一方を選んでください。"
+            )
+            return
+
+        if markdown_paths:
+            if len(markdown_paths) > 1:
+                QMessageBox.information(
+                    self,
+                    "読み込み方法",
+                    "Markdown は1ファイルずつ表示します。先頭の1件を読み込みます。"
+                )
+            self._load_markdown_document(markdown_paths[0])
+            return
+
+        if not pdf_paths:
+            QMessageBox.information(self, "未対応", "対応しているのは PDF / Markdown ファイルです。")
+            return
+
+        self.open_pdfs(pdf_paths)
 
     def open_pdfs(self, files=None):
         """Open one or more PDF files."""
@@ -664,6 +815,8 @@ class MainWindow(QMainWindow):
         loaded = self.pdf_manager.load_pdfs(paths)
 
         if loaded > 0:
+            self.current_markdown_document = None
+            self._set_mode("pdf")
             self.thumbnail_panel.refresh()
 
             # Auto-select the first page so preview + thumbnails show immediately
@@ -675,6 +828,7 @@ class MainWindow(QMainWindow):
                     # Force preview update in case the signal doesn't fire
                     self._on_thumbnail_selected(first_page)
 
+            self.setWindowTitle("PDF Editor")
             self.statusBar().showMessage(f"{loaded} ファイル読み込み完了（全{self.pdf_manager.get_page_count()}ページ）")
         else:
             QMessageBox.warning(self, "エラー", "PDFの読み込みに失敗しました")
@@ -700,6 +854,8 @@ class MainWindow(QMainWindow):
         qimage = QImage.fromData(img_data, "PNG")
         self.current_preview_pixmap = QPixmap.fromImage(qimage)
         self.preview_label.set_base_pixmap(self.current_preview_pixmap)
+        if self.current_mode != "pdf":
+            self._set_mode("pdf")
 
         # Default to fit document width to the preview area
         self._fit_to_width()
@@ -1017,8 +1173,65 @@ class MainWindow(QMainWindow):
         if current_item:
             self._on_thumbnail_selected(current_item)
 
+    def _save_markdown_as_pdf(self):
+        if self.current_markdown_document is None or self.markdown_view is None:
+            QMessageBox.information(self, "情報", "保存する Markdown がありません")
+            return
+
+        default_name = f"{self.current_markdown_document.path.stem}.pdf"
+        default_path = str(self.current_markdown_document.path.with_suffix(".pdf"))
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Markdown を PDF として保存",
+            default_path or default_name,
+            "PDF Files (*.pdf)"
+        )
+        if not output_path:
+            return
+
+        self._pending_markdown_pdf_path = Path(output_path)
+        self.statusBar().showMessage("Markdown を PDF に変換しています...")
+        self._export_markdown_pdf_when_ready()
+
+    def _export_markdown_pdf_when_ready(self, attempts: int = 0):
+        if self.markdown_view is None or self._pending_markdown_pdf_path is None:
+            return
+
+        def after_check(is_ready):
+            ready = bool(is_ready)
+            if ready or attempts >= 24:
+                layout = QPageLayout(
+                    QPageSize(QPageSize.PageSizeId.A4),
+                    QPageLayout.Orientation.Portrait,
+                    QMarginsF(12, 12, 12, 12),
+                )
+                self.markdown_view.page().printToPdf(str(self._pending_markdown_pdf_path), layout)
+                return
+            QTimer.singleShot(250, lambda: self._export_markdown_pdf_when_ready(attempts + 1))
+
+        self.markdown_view.page().runJavaScript(
+            "document.body && document.body.dataset.rendered === '1';",
+            after_check,
+        )
+
+    def _on_markdown_pdf_finished(self, file_path: str, success: bool):
+        if not self._pending_markdown_pdf_path:
+            return
+        path = str(self._pending_markdown_pdf_path)
+        self._pending_markdown_pdf_path = None
+        if success:
+            self.statusBar().showMessage(f"Markdown PDF を保存しました: {path}")
+            QMessageBox.information(self, "完了", f"PDFを保存しました。\n{path}")
+        else:
+            self.statusBar().showMessage("Markdown PDF の保存に失敗しました")
+            QMessageBox.warning(self, "エラー", f"Markdown の PDF 保存に失敗しました。\n{file_path or path}")
+
     def save_pdf(self):
         """Export current state (after reorder/rotate/header) as a new PDF."""
+        if self.current_mode == "markdown":
+            self._save_markdown_as_pdf()
+            return
+
         if self.pdf_manager.get_page_count() == 0:
             QMessageBox.information(self, "情報", "保存する内容がありません")
             return
@@ -1048,6 +1261,7 @@ class MainWindow(QMainWindow):
         sizes = self.splitter.sizes()
         new_w = self.thumbnail_panel._panel_width
         self.splitter.setSizes([new_w, max(200, sizes[0] + sizes[1] - new_w)])
+        self._last_pdf_panel_width = new_w
 
         if current_page >= 0:
             self.thumbnail_panel.setCurrentRow(current_page)
