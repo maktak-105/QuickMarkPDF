@@ -12,7 +12,8 @@ from PySide6.QtCore import Qt
 
 class ExportDialog(QDialog):
     """Dialog for exporting pages as PNG or JPEG images.
-    Supports scope (all/selected), format, DPI (incl. custom), JPEG quality, output folder (defaults to original file dir), prefix.
+    Supports scope (all/selected), output area (full page/crop), format, DPI (incl. custom),
+    JPEG quality, output folder (defaults to original file dir), prefix.
     """
 
     def __init__(
@@ -22,6 +23,7 @@ class ExportDialog(QDialog):
         selected_pages: int = 0,
         initial_dir: str = "",
         suggested_prefix: str = "page",
+        has_crop: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle("画像としてエクスポート")
@@ -45,6 +47,21 @@ class ExportDialog(QDialog):
         sl.addWidget(self.scope_all)
         sl.addWidget(self.scope_sel)
         root.addWidget(scope_box)
+
+        # ── 出力領域 ─────────────────────────────────────
+        area_box = QGroupBox("出力領域")
+        al = QVBoxLayout(area_box)
+        self.area_all = QRadioButton("ページ全体")
+        self.area_crop = QRadioButton("クロップした範囲")
+        if has_crop:
+            self.area_crop.setChecked(True)
+        else:
+            self.area_all.setChecked(True)
+            self.area_crop.setEnabled(False)
+            self.area_crop.setToolTip("プレビュー上で左ドラッグして範囲を選択すると利用可能になります")
+        al.addWidget(self.area_all)
+        al.addWidget(self.area_crop)
+        root.addWidget(area_box)
 
         # ── 画像設定 ─────────────────────────────────────
         img_box = QGroupBox("画像設定")
@@ -186,9 +203,11 @@ class ExportDialog(QDialog):
     def get_settings(self) -> dict:
         """Return export config."""
         scope = "selected" if self.scope_sel.isChecked() and self.scope_sel.isEnabled() else "all"
+        area = "crop" if self.area_crop.isChecked() and self.area_crop.isEnabled() else "all"
         fmt = self.fmt_combo.currentData() or "png"
         return {
             "scope": scope,
+            "area": area,
             "format": fmt,
             "dpi": self._get_dpi(),
             "jpeg_quality": self.quality_slider.value(),

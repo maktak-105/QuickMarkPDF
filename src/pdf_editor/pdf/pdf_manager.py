@@ -3,10 +3,13 @@ PDF Manager - Core PDF handling using PyMuPDF (fitz)
 Responsible for loading, reordering, rotating, and rendering pages.
 """
 from __future__ import annotations
+import logging
 import fitz  # PyMuPDF
 from pathlib import Path
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -31,7 +34,7 @@ class PDFDocument:
             self.pages = [self.doc[i] for i in range(len(self.doc))]
             return True
         except Exception as e:
-            print(f"[PDF] Failed to open {self.path}: {e}")
+            logger.error("Failed to open %s: %s", self.path, e)
             return False
 
     def close(self):
@@ -157,10 +160,17 @@ class PDFManager:
     ):
         """Insert header and/or footer text directly onto each page.
         Footer page-number and footer text are rendered on separate lines to avoid overlap.
+
+        Always starts from a clean (no previously-inserted header/footer) state, so calling
+        this repeatedly with different settings never stacks old text under new text.
         """
         total = self.get_page_count()
         if total == 0:
             return
+
+        # Wipe any previously-inserted header/footer text before applying the new settings,
+        # so re-applying with different text/alignment never draws on top of the old text.
+        self._reload_pages_from_disk()
 
         h_text = header_text.strip() if header_enabled else ""
         f_num = footer_page_num
@@ -197,6 +207,15 @@ class PDFManager:
 
     def remove_header_footer(self):
         """Reload all pages from disk to erase inserted text, then re-apply stored rotations."""
+        self._reload_pages_from_disk()
+
+    def _reload_pages_from_disk(self):
+        """Reload all pages from their source documents, discarding any inserted
+        header/footer text, but re-applying rotations the user had set.
+
+        Shared by `remove_header_footer` (explicit removal) and `add_header_footer`
+        (implicit reset before re-applying, so repeated calls never stack text).
+        """
         if not self.documents:
             return
 
@@ -246,7 +265,7 @@ class PDFManager:
             new_doc.close()
             return True
         except Exception as e:
-            print(f"[Save] Failed: {e}")
+            logger.error("Save failed: %s", e)
             return False
 
     def save_selected_pages(self, indices: list[int], output_path: Path) -> bool:
@@ -269,7 +288,7 @@ class PDFManager:
             new_doc.close()
             return True
         except Exception as e:
-            print(f"[Split] Failed: {e}")
+            logger.error("Split failed: %s", e)
             return False
 
     # =====================

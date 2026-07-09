@@ -126,6 +126,25 @@ class TestHeaderFooterBehavior(unittest.TestCase):
         # After remove, rotation should still be 180
         self.assertEqual(mgr.all_pages[0].rotation, 180)
 
+    def test_add_header_footer_can_be_reapplied_without_stacking(self):
+        """Re-applying HF with different settings must not leave the old text baked in."""
+        mgr = PDFManager()
+        mgr.load_pdfs([self.src])
+
+        mgr.add_header_footer(header_enabled=True, header_text="DRAFT", footer_page_num=True)
+        mgr.add_header_footer(header_enabled=True, header_text="FINAL", footer_page_num=True)
+
+        out = self.tmpdir / "reapplied_hf.pdf"
+        self.assertTrue(mgr.save_as(out))
+
+        doc2 = fitz.open(str(out))
+        page0_text = doc2[0].get_text()
+        self.assertIn("FINAL", page0_text)
+        self.assertNotIn("DRAFT", page0_text)
+        # Page-number footer must appear exactly once, not duplicated across both applies.
+        self.assertEqual(page0_text.count("1 / 2"), 1)
+        doc2.close()
+
     def test_export_images_with_clip(self):
         mgr = PDFManager()
         mgr.load_pdfs([self.src])

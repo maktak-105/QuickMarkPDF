@@ -5,11 +5,12 @@ Layout (per spec):
 - Left: Vertical thumbnail list (ThumbnailPanel)
 - Right: Page preview
 """
+import logging
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea,
     QToolBar, QStatusBar, QFileDialog, QMessageBox, QInputDialog, QSplitter,
-    QDialog, QGroupBox, QCheckBox, QLineEdit, QRadioButton, QButtonGroup, QPushButton,
-    QComboBox, QSlider, QSpinBox, QRubberBand, QStackedWidget
+    QDialog, QRubberBand, QStackedWidget
 )
 from PySide6.QtCore import Qt, QSize, QEvent, QPoint, QRect, QTimer, QUrl, QMarginsF
 from PySide6.QtGui import QAction, QPixmap, QImage, QIcon, QPageLayout, QPageSize
@@ -20,7 +21,9 @@ import fitz
 from src.pdf_editor.ui.thumbnail_panel import ThumbnailPanel
 from src.pdf_editor.pdf.pdf_manager import PDFManager
 from src.pdf_editor.markdown.markdown_manager import MarkdownManager
-from src.pdf_editor.utils.resources import resource_path
+from src.pdf_editor.utils.resources import resource_path, get_icon
+from src.pdf_editor.ui.dialogs import HeaderFooterDialog, ExportDialog
+from src.pdf_editor.ui.workers import Worker
 
 try:
     from PySide6.QtWebEngineCore import QWebEngineSettings
@@ -28,6 +31,8 @@ try:
 except ImportError:
     QWebEngineSettings = None
     QWebEngineView = None
+
+logger = logging.getLogger(__name__)
 
 
 class PreviewLabel(QLabel):
@@ -162,328 +167,6 @@ class PreviewLabel(QLabel):
         return fitz.Rect(x0, y0, x1, y1)
 
 
-class HeaderFooterDialog(QDialog):
-    """Dialog for configuring and applying/removing header & footer.
-    Pass `initial` (a dict from get_settings()) to pre-populate fields.
-    """
-
-    _RESULT_DELETE = 2
-
-    def __init__(self, parent=None, initial: dict | None = None):
-        super().__init__(parent)
-        self.setWindowTitle("ヘッダー/フッター設定")
-        self.setMinimumWidth(420)
-
-        root = QVBoxLayout(self)
-        s = initial or {}
-
-        # ── Header ──────────────────────────────────────────
-        h_group = QGroupBox("ヘッダー")
-        hl = QVBoxLayout(h_group)
-
-        self.header_check = QCheckBox("ヘッダーを追加する")
-        self.header_check.setChecked(s.get("header_enabled", False))
-        hl.addWidget(self.header_check)
-
-        h_text_row = QHBoxLayout()
-        h_text_row.addWidget(QLabel("テキスト:"))
-        self.header_text = QLineEdit(s.get("header_text", ""))
-        self.header_text.setPlaceholderText("表示するテキスト")
-        h_text_row.addWidget(self.header_text)
-        hl.addLayout(h_text_row)
-
-        self._h_align_grp, self._h_rbs = self._make_align_row(hl, s.get("header_align", "center"))
-        root.addWidget(h_group)
-
-        # ── Footer: page number ──────────────────────────────
-        fn_group = QGroupBox("フッター ― ページ番号")
-        fnl = QVBoxLayout(fn_group)
-
-        self.footer_page_num = QCheckBox("ページ番号を追加 (- N / M -)")
-        self.footer_page_num.setChecked(s.get("footer_page_num", False))
-        fnl.addWidget(self.footer_page_num)
-
-        self._fn_align_grp, self._fn_rbs = self._make_align_row(fnl, s.get("footer_page_num_align", "center"))
-        root.addWidget(fn_group)
-
-        # ── Footer: custom text ──────────────────────────────
-        ft_group = QGroupBox("フッター ― テキスト")
-        ftl = QVBoxLayout(ft_group)
-
-        self.footer_text_check = QCheckBox("テキストを追加する")
-        self.footer_text_check.setChecked(s.get("footer_text_enabled", False))
-        ftl.addWidget(self.footer_text_check)
-
-        ft_text_row = QHBoxLayout()
-        ft_text_row.addWidget(QLabel("テキスト:"))
-        self.footer_text = QLineEdit(s.get("footer_text", ""))
-        self.footer_text.setPlaceholderText("表示するテキスト")
-        ft_text_row.addWidget(self.footer_text)
-        ftl.addLayout(ft_text_row)
-
-        self._ft_align_grp, self._ft_rbs = self._make_align_row(ftl, s.get("footer_text_align", "center"))
-        root.addWidget(ft_group)
-
-        # ── Buttons ─────────────────────────────────────────
-        btn_row = QHBoxLayout()
-        del_btn = QPushButton("削除（ヘッダー/フッターをクリア）")
-        del_btn.setStyleSheet("color: #c0392b;")
-        del_btn.clicked.connect(lambda: self.done(self._RESULT_DELETE))
-        btn_row.addWidget(del_btn)
-        btn_row.addStretch()
-        cancel_btn = QPushButton("キャンセル")
-        cancel_btn.clicked.connect(self.reject)
-        apply_btn = QPushButton("適用")
-        apply_btn.setDefault(True)
-        apply_btn.clicked.connect(self.accept)
-        btn_row.addWidget(cancel_btn)
-        btn_row.addWidget(apply_btn)
-        root.addLayout(btn_row)
-
-    @staticmethod
-    def _make_align_row(parent_layout, current: str):
-        """Add a 左/中央/右 radio row to parent_layout; return (QButtonGroup, dict of rbs)."""
-        row = QHBoxLayout()
-        row.addWidget(QLabel("位置:"))
-        rbs = {"left": QRadioButton("左"), "center": QRadioButton("中央"), "right": QRadioButton("右")}
-        grp = QButtonGroup()
-        for key, rb in rbs.items():
-            grp.addButton(rb)
-            row.addWidget(rb)
-            if key == current:
-                rb.setChecked(True)
-        if not any(rb.isChecked() for rb in rbs.values()):
-            rbs["center"].setChecked(True)
-        row.addStretch()
-        parent_layout.addLayout(row)
-        return grp, rbs
-
-    @staticmethod
-    def _read_align(rbs: dict) -> str:
-        for key, rb in rbs.items():
-            if rb.isChecked():
-                return key
-        return "center"
-
-    def get_settings(self) -> dict:
-        """Return current dialog values as a dict (for persistence in MainWindow)."""
-        return {
-            "header_enabled":       self.header_check.isChecked(),
-            "header_text":          self.header_text.text(),
-            "header_align":         self._read_align(self._h_rbs),
-            "footer_page_num":      self.footer_page_num.isChecked(),
-            "footer_page_num_align": self._read_align(self._fn_rbs),
-            "footer_text_enabled":  self.footer_text_check.isChecked(),
-            "footer_text":          self.footer_text.text(),
-            "footer_text_align":    self._read_align(self._ft_rbs),
-        }
-
-
-class ExportDialog(QDialog):
-    """Dialog for exporting pages as PNG or JPEG images.
-    Supports scope (all/selected), format, DPI (incl. custom), JPEG quality, output folder (defaults to original file dir), prefix.
-    """
-
-    def __init__(
-        self,
-        parent=None,
-        total_pages: int = 0,
-        selected_pages: int = 0,
-        initial_dir: str = "",
-        suggested_prefix: str = "page",
-        has_crop: bool = False,
-    ):
-        super().__init__(parent)
-        self.setWindowTitle("画像としてエクスポート")
-        self.setMinimumWidth(480)
-
-        self._total = max(0, total_pages)
-        self._selected = max(0, selected_pages)
-
-        root = QVBoxLayout(self)
-
-        # ── 出力対象 ─────────────────────────────────────
-        scope_box = QGroupBox("出力対象")
-        sl = QVBoxLayout(scope_box)
-        self.scope_all = QRadioButton(f"すべてのページ（{self._total}ページ）")
-        self.scope_sel = QRadioButton(f"選択中のページ（{self._selected}ページ）")
-        if self._selected > 0:
-            self.scope_sel.setChecked(True)
-        else:
-            self.scope_all.setChecked(True)
-            self.scope_sel.setEnabled(False)
-        sl.addWidget(self.scope_all)
-        sl.addWidget(self.scope_sel)
-        root.addWidget(scope_box)
-
-        # ── 出力領域 ─────────────────────────────────────
-        area_box = QGroupBox("出力領域")
-        al = QVBoxLayout(area_box)
-        self.area_all = QRadioButton("ページ全体")
-        self.area_crop = QRadioButton("クロップした範囲")
-        if has_crop:
-            self.area_crop.setChecked(True)
-        else:
-            self.area_all.setChecked(True)
-            self.area_crop.setEnabled(False)
-            self.area_crop.setToolTip("プレビュー上で左ドラッグして範囲を選択すると利用可能になります")
-        al.addWidget(self.area_all)
-        al.addWidget(self.area_crop)
-        root.addWidget(area_box)
-
-        # ── 画像設定 ─────────────────────────────────────
-        img_box = QGroupBox("画像設定")
-        il = QVBoxLayout(img_box)
-
-        # Format
-        fmt_row = QHBoxLayout()
-        fmt_row.addWidget(QLabel("形式:"))
-        self.fmt_combo = QComboBox()
-        self.fmt_combo.addItem("PNG（可逆・高品質）", "png")
-        self.fmt_combo.addItem("JPEG（圧縮）", "jpg")
-        self.fmt_combo.currentIndexChanged.connect(self._on_format_changed)
-        fmt_row.addWidget(self.fmt_combo)
-        fmt_row.addStretch()
-        il.addLayout(fmt_row)
-
-        # DPI
-        dpi_row = QHBoxLayout()
-        dpi_row.addWidget(QLabel("解像度 (DPI):"))
-        self.dpi_combo = QComboBox()
-        self.dpi_combo.addItem("72（画面・軽量）", 72)
-        self.dpi_combo.addItem("150（標準）", 150)
-        self.dpi_combo.addItem("300（印刷品質）", 300)
-        self.dpi_combo.addItem("カスタム...", 0)
-        self.dpi_combo.currentIndexChanged.connect(self._on_dpi_changed)
-        dpi_row.addWidget(self.dpi_combo)
-
-        self.dpi_spin = QSpinBox()
-        self.dpi_spin.setRange(50, 1200)
-        self.dpi_spin.setValue(150)
-        self.dpi_spin.setSuffix(" DPI")
-        self.dpi_spin.setEnabled(False)
-        dpi_row.addWidget(self.dpi_spin)
-        dpi_row.addStretch()
-        il.addLayout(dpi_row)
-
-        # JPEG quality (only for JPEG)
-        self.quality_row = QHBoxLayout()
-        self.quality_row.addWidget(QLabel("JPEG画質:"))
-        self.quality_slider = QSlider(Qt.Horizontal)
-        self.quality_slider.setRange(60, 100)
-        self.quality_slider.setValue(90)
-        self.quality_slider.setTickInterval(10)
-        self.quality_slider.setTickPosition(QSlider.TicksBelow)
-        self.quality_slider.valueChanged.connect(self._on_quality_changed)
-        self.quality_row.addWidget(self.quality_slider)
-        self.quality_label = QLabel("90")
-        self.quality_label.setMinimumWidth(30)
-        self.quality_row.addWidget(self.quality_label)
-        il.addLayout(self.quality_row)
-
-        root.addWidget(img_box)
-
-        # ── 保存先 ───────────────────────────────────────
-        save_box = QGroupBox("保存先")
-        svl = QVBoxLayout(save_box)
-
-        dir_row = QHBoxLayout()
-        dir_row.addWidget(QLabel("フォルダ:"))
-        self.dir_edit = QLineEdit(initial_dir or str(Path.cwd()))
-        self.dir_edit.setReadOnly(False)
-        dir_row.addWidget(self.dir_edit, 1)
-        browse_btn = QPushButton("参照...")
-        browse_btn.clicked.connect(self._browse_dir)
-        dir_row.addWidget(browse_btn)
-        svl.addLayout(dir_row)
-
-        prefix_row = QHBoxLayout()
-        prefix_row.addWidget(QLabel("接頭辞:"))
-        self.prefix_edit = QLineEdit(suggested_prefix)
-        self.prefix_edit.setPlaceholderText("page など")
-        self.prefix_edit.textChanged.connect(self._update_example)
-        prefix_row.addWidget(self.prefix_edit)
-        svl.addLayout(prefix_row)
-
-        self.example_label = QLabel()
-        self.example_label.setStyleSheet("color: #666; font-size: 11px;")
-        svl.addWidget(self.example_label)
-
-        root.addWidget(save_box)
-
-        # ── Buttons ─────────────────────────────────────
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        cancel_btn = QPushButton("キャンセル")
-        cancel_btn.clicked.connect(self.reject)
-        export_btn = QPushButton("エクスポート実行")
-        export_btn.setDefault(True)
-        export_btn.clicked.connect(self.accept)
-        btn_row.addWidget(cancel_btn)
-        btn_row.addWidget(export_btn)
-        root.addLayout(btn_row)
-
-        # init UI state
-        self._on_format_changed(0)
-        self._on_dpi_changed(0)
-        self._update_example()
-
-    def _on_format_changed(self, _idx: int):
-        is_jpg = self.fmt_combo.currentData() == "jpg"
-        self.quality_slider.setEnabled(is_jpg)
-        self.quality_label.setEnabled(is_jpg)
-        for i in range(self.quality_row.count()):
-            w = self.quality_row.itemAt(i).widget()
-            if w:
-                w.setEnabled(is_jpg)
-        self._update_example()
-
-    def _on_dpi_changed(self, _idx: int):
-        is_custom = self.dpi_combo.currentData() == 0
-        self.dpi_spin.setEnabled(is_custom)
-        if is_custom:
-            self.dpi_spin.setFocus()
-            self.dpi_spin.selectAll()
-
-    def _on_quality_changed(self, val: int):
-        self.quality_label.setText(str(val))
-
-    def _browse_dir(self):
-        start = self.dir_edit.text() or str(Path.cwd())
-        d = QFileDialog.getExistingDirectory(self, "保存先フォルダを選択", start)
-        if d:
-            self.dir_edit.setText(d)
-            self._update_example()
-
-    def _update_example(self):
-        prefix = self.prefix_edit.text().strip() or "page"
-        fmt = "png" if self.fmt_combo.currentData() == "png" else "jpg"
-        ex1 = f"{prefix}_0001.{fmt}"
-        ex2 = f"{prefix}_0002.{fmt}"
-        self.example_label.setText(f"出力例: {ex1}  {ex2}  ...")
-
-    def _get_dpi(self) -> int:
-        data = self.dpi_combo.currentData()
-        if data == 0:
-            return self.dpi_spin.value()
-        return int(data) if data else 150
-
-    def get_settings(self) -> dict:
-        """Return export config."""
-        scope = "selected" if self.scope_sel.isChecked() and self.scope_sel.isEnabled() else "all"
-        area = "crop" if self.area_crop.isChecked() and self.area_crop.isEnabled() else "all"
-        fmt = self.fmt_combo.currentData() or "png"
-        return {
-            "scope": scope,
-            "area": area,
-            "format": fmt,
-            "dpi": self._get_dpi(),
-            "jpeg_quality": self.quality_slider.value(),
-            "output_dir": self.dir_edit.text().strip() or str(Path.cwd()),
-            "prefix": self.prefix_edit.text().strip() or "page",
-        }
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -497,6 +180,14 @@ class MainWindow(QMainWindow):
         self.current_markdown_document = None
         self._pending_markdown_pdf_path: Path | None = None
         self._last_pdf_panel_width = 320
+
+        # Unsaved-changes tracking (checked on window close)
+        self._is_dirty = False
+
+        # Background task state (load / save / export run via workers.Worker
+        # so the UI thread never blocks on large PDFs)
+        self._busy = False
+        self._active_worker: Worker | None = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -582,21 +273,67 @@ class MainWindow(QMainWindow):
         # Connect selection (now using QTreeWidget)
         self.thumbnail_panel.currentItemChanged.connect(self._on_thumbnail_selected)
 
-    def _load_icon(self, name: str) -> QIcon:
-        """Load icon from resources/icons/ with fallback."""
-        icon_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "resources", "icons", f"{name}.png"
-        )
-        if os.path.exists(icon_path):
-            return QIcon(icon_path)
-        return QIcon()  # empty icon as fallback
-
     def _clear_pdf_preview(self):
         self.preview_label.clear_selection()
         self.preview_label.clear()
         self.preview_label.setText("PDFページをここに表示します")
         self.current_preview_pixmap = None
         self.current_zoom = 1.0
+
+    def _mark_dirty(self):
+        self._is_dirty = True
+
+    def _mark_clean(self):
+        self._is_dirty = False
+
+    def _set_ui_busy(self, busy: bool):
+        """Disable toolbar + thumbnail/preview area while a background task runs.
+
+        This also prevents the user from triggering a second pdf_manager
+        operation (e.g. clicking another thumbnail) while a worker thread is
+        touching pdf_manager state, avoiding races on the underlying PyMuPDF
+        documents (which are not thread-safe for concurrent access).
+        """
+        self._busy = busy
+        enabled = not busy
+        self._toolbar.setEnabled(enabled)
+        central = self.centralWidget()
+        if central is not None:
+            central.setEnabled(enabled)
+
+    def _run_in_background(self, func, on_success, on_error=None, busy_message: str = "処理中..."):
+        """Run `func` on a background thread via workers.Worker so the UI stays responsive.
+
+        Only one background task may run at a time; a second call while busy is
+        ignored (with a status message) rather than queued or run concurrently.
+        `on_success(result)` and `on_error(message)` run back on the UI thread.
+        """
+        if self._busy:
+            self.statusBar().showMessage("他の処理が完了するまでお待ちください")
+            return
+
+        self._set_ui_busy(True)
+        self.statusBar().showMessage(busy_message)
+
+        worker = Worker(func)
+        self._active_worker = worker  # keep a reference so it isn't garbage-collected mid-run
+
+        def _handle_finished(result):
+            self._set_ui_busy(False)
+            on_success(result)
+
+        def _handle_error(message):
+            self._set_ui_busy(False)
+            logger.error("Background task failed: %s", message)
+            if on_error:
+                on_error(message)
+            else:
+                self.statusBar().showMessage("処理に失敗しました")
+                QMessageBox.warning(self, "エラー", f"処理に失敗しました。\n{message}")
+
+        worker.finished.connect(_handle_finished)
+        worker.error.connect(_handle_error)
+        worker.run_in_thread()
 
     def _set_mode(self, mode: str):
         self.current_mode = mode
@@ -676,9 +413,10 @@ class MainWindow(QMainWindow):
         toolbar.setIconSize(QSize(28, 28))
         toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         self.addToolBar(Qt.TopToolBarArea, toolbar)
+        self._toolbar = toolbar
 
         # Open
-        self.open_action = QAction(self._load_icon("open"), "開く", self)
+        self.open_action = QAction(get_icon("open"), "開く", self)
         self.open_action.setToolTip("PDF または Markdown ファイルを開く")
         self.open_action.triggered.connect(self.open_documents)
         toolbar.addAction(self.open_action)
@@ -686,19 +424,19 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         # Merge
-        self.merge_action = QAction(self._load_icon("merge"), "連結", self)
+        self.merge_action = QAction(get_icon("merge"), "連結", self)
         self.merge_action.setToolTip("現在の状態を1つのPDFとして保存（連結）")
         self.merge_action.triggered.connect(self.merge_documents)
         toolbar.addAction(self.merge_action)
 
         # Split / PDF cut-out
-        self.split_action = QAction(self._load_icon("split"), "PDF切り出し", self)
+        self.split_action = QAction(get_icon("split"), "PDF切り出し", self)
         self.split_action.setToolTip("選択ページを新しいPDFとして保存（切り出し）")
         self.split_action.triggered.connect(self.split_document)
         toolbar.addAction(self.split_action)
 
         # Image export
-        self.img_export_action = QAction(self._load_icon("image_export"), "画像出力", self)
+        self.img_export_action = QAction(get_icon("image_export"), "画像出力", self)
         self.img_export_action.setToolTip("ページをPNG/JPG画像としてエクスポート（右クリックメニューからも可）")
         self.img_export_action.triggered.connect(self.export_images)
         toolbar.addAction(self.img_export_action)
@@ -706,17 +444,17 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         # Rotation
-        self.rotate_right_action = QAction(self._load_icon("rotate_right"), "右90°", self)
+        self.rotate_right_action = QAction(get_icon("rotate_right"), "右90°", self)
         self.rotate_right_action.setToolTip("選択ページを右に90度回転")
         self.rotate_right_action.triggered.connect(lambda: self.rotate_current_page(90))
         toolbar.addAction(self.rotate_right_action)
 
-        self.rotate_left_action = QAction(self._load_icon("rotate_left"), "左90°", self)
+        self.rotate_left_action = QAction(get_icon("rotate_left"), "左90°", self)
         self.rotate_left_action.setToolTip("選択ページを左に90度回転")
         self.rotate_left_action.triggered.connect(lambda: self.rotate_current_page(-90))
         toolbar.addAction(self.rotate_left_action)
 
-        self.rotate_180_action = QAction(self._load_icon("rotate_180"), "180°", self)
+        self.rotate_180_action = QAction(get_icon("rotate_180"), "180°", self)
         self.rotate_180_action.setToolTip("選択ページを180度回転")
         self.rotate_180_action.triggered.connect(lambda: self.rotate_current_page(180))
         toolbar.addAction(self.rotate_180_action)
@@ -724,7 +462,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         # Header/Footer
-        self.header_action = QAction(self._load_icon("header_footer"), "ヘッダー/フッター", self)
+        self.header_action = QAction(get_icon("header_footer"), "ヘッダー/フッター", self)
         self.header_action.setToolTip("ページ番号やタイトルを追加")
         self.header_action.triggered.connect(self.edit_header_footer)
         toolbar.addAction(self.header_action)
@@ -732,7 +470,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         # Save
-        self.save_action = QAction(self._load_icon("save"), "保存", self)
+        self.save_action = QAction(get_icon("save"), "保存", self)
         self.save_action.setToolTip("PDF または Markdown を PDF として保存")
         self.save_action.triggered.connect(self.save_pdf)
         toolbar.addAction(self.save_action)
@@ -812,26 +550,33 @@ class MainWindow(QMainWindow):
                 return
 
         paths = [Path(f) for f in files]
-        loaded = self.pdf_manager.load_pdfs(paths)
 
-        if loaded > 0:
-            self.current_markdown_document = None
-            self._set_mode("pdf")
-            self.thumbnail_panel.refresh()
+        def _do_load():
+            return self.pdf_manager.load_pdfs(paths)
 
-            # Auto-select the first page so preview + thumbnails show immediately
-            if self.thumbnail_panel.topLevelItemCount() > 0:
-                first_file = self.thumbnail_panel.topLevelItem(0)
-                if first_file.childCount() > 0:
-                    first_page = first_file.child(0)
-                    self.thumbnail_panel.setCurrentItem(first_page)
-                    # Force preview update in case the signal doesn't fire
-                    self._on_thumbnail_selected(first_page)
+        def _on_loaded(loaded):
+            if loaded > 0:
+                self.current_markdown_document = None
+                self._set_mode("pdf")
+                self.thumbnail_panel.refresh()
 
-            self.setWindowTitle("PDF Editor")
-            self.statusBar().showMessage(f"{loaded} ファイル読み込み完了（全{self.pdf_manager.get_page_count()}ページ）")
-        else:
-            QMessageBox.warning(self, "エラー", "PDFの読み込みに失敗しました")
+                # Auto-select the first page so preview + thumbnails show immediately
+                if self.thumbnail_panel.topLevelItemCount() > 0:
+                    first_file = self.thumbnail_panel.topLevelItem(0)
+                    if first_file.childCount() > 0:
+                        first_page = first_file.child(0)
+                        self.thumbnail_panel.setCurrentItem(first_page)
+                        # Force preview update in case the signal doesn't fire
+                        self._on_thumbnail_selected(first_page)
+
+                self.setWindowTitle("PDF Editor")
+                self.statusBar().showMessage(f"{loaded} ファイル読み込み完了（全{self.pdf_manager.get_page_count()}ページ）")
+                self._mark_dirty()
+            else:
+                self.statusBar().showMessage("PDFの読み込みに失敗しました")
+                QMessageBox.warning(self, "エラー", "PDFの読み込みに失敗しました")
+
+        self._run_in_background(_do_load, _on_loaded, busy_message="PDFを読み込んでいます...")
 
     def _on_thumbnail_selected(self, current_item, previous_item=None):
         """Called when a thumbnail (page) is selected in the tree."""
@@ -957,6 +702,7 @@ class MainWindow(QMainWindow):
         if hasattr(self.thumbnail_panel, '_dragged_page_idx'):
             self.thumbnail_panel._dragged_page_idx = -1
 
+        self._mark_dirty()
         self.statusBar().showMessage("ページ順を更新しました")
 
     # === Stub actions (to be implemented) ===
@@ -993,12 +739,18 @@ class MainWindow(QMainWindow):
         if not output_path:
             return
 
-        success = self.pdf_manager.save_selected_pages(indices, Path(output_path))
-        if success:
-            self.statusBar().showMessage(f"PDFを切り出しました: {output_path}")
-            QMessageBox.information(self, "完了", f"{len(indices)}ページを新しいPDFとして保存しました。\n{output_path}")
-        else:
-            QMessageBox.warning(self, "エラー", "PDFの切り出し保存に失敗しました")
+        def _do_export():
+            return self.pdf_manager.save_selected_pages(indices, Path(output_path))
+
+        def _on_exported(success):
+            if success:
+                self.statusBar().showMessage(f"PDFを切り出しました: {output_path}")
+                QMessageBox.information(self, "完了", f"{len(indices)}ページを新しいPDFとして保存しました。\n{output_path}")
+            else:
+                self.statusBar().showMessage("PDFの切り出し保存に失敗しました")
+                QMessageBox.warning(self, "エラー", "PDFの切り出し保存に失敗しました")
+
+        self._run_in_background(_do_export, _on_exported, busy_message="PDFを切り出しています...")
 
     def _on_pdf_extract_requested(self, indices: list[int]):
         """Context menu (thumbnail right-click) → PDFを切り出し"""
@@ -1042,26 +794,34 @@ class MainWindow(QMainWindow):
         cfg = dialog.get_settings()
         use_indices = selected if (cfg["scope"] == "selected" and selected) else list(range(total))
         clip = self.preview_label.get_pdf_clip_rect() if cfg["area"] == "crop" else None
-        success, attempted, errs = self.pdf_manager.export_pages_to_images(
-            indices=use_indices,
-            output_dir=Path(cfg["output_dir"]),
-            fmt=cfg["format"],
-            dpi=cfg["dpi"],
-            jpeg_quality=cfg.get("jpeg_quality", 90),
-            prefix=cfg["prefix"],
-            clip=clip,
-        )
         out_dir = cfg["output_dir"]
-        if success > 0:
-            # Clear selection rubber band after export
-            self.preview_label.clear_selection()
-            msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
-            if errs:
-                msg += f"\n（{len(errs)}件のエラーあり。詳細はコンソール）"
-            self.statusBar().showMessage(f"画像エクスポート完了: {out_dir}")
-            QMessageBox.information(self, "完了", msg)
-        else:
-            QMessageBox.warning(self, "エラー", "画像エクスポートに失敗しました")
+
+        def _do_export():
+            return self.pdf_manager.export_pages_to_images(
+                indices=use_indices,
+                output_dir=Path(out_dir),
+                fmt=cfg["format"],
+                dpi=cfg["dpi"],
+                jpeg_quality=cfg.get("jpeg_quality", 90),
+                prefix=cfg["prefix"],
+                clip=clip,
+            )
+
+        def _on_exported(result):
+            success, attempted, errs = result
+            if success > 0:
+                # Clear selection rubber band after export
+                self.preview_label.clear_selection()
+                msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
+                if errs:
+                    msg += f"\n（{len(errs)}件のエラーあり。詳細はコンソール）"
+                self.statusBar().showMessage(f"画像エクスポート完了: {out_dir}")
+                QMessageBox.information(self, "完了", msg)
+            else:
+                self.statusBar().showMessage("画像エクスポートに失敗しました")
+                QMessageBox.warning(self, "エラー", "画像エクスポートに失敗しました")
+
+        self._run_in_background(_do_export, _on_exported, busy_message="画像をエクスポートしています...")
 
     def _on_image_extract_requested(self, indices: list[int]):
         """Context menu (thumbnail right-click) → 画像を切り出し (PNG/JPG)"""
@@ -1094,25 +854,33 @@ class MainWindow(QMainWindow):
         cfg = dialog.get_settings()
         use_indices = indices if (cfg["scope"] == "selected" and indices) else list(range(total))
         clip = self.preview_label.get_pdf_clip_rect() if cfg["area"] == "crop" else None
-        success, attempted, errs = self.pdf_manager.export_pages_to_images(
-            indices=use_indices,
-            output_dir=Path(cfg["output_dir"]),
-            fmt=cfg["format"],
-            dpi=cfg["dpi"],
-            jpeg_quality=cfg.get("jpeg_quality", 90),
-            prefix=cfg["prefix"],
-            clip=clip,
-        )
         out_dir = cfg["output_dir"]
-        if success > 0:
-            self.preview_label.clear_selection()
-            msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
-            if errs:
-                msg += f"\n（{len(errs)}件のエラーあり）"
-            self.statusBar().showMessage(f"画像エクスポート完了: {out_dir}")
-            QMessageBox.information(self, "完了", msg)
-        else:
-            QMessageBox.warning(self, "エラー", "画像エクスポートに失敗しました")
+
+        def _do_export():
+            return self.pdf_manager.export_pages_to_images(
+                indices=use_indices,
+                output_dir=Path(out_dir),
+                fmt=cfg["format"],
+                dpi=cfg["dpi"],
+                jpeg_quality=cfg.get("jpeg_quality", 90),
+                prefix=cfg["prefix"],
+                clip=clip,
+            )
+
+        def _on_exported(result):
+            success, attempted, errs = result
+            if success > 0:
+                self.preview_label.clear_selection()
+                msg = f"{success}/{attempted} ページを画像として保存しました。\n保存先: {out_dir}"
+                if errs:
+                    msg += f"\n（{len(errs)}件のエラーあり）"
+                self.statusBar().showMessage(f"画像エクスポート完了: {out_dir}")
+                QMessageBox.information(self, "完了", msg)
+            else:
+                self.statusBar().showMessage("画像エクスポートに失敗しました")
+                QMessageBox.warning(self, "エラー", "画像エクスポートに失敗しました")
+
+        self._run_in_background(_do_export, _on_exported, busy_message="画像をエクスポートしています...")
 
     def rotate_current_page(self, degrees: int):
         """Rotate the currently selected page by the given degrees. Keep selection."""
@@ -1129,6 +897,7 @@ class MainWindow(QMainWindow):
             if self.current_preview_pixmap is not None and current_item:
                 self._on_thumbnail_selected(current_item)
 
+            self._mark_dirty()
             self.statusBar().showMessage(f"ページを{degrees}度回転しました")
         else:
             QMessageBox.information(self, "情報", "回転したいページを選択してください")
@@ -1145,6 +914,7 @@ class MainWindow(QMainWindow):
         if result == HeaderFooterDialog._RESULT_DELETE:
             self.pdf_manager.remove_header_footer()
             self._refresh_after_hf()
+            self._mark_dirty()
             self.statusBar().showMessage("ヘッダー/フッターを削除しました")
             return
 
@@ -1165,6 +935,7 @@ class MainWindow(QMainWindow):
             footer_text_align=cfg["footer_text_align"],
         )
         self._refresh_after_hf()
+        self._mark_dirty()
         self.statusBar().showMessage("ヘッダー/フッターを適用しました")
 
     def _refresh_after_hf(self):
@@ -1245,10 +1016,16 @@ class MainWindow(QMainWindow):
         if not output_path:
             return
 
-        success = self.pdf_manager.save_as(Path(output_path))
-        if success:
-            self.statusBar().showMessage(f"保存しました: {output_path}")
-            QMessageBox.information(self, "完了", f"PDFを保存しました。\n{output_path}")
+        def _do_save():
+            return self.pdf_manager.save_as(Path(output_path))
+
+        def _on_saved(success):
+            if success:
+                self.statusBar().showMessage(f"保存しました: {output_path}")
+                QMessageBox.information(self, "完了", f"PDFを保存しました。\n{output_path}")
+                self._mark_clean()
+
+        self._run_in_background(_do_save, _on_saved, busy_message="PDFを保存しています...")
 
     def set_thumbnail_size(self, size: str):
         """Change left thumbnail size and refresh."""
@@ -1316,6 +1093,22 @@ class MainWindow(QMainWindow):
             finally:
                 self.thumbnail_panel.blockSignals(False)
 
+            self._mark_dirty()
             self.statusBar().showMessage(f"{path.name} を閉じました")
         else:
             QMessageBox.warning(self, "エラー", f"{path.name} のクローズに失敗しました")
+
+    def closeEvent(self, event):
+        """Confirm before closing if there are unsaved PDF edits."""
+        if self._is_dirty:
+            reply = QMessageBox.question(
+                self,
+                "未保存の変更",
+                "保存されていない変更があります。終了しますか？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                event.ignore()
+                return
+        event.accept()

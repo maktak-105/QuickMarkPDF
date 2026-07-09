@@ -3,6 +3,8 @@ ThumbnailPanel (QTreeWidget version)
 - Grouped by original PDF file (collapsible top-level items)
 - Drag & drop reordering with animated insertion gap
 """
+import logging
+
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem, QStyledItemDelegate, QHeaderView, QStyle, QMenu
 from PySide6.QtCore import Qt, Signal, QSize, QTimer, QRect
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QIcon, QFont
@@ -10,6 +12,8 @@ from collections import defaultdict
 
 from src.pdf_editor.pdf.pdf_manager import PDFManager
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 TEXT_H = 14        # pixels for page label strip at the bottom of each canvas
 _INDENT = 20       # indentation (= expand button area width)
@@ -303,7 +307,7 @@ class ThumbnailPanel(QTreeWidget):
         expected = self._get_total_page_count()
 
         if len(new_order) != expected:
-            print("[ThumbnailPanel] Drop produced inconsistent order length — falling back to no change")
+            logger.warning("Drop produced inconsistent order length — falling back to no change")
             new_order = list(range(expected))
 
         self.page_reordered.emit(new_order)
