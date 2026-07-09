@@ -126,6 +126,37 @@ class TestHeaderFooterBehavior(unittest.TestCase):
         # After remove, rotation should still be 180
         self.assertEqual(mgr.all_pages[0].rotation, 180)
 
+    def test_add_header_footer_renders_japanese_at_consistent_size(self):
+        """Full-width (Japanese) and half-width characters must render at the same
+        glyph height. Using fontname="helv" (Latin-only) collapses unsupported
+        Japanese glyphs to tiny placeholder dots instead of raising an error, so
+        this must be checked via actual rendered glyph bounding boxes, not just
+        text-extraction presence.
+        """
+        mgr = PDFManager()
+        mgr.load_pdfs([self.src])
+
+        mgr.add_header_footer(header_enabled=True, header_text="ABC完了123")
+
+        out = self.tmpdir / "with_japanese_hf.pdf"
+        self.assertTrue(mgr.save_as(out))
+
+        doc2 = fitz.open(str(out))
+        raw = doc2[0].get_text("rawdict")
+        heights = {}
+        for block in raw["blocks"]:
+            for line in block.get("lines", []):
+                for span in line["spans"]:
+                    for ch in span["chars"]:
+                        heights[ch["c"]] = ch["bbox"][3] - ch["bbox"][1]
+        doc2.close()
+
+        self.assertIn("A", heights)
+        self.assertIn("完", heights)
+        # Japanese glyph height must be close to the half-width glyph height
+        # (previously it collapsed to a tiny placeholder, i.e. a small fraction of it).
+        self.assertGreater(heights["完"], heights["A"] * 0.5)
+
     def test_add_header_footer_can_be_reapplied_without_stacking(self):
         """Re-applying HF with different settings must not leave the old text baked in."""
         mgr = PDFManager()

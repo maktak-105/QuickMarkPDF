@@ -135,10 +135,17 @@ class PDFManager:
     # Header & Footer
     # =====================
 
+    # "helv" (Helvetica) has no glyphs for Japanese text: unsupported characters
+    # render as tiny placeholder dots, making full-width text look broken while
+    # half-width text looks fine. "japan" is a PyMuPDF built-in CJK font (no
+    # external font file needed) that covers both half-width and full-width
+    # characters at consistent sizing, so it's used for all header/footer text.
+    _HF_FONT = "japan"
+
     @staticmethod
     def _text_x(text: str, page_width: float, align: str, font_size: int, margin: float) -> float:
         """Return the x coordinate for text given alignment."""
-        tw = fitz.get_text_length(text, fontname="helv", fontsize=font_size)
+        tw = fitz.get_text_length(text, fontname=PDFManager._HF_FONT, fontsize=font_size)
         if align == "left":
             return margin
         if align == "right":
@@ -189,7 +196,7 @@ class PDFManager:
             if h_text:
                 x = self._text_x(h_text, rect.width, header_align, font_size, margin)
                 page.insert_text((x, margin + font_size), h_text,
-                                 fontname="helv", fontsize=font_size, color=(0.15, 0.15, 0.15))
+                                 fontname=self._HF_FONT, fontsize=font_size, color=(0.15, 0.15, 0.15))
 
             # Build footer lines bottom-up: page-number is always the lowest line
             # so it never overlaps with the custom text line above it.
@@ -203,7 +210,7 @@ class PDFManager:
                 x = self._text_x(line_text, rect.width, align, font_size, margin)
                 y = rect.height - margin - row * line_gap
                 page.insert_text((x, y), line_text,
-                                 fontname="helv", fontsize=font_size, color=(0.15, 0.15, 0.15))
+                                 fontname=self._HF_FONT, fontsize=font_size, color=(0.15, 0.15, 0.15))
 
     def remove_header_footer(self):
         """Reload all pages from disk to erase inserted text, then re-apply stored rotations."""
