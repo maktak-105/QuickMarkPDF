@@ -397,6 +397,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"PDF Editor - {path.name}")
         self.statusBar().showMessage(f"Markdown を読み込みました: {path.name}")
 
+        # 高DPI環境におけるフォントのかすれ・ぼやけ対策
+        # 読み込み完了後に微小なリサイズを一瞬トリガーして、Chromium側の高解像度レンダリングを強制します
+        def force_repaint():
+            if self.markdown_view and self.markdown_view.isVisible():
+                self.markdown_view.resize(self.markdown_view.width() + 1, self.markdown_view.height())
+                self.markdown_view.resize(self.markdown_view.width() - 1, self.markdown_view.height())
+        QTimer.singleShot(200, force_repaint)
+
     def _get_markdown_asset_urls(self) -> dict[str, str]:
         mermaid_path = resource_path("resources/vendor/mermaid/mermaid.min.js")
         mathjax_path = resource_path("resources/vendor/mathjax/tex-svg.js")

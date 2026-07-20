@@ -8,8 +8,9 @@ from pathlib import Path
 # Add project root to path so src imports work when running main.py directly
 sys.path.insert(0, str(Path(__file__).parent))
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QGuiApplication
 from src.pdf_editor.ui.main_window import MainWindow
 from src.pdf_editor.utils.resources import resource_path
 
@@ -19,6 +20,9 @@ def main():
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    # 高DPIディスプレイでのフォントぼやけ・かすれ対策
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
 
     app = QApplication(sys.argv)
     app.setApplicationName("PDF Editor")
