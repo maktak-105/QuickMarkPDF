@@ -1,13 +1,19 @@
 """
 PDF Manager - Core PDF handling using PyMuPDF (fitz)
 Responsible for loading, reordering, rotating, and rendering pages.
+
+Architecture: every loaded page is copied into a single in-memory "working
+document" (`self.working_doc`) as soon as it's loaded, and the source file is
+closed immediately afterward — no source file is ever held open. This means
+saving, including overwriting a file that one of the pages originally came
+from, never runs into a Windows file lock, because nothing has that path open.
 """
 from __future__ import annotations
 import logging
 import fitz  # PyMuPDF
 from pathlib import Path
 from typing import List, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 logger = logging.getLogger(__name__)
 
@@ -16,62 +22,185 @@ logger = logging.getLogger(__name__)
 class PageInfo:
     """Lightweight info about a single page for the UI."""
     page_number: int          # 0-based index in all_pages
-    source_doc_path: Path
+    source_doc_path: Path      # origin file — never changes after load; also the page's tag/label
     original_page_index: int  # index inside its original document
 
 
-class PDFDocument:
-    """Wrapper for one PDF file."""
+@dataclass
+class LoadResult:
+    """Outcome of `PDFManager.load_pdfs`."""
+    loaded_count: int
+    password_required: List[Path]  # files that are encrypted and need a (correct) password
+    duplicate_files: List[Path] = field(default_factory=list)  # already-loaded files that were skipped
 
-    def __init__(self, path: Path):
-        self.path = path
-        self.doc: Optional[fitz.Document] = None
-        self.pages: List[fitz.Page] = []
 
-    def open(self) -> bool:
-        try:
-            self.doc = fitz.open(str(self.path))
-            self.pages = [self.doc[i] for i in range(len(self.doc))]
-            return True
-        except Exception as e:
-            logger.error("Failed to open %s: %s", self.path, e)
-            return False
+@dataclass
+class _UndoEntry:
+    """One entry on the undo stack: a lightweight snapshot of `all_pages` /
+    `page_infos` to restore verbatim.
 
-    def close(self):
-        if self.doc:
-            self.doc.close()
-        self.doc = None
-        self.pages.clear()
+    This is safe for every undoable action (reorder, rotate, delete, and
+    closing a file) because all pages live in the single `working_doc`, which
+    stays open for the entire session — a page's `fitz.Page` object reference
+    never goes stale, even after it's been removed from `all_pages`.
+    """
+    label: str = ""
+    all_pages: List[fitz.Page] = field(default_factory=list)
+    page_infos: List[PageInfo] = field(default_factory=list)
+    # Rotation is a mutable property on the (shared) fitz.Page objects, so simply
+    # restoring `all_pages` doesn't undo a rotation — the same, already-mutated
+    # objects would still be referenced. Record each page's rotation at snapshot
+    # time (aligned with `all_pages`) and re-apply it explicitly on undo.
+    rotations: List[int] = field(default_factory=list)
 
 
 class PDFManager:
-    """Main controller for all PDF pages across multiple documents."""
+    """Main controller for all currently-loaded PDF pages.
+
+    All pages live in `self.working_doc`, a single `fitz.Document` that is
+    never itself associated with a file on disk. Source files passed to
+    `load_pdfs` are opened only transiently — just long enough to copy their
+    pages in via `insert_pdf` — and are closed immediately afterward.
+    """
+
+    _UNDO_CAP = 20
 
     def __init__(self):
-        self.documents: List[PDFDocument] = []
+        self.working_doc: fitz.Document = fitz.open()
         self.all_pages: List[fitz.Page] = []
         self.page_infos: List[PageInfo] = []
         self._thumb_cache: dict = {}  # (page_id, max_size, rotation) → fitz.Pixmap
+        self._undo_stack: List[_UndoEntry] = []
 
-    def load_pdfs(self, paths: List[Path]) -> int:
-        """Load one or more PDF files. Returns number of successfully loaded files."""
+    # =====================
+    # Undo
+    # =====================
+
+    def push_undo_snapshot(self, label: str = ""):
+        """Save a lightweight snapshot of the current page arrangement for undo.
+
+        Cheap: only copies the list/dataclass structure and each page's current
+        rotation, not PDF content (the underlying `fitz.Page` objects are shared
+        references, all backed by the same long-lived `working_doc`).
+        """
+        entry = _UndoEntry(
+            label=label,
+            all_pages=list(self.all_pages),
+            page_infos=[replace(info) for info in self.page_infos],
+            rotations=[page.rotation for page in self.all_pages],
+        )
+        self._undo_stack.append(entry)
+        if len(self._undo_stack) > self._UNDO_CAP:
+            self._undo_stack.pop(0)
+
+    def can_undo(self) -> bool:
+        return bool(self._undo_stack)
+
+    def clear_undo_history(self):
+        self._undo_stack.clear()
+
+    def undo(self) -> bool:
+        """Undo the most recent undoable action. Returns True if something was undone."""
+        if not self._undo_stack:
+            return False
+        entry = self._undo_stack.pop()
+        for page, rot in zip(entry.all_pages, entry.rotations):
+            if page.rotation != rot:
+                page.set_rotation(rot)
+        self.all_pages = entry.all_pages
+        self.page_infos = entry.page_infos
+        self._thumb_cache.clear()
+        return True
+
+    # =====================
+    # Loading
+    # =====================
+
+    def load_pdfs(self, paths: List[Path], passwords: Optional[dict] = None) -> LoadResult:
+        """Load one or more PDF files.
+
+        Each source file is opened, its pages are copied into `working_doc`
+        via `insert_pdf`, and the source is closed immediately — it is never
+        held open past this call.
+
+        IMPORTANT PyMuPDF quirk: `insert_pdf` invalidates every previously
+        fetched `fitz.Page` *wrapper object* for the target document — not just
+        ones related to the new content, ALL of them (a page's `.number` stays
+        valid and is safe to keep, but the Python `Page` object itself becomes
+        unusable — "page is None" — as soon as anything else is inserted into
+        the same document). So after inserting, every page we still care about
+        is refetched from `working_doc` by its (stable) page number.
+
+        `passwords` optionally maps a path (as given, or resolved) to a password
+        to try for encrypted files. Files that turn out to need a password that
+        wasn't supplied (or was wrong) are reported in `LoadResult.password_required`
+        instead of being loaded, so the caller can prompt and retry.
+
+        A file already present among the currently-loaded pages (by resolved
+        path) — or repeated within this same `paths` list — is skipped and
+        reported in `LoadResult.duplicate_files` instead of being loaded again.
+        """
+        passwords = passwords or {}
         loaded_count = 0
+        password_required: List[Path] = []
+        duplicate_files: List[Path] = []
+        any_inserted = False
+        # Page numbers (stable across appends) of pages we need to keep after
+        # any insert_pdf call below invalidates their current wrapper objects.
+        keep_numbers = [page.number for page in self.all_pages]
+        already_loaded = {info.source_doc_path for info in self.page_infos}
+
         for path in paths:
             resolved_path = path.resolve()
-            doc = PDFDocument(resolved_path)
-            if doc.open():
-                start_index = len(self.all_pages)
-                self.documents.append(doc)
-                self.all_pages.extend(doc.pages)
+            if resolved_path in already_loaded:
+                duplicate_files.append(resolved_path)
+                continue
+            already_loaded.add(resolved_path)
 
-                for i, page in enumerate(doc.pages):
+            pw = passwords.get(path, passwords.get(resolved_path))
+            src: Optional[fitz.Document] = None
+            try:
+                src = fitz.open(str(resolved_path))
+                if src.needs_pass:
+                    if not pw or not src.authenticate(pw):
+                        password_required.append(resolved_path)
+                        src.close()
+                        continue
+
+                all_pages_start = len(self.page_infos)      # position within all_pages (for PageInfo)
+                new_pages_start = len(self.working_doc)      # actual insertion point in working_doc
+                n = len(src)
+
+                self.working_doc.insert_pdf(src)
+                src.close()
+                src = None
+                any_inserted = True
+
+                for i in range(n):
                     self.page_infos.append(PageInfo(
-                        page_number=start_index + i,
+                        page_number=all_pages_start + i,
                         source_doc_path=resolved_path,
-                        original_page_index=i
+                        original_page_index=i,
                     ))
+                keep_numbers.extend(range(new_pages_start, new_pages_start + n))
                 loaded_count += 1
-        return loaded_count
+            except Exception as e:
+                logger.error("Failed to open %s: %s", resolved_path, e)
+                if src is not None:
+                    src.close()
+
+        if any_inserted:
+            self.all_pages = [self.working_doc[n] for n in keep_numbers]
+            self._thumb_cache.clear()
+            # Any undo snapshot taken before this call holds now-invalid Page
+            # wrapper objects (see note above) — they can't be safely restored.
+            self._undo_stack.clear()
+
+        return LoadResult(
+            loaded_count=loaded_count,
+            password_required=password_required,
+            duplicate_files=duplicate_files,
+        )
 
     def get_page_count(self) -> int:
         return len(self.all_pages)
@@ -81,6 +210,8 @@ class PDFManager:
         if len(new_order) != len(self.all_pages):
             raise ValueError("new_order length must match page count")
 
+        self.push_undo_snapshot("並び替え")
+
         self.all_pages = [self.all_pages[i] for i in new_order]
         self.page_infos = [self.page_infos[i] for i in new_order]
 
@@ -89,13 +220,55 @@ class PDFManager:
             info.page_number = idx
 
     def rotate_page(self, page_index: int, degrees: int):
-        """Rotate a single page (90, 180, 270, or -90 etc.)."""
+        """Rotate a single page (90, 180, 270, or -90 etc.).
+
+        Low-level primitive with no undo snapshot of its own — callers that
+        rotate multiple pages as one user action should use `rotate_pages`
+        instead, so the whole batch becomes a single undo step.
+        """
         if not 0 <= page_index < len(self.all_pages):
             return
         page = self.all_pages[page_index]
         pid = id(page)
         self._thumb_cache = {k: v for k, v in self._thumb_cache.items() if k[0] != pid}
         page.set_rotation((page.rotation + degrees) % 360)
+
+    def rotate_pages(self, indices: list[int], degrees: int):
+        """Rotate multiple pages by the same amount, as a single undo step."""
+        valid = [i for i in indices if 0 <= i < len(self.all_pages)]
+        if not valid:
+            return
+        self.push_undo_snapshot(f"{degrees}度回転")
+        for idx in valid:
+            self.rotate_page(idx, degrees)
+
+    def delete_pages(self, indices: list[int], label: str = "ページ削除"):
+        """Remove the given pages (by current flat index) from the working set.
+
+        This only removes them from the Python-level `all_pages`/`page_infos`
+        lists; the underlying `working_doc` keeps their content (harmlessly
+        orphaned — never rendered, exported, or saved, since every output path
+        rebuilds its content from `all_pages`). This deliberately avoids
+        physically deleting pages from `working_doc`, which would make PyMuPDF
+        renumber and could invalidate other pages' already-fetched `fitz.Page`
+        objects.
+        """
+        if not indices:
+            return
+        indices_set = {i for i in indices if 0 <= i < len(self.all_pages)}
+        if not indices_set:
+            return
+
+        self.push_undo_snapshot(label)
+
+        removed_pids = {id(self.all_pages[i]) for i in indices_set}
+        self._thumb_cache = {k: v for k, v in self._thumb_cache.items() if k[0] not in removed_pids}
+
+        self.all_pages = [p for i, p in enumerate(self.all_pages) if i not in indices_set]
+        self.page_infos = [info for i, info in enumerate(self.page_infos) if i not in indices_set]
+
+        for idx, info in enumerate(self.page_infos):
+            info.page_number = idx
 
     def get_thumbnail_pixmap(self, page_index: int, max_size: int = 200) -> Optional[fitz.Pixmap]:
         """Generate a thumbnail pixmap for the given page (cached)."""
@@ -124,130 +297,14 @@ class PDFManager:
         return page.get_pixmap(matrix=mat)
 
     def close_all(self):
-        for doc in self.documents:
-            doc.close()
-        self.documents.clear()
+        self.working_doc.close()
+        self.working_doc = fitz.open()
         self.all_pages.clear()
         self.page_infos.clear()
         self._thumb_cache.clear()
-
-    # =====================
-    # Header & Footer
-    # =====================
-
-    # "helv" (Helvetica) has no glyphs for Japanese text: unsupported characters
-    # render as tiny placeholder dots, making full-width text look broken while
-    # half-width text looks fine. "japan" is a PyMuPDF built-in CJK font (no
-    # external font file needed) that covers both half-width and full-width
-    # characters at consistent sizing, so it's used for all header/footer text.
-    _HF_FONT = "japan"
-
-    @staticmethod
-    def _text_x(text: str, page_width: float, align: str, font_size: int, margin: float) -> float:
-        """Return the x coordinate for text given alignment."""
-        tw = fitz.get_text_length(text, fontname=PDFManager._HF_FONT, fontsize=font_size)
-        if align == "left":
-            return margin
-        if align == "right":
-            return page_width - tw - margin
-        return (page_width - tw) / 2  # center
-
-    def add_header_footer(
-        self,
-        header_enabled: bool = False,
-        header_text: str = "",
-        header_align: str = "center",
-        footer_page_num: bool = False,
-        footer_page_num_align: str = "center",
-        footer_text_enabled: bool = False,
-        footer_text: str = "",
-        footer_text_align: str = "center",
-        font_size: int = 10,
-        margin: int = 25,
-    ):
-        """Insert header and/or footer text directly onto each page.
-        Footer page-number and footer text are rendered on separate lines to avoid overlap.
-
-        Always starts from a clean (no previously-inserted header/footer) state, so calling
-        this repeatedly with different settings never stacks old text under new text.
-        """
-        total = self.get_page_count()
-        if total == 0:
-            return
-
-        # Wipe any previously-inserted header/footer text before applying the new settings,
-        # so re-applying with different text/alignment never draws on top of the old text.
-        self._reload_pages_from_disk()
-
-        h_text = header_text.strip() if header_enabled else ""
-        f_num = footer_page_num
-        f_text = footer_text.strip() if footer_text_enabled else ""
-
-        if not h_text and not f_num and not f_text:
-            return
-
-        self._thumb_cache.clear()
-
-        line_gap = font_size + 3  # vertical distance between footer lines
-
-        for i, page in enumerate(self.all_pages):
-            rect = page.rect
-
-            if h_text:
-                x = self._text_x(h_text, rect.width, header_align, font_size, margin)
-                page.insert_text((x, margin + font_size), h_text,
-                                 fontname=self._HF_FONT, fontsize=font_size, color=(0.15, 0.15, 0.15))
-
-            # Build footer lines bottom-up: page-number is always the lowest line
-            # so it never overlaps with the custom text line above it.
-            footer_lines = []  # each item: (text, align)
-            if f_num:
-                footer_lines.append((f"- {i + 1} / {total} -", footer_page_num_align))
-            if f_text:
-                footer_lines.append((f_text, footer_text_align))
-
-            for row, (line_text, align) in enumerate(footer_lines):
-                x = self._text_x(line_text, rect.width, align, font_size, margin)
-                y = rect.height - margin - row * line_gap
-                page.insert_text((x, y), line_text,
-                                 fontname=self._HF_FONT, fontsize=font_size, color=(0.15, 0.15, 0.15))
-
-    def remove_header_footer(self):
-        """Reload all pages from disk to erase inserted text, then re-apply stored rotations."""
-        self._reload_pages_from_disk()
-
-    def _reload_pages_from_disk(self):
-        """Reload all pages from their source documents, discarding any inserted
-        header/footer text, but re-applying rotations the user had set.
-
-        Shared by `remove_header_footer` (explicit removal) and `add_header_footer`
-        (implicit reset before re-applying, so repeated calls never stack text).
-        """
-        if not self.documents:
-            return
-
-        # Save accumulated rotations before wiping page objects
-        rotations = [page.rotation for page in self.all_pages]
-
-        # Re-open each source document from disk (fresh, no inserted text)
-        for doc in self.documents:
-            doc.close()
-            doc.open()
-
-        # Rebuild all_pages in the current page_infos order
-        doc_by_path = {doc.path: doc for doc in self.documents}
-        self.all_pages = []
-        for info in self.page_infos:
-            src = doc_by_path.get(info.source_doc_path)
-            if src and 0 <= info.original_page_index < len(src.pages):
-                self.all_pages.append(src.pages[info.original_page_index])
-
-        # Re-apply rotations that the user had set
-        for page, rot in zip(self.all_pages, rotations):
-            if rot != page.rotation:
-                page.set_rotation(rot)
-
-        self._thumb_cache.clear()
+        # Any undo snapshot taken before this point references fitz.Page objects
+        # whose parent document is now closed — they'd be unusable if restored.
+        self._undo_stack.clear()
 
     # =====================
     # Save / Export
@@ -255,7 +312,7 @@ class PDFManager:
     def save_as(self, output_path: Path) -> bool:
         """
         Save the current state (all pages with modifications) as a new PDF.
-        This effectively merges + applies all edits (rotation, header/footer, reordering).
+        This effectively merges + applies all edits (rotation, reordering).
         """
         if not self.all_pages:
             return False
@@ -265,7 +322,7 @@ class PDFManager:
             new_doc = fitz.open()
 
             for page in self.all_pages:
-                # Insert the page (with its current rotation and any text we added)
+                # Insert the page (with its current rotation)
                 new_doc.insert_pdf(page.parent, from_page=page.number, to_page=page.number)
 
             new_doc.save(str(output_path))
@@ -274,6 +331,29 @@ class PDFManager:
         except Exception as e:
             logger.error("Save failed: %s", e)
             return False
+
+    def can_overwrite_source(self) -> bool:
+        """Whether "overwrite" saving is unambiguous: every currently-loaded
+        page originally came from exactly one source file.
+
+        With multiple source files loaded, there's no single "original file" to
+        overwrite (the combined output isn't any one of them), so overwrite is
+        only offered for the single-file case.
+        """
+        sources = {info.source_doc_path for info in self.page_infos}
+        return len(sources) == 1
+
+    def overwrite_source(self) -> bool:
+        """Overwrite the single source file all currently-loaded pages came from.
+
+        Safe by construction: no source file is ever held open past `load_pdfs`
+        (see class docstring), so this is just a plain `save_as` to that path —
+        no temp-file/lock workaround needed.
+        """
+        if not self.can_overwrite_source():
+            return False
+        target_path = self.page_infos[0].source_doc_path
+        return self.save_as(target_path)
 
     def save_selected_pages(self, indices: list[int], output_path: Path) -> bool:
         """Save only the specified pages (by current flat index) to a new PDF, in the given order."""
@@ -399,41 +479,18 @@ class PDFManager:
         return "selected_pages"
 
     def close_document(self, path: Path) -> bool:
-        """Close a specific source PDF file and remove all its pages from the current view.
+        """Close a specific source PDF file: remove all pages that came from it.
 
-        Returns True if the document was found and closed.
+        Returns True if any pages from this source were found and removed.
+        This is just `delete_pages` for that source's pages, so it participates
+        in the normal undo stack like any other edit — undoing it restores the
+        pages exactly (including any in-memory rotation), since `working_doc`
+        was never closed.
         """
-        # Normalize for reliable matching (load_pdfs stores resolved paths)
         path = path.resolve()
         target_str = str(path)
-
-        doc_to_remove = None
-        for doc in self.documents:
-            if doc.path == path or str(doc.path) == target_str:
-                doc_to_remove = doc
-                break
-
-        if not doc_to_remove:
+        indices = [i for i, info in enumerate(self.page_infos) if str(info.source_doc_path) == target_str]
+        if not indices:
             return False
-
-        # Keep only pages that do not belong to this document
-        remaining_pages: list[fitz.Page] = []
-        remaining_infos: list[PageInfo] = []
-        for page, info in zip(self.all_pages, self.page_infos):
-            if str(info.source_doc_path) != target_str:
-                remaining_pages.append(page)
-                remaining_infos.append(info)
-
-        # Close the document
-        doc_to_remove.close()
-        self.documents.remove(doc_to_remove)
-
-        self.all_pages = remaining_pages
-        self.page_infos = remaining_infos
-
-        # Renumber page indices
-        for i, info in enumerate(self.page_infos):
-            info.page_number = i
-
-        self._thumb_cache.clear()
+        self.delete_pages(indices, label=f"{path.name}を閉じる")
         return True

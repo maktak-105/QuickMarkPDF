@@ -10,10 +10,10 @@ import logging
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea,
     QToolBar, QStatusBar, QFileDialog, QMessageBox, QInputDialog, QSplitter,
-    QDialog, QRubberBand, QStackedWidget
+    QDialog, QRubberBand, QStackedWidget, QLineEdit
 )
-from PySide6.QtCore import Qt, QSize, QEvent, QPoint, QRect, QTimer, QUrl, QMarginsF
-from PySide6.QtGui import QAction, QPixmap, QImage, QIcon, QPageLayout, QPageSize
+from PySide6.QtCore import Qt, QSize, QEvent, QPoint, QRect, QTimer, QUrl, QMarginsF, QSettings
+from PySide6.QtGui import QAction, QActionGroup, QPixmap, QImage, QIcon, QPageLayout, QPageSize, QKeySequence
 from pathlib import Path
 import os
 import fitz
@@ -22,7 +22,7 @@ from src.pdf_editor.ui.thumbnail_panel import ThumbnailPanel
 from src.pdf_editor.pdf.pdf_manager import PDFManager
 from src.pdf_editor.markdown.markdown_manager import MarkdownManager
 from src.pdf_editor.utils.resources import resource_path, get_icon
-from src.pdf_editor.ui.dialogs import HeaderFooterDialog, ExportDialog
+from src.pdf_editor.ui.dialogs import ExportDialog, PreferencesDialog
 from src.pdf_editor.ui.workers import Worker
 
 try:
@@ -179,7 +179,7 @@ class MainWindow(QMainWindow):
         self.current_mode = "pdf"
         self.current_markdown_document = None
         self._pending_markdown_pdf_path: Path | None = None
-        self._last_pdf_panel_width = 320
+        self._last_pdf_panel_width = None  # not yet resized by the user this session
 
         # Unsaved-changes tracking (checked on window close)
         self._is_dirty = False
@@ -188,6 +188,20 @@ class MainWindow(QMainWindow):
         # so the UI thread never blocks on large PDFs)
         self._busy = False
         self._active_worker: Worker | None = None
+        self._pending_on_success = None
+        self._pending_on_error = None
+
+        # Remembered image-export preferences (format/DPI/JPEG quality) across
+        # dialog opens in this session
+        self._export_settings: dict = {}
+
+        # Persisted across app restarts: window geometry, last-used folder,
+        # last-used thumbnail size, wheel mode (see _restore_settings / _save_settings)
+        self._qsettings = QSettings("pdf-editor", "PDFEditor")
+        self._last_used_dir: str = ""
+        # "zoom" (default): wheel = zoom, right-drag = pan.
+        # "scroll": wheel = vertical scroll, right-drag = zoom (down=in, up=out).
+        self._wheel_mode: str = "zoom"
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -207,6 +221,8 @@ class MainWindow(QMainWindow):
         self.thumbnail_panel.pdf_extract_requested.connect(self._on_pdf_extract_requested)
         self.thumbnail_panel.image_extract_requested.connect(self._on_image_extract_requested)
         self.thumbnail_panel.file_close_requested.connect(self._on_file_close_requested)
+        self.thumbnail_panel.page_delete_requested.connect(self._on_page_delete_requested)
+        self.thumbnail_panel.page_rotate_requested.connect(self._on_page_rotate_requested)
         self.splitter.addWidget(self.thumbnail_panel)
 
         # Right: Preview (with scroll + zoom support)
@@ -243,14 +259,12 @@ class MainWindow(QMainWindow):
         self.current_preview_pixmap = None
         self.current_zoom = 1.0
 
-        # Persist header/footer dialog settings across opens (session-level memory)
-        self._hf_settings: dict = {}
-
-        # For right-click drag panning
+        # For right-click drag: pans in "zoom" wheel mode, zooms in "scroll" wheel mode
         self._panning = False
         self._pan_start_pos = None
         self._h_scroll_start = 0
         self._v_scroll_start = 0
+        self._zoom_drag_start = 1.0
 
         # Install event filter to control wheel behavior (zoom only, no scroll)
         viewport = self.preview_scroll.viewport()
@@ -263,15 +277,67 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setSizes([self.thumbnail_panel._panel_width, 1000])
 
+        # Menu bar
+        self._create_menu_bar()
+
         # Top toolbar
         self._create_toolbar()
+
+        # Delete key: remove selected page(s) (not shown on the toolbar)
+        self.delete_page_action = QAction(self)
+        self.delete_page_action.setShortcut(QKeySequence(Qt.Key_Delete))
+        self.delete_page_action.triggered.connect(self.delete_selected_pages)
+        self.addAction(self.delete_page_action)
+
+        # Ctrl+Z: undo the last reorder/rotate/delete/file-close (not shown on the toolbar)
+        self.undo_action = QAction(self)
+        self.undo_action.setShortcut(QKeySequence.Undo)
+        self.undo_action.triggered.connect(self.undo_last_action)
+        self.addAction(self.undo_action)
 
         # Status bar
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("準備完了 - PDF または Markdown ファイルを開いてください")
 
-        # Connect selection (now using QTreeWidget)
+        # Connect selection
         self.thumbnail_panel.currentItemChanged.connect(self._on_thumbnail_selected)
+
+        self._restore_settings()
+
+    def _restore_settings(self):
+        """Restore window geometry, last-used folder, and thumbnail size from
+        the previous session (QSettings). No-op fields default to their
+        already-set-up initial values.
+        """
+        geometry = self._qsettings.value("window/geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+
+        self._last_used_dir = self._qsettings.value("paths/last_used_dir", "", type=str)
+
+        size = self._qsettings.value("thumbnails/size", "medium", type=str)
+        if size in ("small", "medium", "large"):
+            self.thumbnail_panel.set_thumbnail_size(size)
+            action = {"small": self.small_action, "medium": self.medium_action, "large": self.large_action}[size]
+            action.setChecked(True)
+
+        wheel_mode = self._qsettings.value("preview/wheel_mode", "zoom", type=str)
+        if wheel_mode in ("zoom", "scroll"):
+            self._wheel_mode = wheel_mode
+
+    def _save_settings(self):
+        self._qsettings.setValue("window/geometry", self.saveGeometry())
+        self._qsettings.setValue("paths/last_used_dir", self._last_used_dir)
+        self._qsettings.setValue("thumbnails/size", self.thumbnail_panel._current_size)
+        self._qsettings.setValue("preview/wheel_mode", self._wheel_mode)
+
+    def _remember_dir_from_path(self, file_path: str):
+        if file_path:
+            self._last_used_dir = str(Path(file_path).parent)
+
+    def _remember_dir_from_paths(self, file_paths: list[str]):
+        if file_paths:
+            self._remember_dir_from_path(file_paths[0])
 
     def _clear_pdf_preview(self):
         self.preview_label.clear_selection()
@@ -297,6 +363,7 @@ class MainWindow(QMainWindow):
         self._busy = busy
         enabled = not busy
         self._toolbar.setEnabled(enabled)
+        self._size_toolbar.setEnabled(enabled)
         central = self.centralWidget()
         if central is not None:
             central.setEnabled(enabled)
@@ -307,6 +374,20 @@ class MainWindow(QMainWindow):
         Only one background task may run at a time; a second call while busy is
         ignored (with a status message) rather than queued or run concurrently.
         `on_success(result)` and `on_error(message)` run back on the UI thread.
+
+        IMPORTANT: worker.finished/error are connected to `self._on_worker_finished`
+        / `self._on_worker_error` — genuine bound methods of this QObject — and
+        NOT directly to `on_success`/`on_error` (which are often plain closures
+        defined at the call site). PySide6 only auto-detects a cross-thread
+        connection (and dispatches it via the event loop, back on the main
+        thread) when the receiver is a bound QObject method with known thread
+        affinity; a signal connected directly to a plain function/lambda instead
+        runs on the EMITTING thread. Connecting straight to on_success/on_error
+        previously caused GUI code to execute on the worker thread — a Qt
+        threading violation that manifested as freezes/crashes. Once dispatch
+        has correctly reached the main thread via the bound-method connection,
+        invoking the stored on_success/on_error callable is a plain same-thread
+        call and is safe.
         """
         if self._busy:
             self.statusBar().showMessage("他の処理が完了するまでお待ちください")
@@ -315,25 +396,38 @@ class MainWindow(QMainWindow):
         self._set_ui_busy(True)
         self.statusBar().showMessage(busy_message)
 
+        self._pending_on_success = on_success
+        self._pending_on_error = on_error
+
         worker = Worker(func)
         self._active_worker = worker  # keep a reference so it isn't garbage-collected mid-run
-
-        def _handle_finished(result):
-            self._set_ui_busy(False)
-            on_success(result)
-
-        def _handle_error(message):
-            self._set_ui_busy(False)
-            logger.error("Background task failed: %s", message)
-            if on_error:
-                on_error(message)
-            else:
-                self.statusBar().showMessage("処理に失敗しました")
-                QMessageBox.warning(self, "エラー", f"処理に失敗しました。\n{message}")
-
-        worker.finished.connect(_handle_finished)
-        worker.error.connect(_handle_error)
+        worker.finished.connect(self._on_worker_finished)
+        worker.error.connect(self._on_worker_error)
         worker.run_in_thread()
+
+    def _on_worker_finished(self, result):
+        """Bound-method receiver for Worker.finished — see _run_in_background docstring
+        for why this must be a bound method rather than a closure."""
+        self._set_ui_busy(False)
+        callback = self._pending_on_success
+        self._pending_on_success = None
+        self._pending_on_error = None
+        if callback:
+            callback(result)
+
+    def _on_worker_error(self, message: str):
+        """Bound-method receiver for Worker.error — see _run_in_background docstring
+        for why this must be a bound method rather than a closure."""
+        self._set_ui_busy(False)
+        callback = self._pending_on_error
+        self._pending_on_success = None
+        self._pending_on_error = None
+        logger.error("Background task failed: %s", message)
+        if callback:
+            callback(message)
+        else:
+            self.statusBar().showMessage("処理に失敗しました")
+            QMessageBox.warning(self, "エラー", f"処理に失敗しました。\n{message}")
 
     def _set_mode(self, mode: str):
         self.current_mode = mode
@@ -342,7 +436,16 @@ class MainWindow(QMainWindow):
         self.thumbnail_panel.setVisible(is_pdf)
         total_width = max(300, sum(self.splitter.sizes()) or self.width())
         if is_pdf:
-            left_width = max(220, self._last_pdf_panel_width or self.thumbnail_panel._panel_width)
+            # The 220px floor only guards a remembered manual width (from an
+            # earlier mode switch) against being unreasonably narrow. The
+            # fallback — the panel's own exact width for the current thumbnail
+            # size — already has its own correct minimum via setMinimumWidth(),
+            # so it must NOT also be floored to 220, or "small"/"medium" (144px/
+            # 184px) would be forced wider than needed on first PDF open.
+            if self._last_pdf_panel_width:
+                left_width = max(220, self._last_pdf_panel_width)
+            else:
+                left_width = self.thumbnail_panel._panel_width
             self.splitter.setSizes([left_width, max(200, total_width - left_width)])
         else:
             current_sizes = self.splitter.sizes()
@@ -351,13 +454,11 @@ class MainWindow(QMainWindow):
             self.splitter.setSizes([0, total_width])
 
         for action in (
-            getattr(self, "merge_action", None),
             getattr(self, "split_action", None),
             getattr(self, "img_export_action", None),
             getattr(self, "rotate_right_action", None),
             getattr(self, "rotate_left_action", None),
             getattr(self, "rotate_180_action", None),
-            getattr(self, "header_action", None),
             getattr(self, "small_action", None),
             getattr(self, "medium_action", None),
             getattr(self, "large_action", None),
@@ -373,6 +474,9 @@ class MainWindow(QMainWindow):
                 "未対応",
                 "この実行環境には Qt WebEngine が見つからないため、Markdown のプレビューを表示できません。"
             )
+            return
+
+        if not self._confirm_discard_pdf_changes("保存されていない変更があります。破棄してMarkdownを開きますか？"):
             return
 
         try:
@@ -415,6 +519,18 @@ class MainWindow(QMainWindow):
             asset_urls["mathjax_js_url"] = QUrl.fromLocalFile(str(mathjax_path)).toString()
         return asset_urls
 
+    def _create_menu_bar(self):
+        menu_bar = self.menuBar()
+        settings_menu = menu_bar.addMenu("設定")
+        prefs_action = QAction("環境設定...", self)
+        prefs_action.triggered.connect(self._open_preferences)
+        settings_menu.addAction(prefs_action)
+
+    def _open_preferences(self):
+        dlg = PreferencesDialog(self, wheel_mode=self._wheel_mode)
+        if dlg.exec() == QDialog.Accepted:
+            self._wheel_mode = dlg.get_settings()["wheel_mode"]
+
     def _create_toolbar(self):
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
@@ -426,16 +542,11 @@ class MainWindow(QMainWindow):
         # Open
         self.open_action = QAction(get_icon("open"), "開く", self)
         self.open_action.setToolTip("PDF または Markdown ファイルを開く")
+        self.open_action.setShortcut(QKeySequence.Open)
         self.open_action.triggered.connect(self.open_documents)
         toolbar.addAction(self.open_action)
 
         toolbar.addSeparator()
-
-        # Merge
-        self.merge_action = QAction(get_icon("merge"), "連結", self)
-        self.merge_action.setToolTip("現在の状態を1つのPDFとして保存（連結）")
-        self.merge_action.triggered.connect(self.merge_documents)
-        toolbar.addAction(self.merge_action)
 
         # Split / PDF cut-out
         self.split_action = QAction(get_icon("split"), "PDF切り出し", self)
@@ -469,41 +580,58 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        # Header/Footer
-        self.header_action = QAction(get_icon("header_footer"), "ヘッダー/フッター", self)
-        self.header_action.setToolTip("ページ番号やタイトルを追加")
-        self.header_action.triggered.connect(self.edit_header_footer)
-        toolbar.addAction(self.header_action)
-
-        toolbar.addSeparator()
-
         # Save
         self.save_action = QAction(get_icon("save"), "保存", self)
         self.save_action.setToolTip("PDF または Markdown を PDF として保存")
+        self.save_action.setShortcut(QKeySequence.Save)
         self.save_action.triggered.connect(self.save_pdf)
         toolbar.addAction(self.save_action)
 
-        toolbar.addSeparator()
+        # "開く"/"保存" are short-label buttons that end up narrower than
+        # "画像出力" under ToolButtonTextUnderIcon sizing — pad them to match.
+        img_export_width = toolbar.widgetForAction(self.img_export_action).sizeHint().width()
+        for action in (self.open_action, self.save_action):
+            btn = toolbar.widgetForAction(action)
+            if btn is not None:
+                btn.setMinimumWidth(img_export_width)
 
-        # Thumbnail size
+        # Thumbnail size — second toolbar row (below the main actions)
+        self.addToolBarBreak(Qt.TopToolBarArea)
+        size_toolbar = QToolBar("Thumbnail Size Toolbar")
+        size_toolbar.setMovable(False)
+        size_toolbar.setIconSize(QSize(28, 28))
+        size_toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.addToolBar(Qt.TopToolBarArea, size_toolbar)
+        self._size_toolbar = size_toolbar
+
         self.size_label_action = QAction("サムネ", self)
         self.size_label_action.setEnabled(False)
-        toolbar.addAction(self.size_label_action)
+        size_toolbar.addAction(self.size_label_action)
+
+        self._thumbnail_size_group = QActionGroup(self)
+        self._thumbnail_size_group.setExclusive(True)
 
         self.small_action = QAction("小", self)
         self.small_action.setToolTip("サムネイルを小さく")
+        self.small_action.setCheckable(True)
         self.small_action.triggered.connect(lambda: self.set_thumbnail_size("small"))
-        toolbar.addAction(self.small_action)
+        self._thumbnail_size_group.addAction(self.small_action)
+        size_toolbar.addAction(self.small_action)
 
         self.medium_action = QAction("中", self)
         self.medium_action.setToolTip("標準サイズ")
+        self.medium_action.setCheckable(True)
+        self.medium_action.setChecked(True)  # matches ThumbnailPanel's default ("medium")
         self.medium_action.triggered.connect(lambda: self.set_thumbnail_size("medium"))
-        toolbar.addAction(self.medium_action)
+        self._thumbnail_size_group.addAction(self.medium_action)
+        size_toolbar.addAction(self.medium_action)
 
         self.large_action = QAction("大", self)
         self.large_action.setToolTip("サムネイルを大きく")
+        self.large_action.setCheckable(True)
         self.large_action.triggered.connect(lambda: self.set_thumbnail_size("large"))
-        toolbar.addAction(self.large_action)
+        self._thumbnail_size_group.addAction(self.large_action)
+        size_toolbar.addAction(self.large_action)
 
     def open_documents(self, files=None):
         """Open PDF files or a single Markdown document."""
@@ -511,11 +639,12 @@ class MainWindow(QMainWindow):
             files, _ = QFileDialog.getOpenFileNames(
                 self,
                 "ファイルを選択",
-                "",
+                self._last_used_dir,
                 "Supported Files (*.pdf *.md *.markdown);;PDF Files (*.pdf);;Markdown Files (*.md *.markdown);;All Files (*)"
             )
             if not files:
                 return
+            self._remember_dir_from_paths(files)
 
         paths = [Path(f) for f in files]
         markdown_paths = [path for path in paths if path.suffix.lower() in {".md", ".markdown"}]
@@ -551,50 +680,99 @@ class MainWindow(QMainWindow):
             files, _ = QFileDialog.getOpenFileNames(
                 self,
                 "PDFファイルを選択",
-                "",
+                self._last_used_dir,
                 "PDF Files (*.pdf);;All Files (*)"
             )
             if not files:
                 return
+            self._remember_dir_from_paths(files)
 
         paths = [Path(f) for f in files]
 
         def _do_load():
             return self.pdf_manager.load_pdfs(paths)
 
-        def _on_loaded(loaded):
-            if loaded > 0:
+        def _on_loaded(result):
+            extra_loaded = self._retry_password_protected_files(result.password_required)
+            total_loaded = result.loaded_count + extra_loaded
+
+            if total_loaded > 0:
+                # A fresh "open files" action isn't meaningfully undoable with the
+                # lightweight snapshot mechanism, so start a new undo history.
+                self.pdf_manager.clear_undo_history()
                 self.current_markdown_document = None
                 self._set_mode("pdf")
                 self.thumbnail_panel.refresh()
 
                 # Auto-select the first page so preview + thumbnails show immediately
-                if self.thumbnail_panel.topLevelItemCount() > 0:
-                    first_file = self.thumbnail_panel.topLevelItem(0)
-                    if first_file.childCount() > 0:
-                        first_page = first_file.child(0)
-                        self.thumbnail_panel.setCurrentItem(first_page)
-                        # Force preview update in case the signal doesn't fire
-                        self._on_thumbnail_selected(first_page)
+                if self.thumbnail_panel.count() > 0:
+                    first_page = self.thumbnail_panel.item(0)
+                    self.thumbnail_panel.setCurrentItem(first_page)
+                    # Force preview update in case the signal doesn't fire
+                    self._on_thumbnail_selected(first_page)
 
                 self.setWindowTitle("PDF Editor")
-                self.statusBar().showMessage(f"{loaded} ファイル読み込み完了（全{self.pdf_manager.get_page_count()}ページ）")
-            else:
+                self.statusBar().showMessage(f"{total_loaded} ファイル読み込み完了（全{self.pdf_manager.get_page_count()}ページ）")
+            elif not result.password_required and not result.duplicate_files:
                 self.statusBar().showMessage("PDFの読み込みに失敗しました")
                 QMessageBox.warning(self, "エラー", "PDFの読み込みに失敗しました")
 
+            if result.duplicate_files:
+                names = "\n".join(p.name for p in result.duplicate_files)
+                QMessageBox.information(
+                    self,
+                    "読み込み済みのためスキップ",
+                    f"以下のファイルは既に読み込み済みのため、スキップしました。\n{names}"
+                )
+
         self._run_in_background(_do_load, _on_loaded, busy_message="PDFを読み込んでいます...")
 
+    def _retry_password_protected_files(self, paths: list[Path]) -> int:
+        """Prompt for a password for each encrypted file and try to load it.
+
+        Runs synchronously on the UI thread (interactive dialogs), one file at a
+        time, since password entry is inherently a user-in-the-loop operation.
+        Returns the number of files successfully loaded this way.
+        """
+        if not paths:
+            return 0
+
+        loaded = 0
+        failed_names = []
+        for path in paths:
+            opened = False
+            for _attempt in range(3):
+                pw, ok = QInputDialog.getText(
+                    self,
+                    "パスワードが必要です",
+                    f"「{path.name}」はパスワードで保護されています。パスワードを入力してください。",
+                    QLineEdit.Password,
+                )
+                if not ok:
+                    break  # user cancelled — give up on this file
+                result = self.pdf_manager.load_pdfs([path], passwords={path: pw})
+                if result.loaded_count > 0:
+                    opened = True
+                    loaded += 1
+                    break
+            if not opened:
+                failed_names.append(path.name)
+
+        if failed_names:
+            QMessageBox.warning(
+                self,
+                "パスワードが必要",
+                "以下のファイルはパスワードが正しくないか、入力がキャンセルされたため開けませんでした。\n"
+                + "\n".join(failed_names),
+            )
+        return loaded
+
     def _on_thumbnail_selected(self, current_item, previous_item=None):
-        """Called when a thumbnail (page) is selected in the tree."""
+        """Called when a thumbnail (page) is selected in the list."""
         if current_item is None or not self.pdf_manager:
             return
 
-        # Only react to page items (children), not file headers (top-level)
-        if current_item.parent() is None:
-            return
-
-        row = current_item.data(0, Qt.UserRole)
+        row = current_item.data(Qt.UserRole)
         if row is None or row < 0:
             return
 
@@ -638,33 +816,45 @@ class MainWindow(QMainWindow):
     # for more reliable interception.
 
     def eventFilter(self, obj, event):
-        # Control wheel on preview viewport: only zoom, never scroll
+        # Preview viewport input, gated by self._wheel_mode (Settings > 環境設定):
+        # "zoom" (default): wheel = zoom, right-drag = pan.
+        # "scroll": wheel = vertical scroll (native), right-drag = zoom (down=in, up=out).
         if obj is self.preview_scroll.viewport():
             if event.type() == QEvent.Type.Wheel:
-                if self.current_preview_pixmap is not None:
-                    delta = event.angleDelta().y()
-                    factor = 1.15 if delta > 0 else 1 / 1.15
-                    self.current_zoom *= factor
-                    self.current_zoom = max(0.1, min(self.current_zoom, 8.0))
-                    self._update_preview_display()
+                if self._wheel_mode == "zoom":
+                    if self.current_preview_pixmap is not None:
+                        delta = event.angleDelta().y()
+                        factor = 1.15 if delta > 0 else 1 / 1.15
+                        self.current_zoom *= factor
+                        self.current_zoom = max(0.1, min(self.current_zoom, 8.0))
+                        self._update_preview_display()
                     event.accept()
                     return True  # Block default scrolling
-            # Right button drag panning
+                # "scroll" mode: fall through to native QScrollArea vertical scrolling.
+            # Right button drag: pan (zoom mode) or zoom (scroll mode)
             if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.RightButton:
                 self._panning = True
                 self._pan_start_pos = event.position().toPoint()
-                self._h_scroll_start = self.preview_scroll.horizontalScrollBar().value()
-                self._v_scroll_start = self.preview_scroll.verticalScrollBar().value()
+                if self._wheel_mode == "zoom":
+                    self._h_scroll_start = self.preview_scroll.horizontalScrollBar().value()
+                    self._v_scroll_start = self.preview_scroll.verticalScrollBar().value()
+                else:
+                    self._zoom_drag_start = self.current_zoom
                 self.preview_scroll.setCursor(Qt.ClosedHandCursor)
                 event.accept()
                 return True
             if event.type() == QEvent.Type.MouseMove and self._panning:
                 if self._pan_start_pos:
                     delta = event.position().toPoint() - self._pan_start_pos
-                    h_bar = self.preview_scroll.horizontalScrollBar()
-                    v_bar = self.preview_scroll.verticalScrollBar()
-                    h_bar.setValue(self._h_scroll_start - delta.x())
-                    v_bar.setValue(self._v_scroll_start - delta.y())
+                    if self._wheel_mode == "zoom":
+                        h_bar = self.preview_scroll.horizontalScrollBar()
+                        v_bar = self.preview_scroll.verticalScrollBar()
+                        h_bar.setValue(self._h_scroll_start - delta.x())
+                        v_bar.setValue(self._v_scroll_start - delta.y())
+                    elif self.current_preview_pixmap is not None:
+                        factor = 1.005 ** delta.y()  # drag down (+y) = zoom in
+                        self.current_zoom = max(0.1, min(self._zoom_drag_start * factor, 8.0))
+                        self._update_preview_display()
                     event.accept()
                     return True
             if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.RightButton:
@@ -676,50 +866,23 @@ class MainWindow(QMainWindow):
                     return True
         return super().eventFilter(obj, event)
 
-    def _on_page_reordered(self, new_order: list[int]):
-        """User dragged thumbnails → reorder in manager."""
-        moved_page_idx = getattr(self.thumbnail_panel, '_dragged_page_idx', -1)
-
+    def _on_page_reordered(self, new_order: list[int], moved_old_indices: list[int]):
+        """User dragged thumbnail(s) → reorder in manager."""
         self.pdf_manager.reorder_pages(new_order)
         self.thumbnail_panel.refresh()
 
-        # Try to restore selection to the page we were dragging.
-        # Only call setCurrentItem when the parent file is expanded — calling it on a
-        # collapsed parent causes Qt to auto-expand that file (and any other files it
-        # needs to scroll past), which undoes the user's collapsed state.
-        restored = False
-        if moved_page_idx >= 0:
-            for i in range(self.thumbnail_panel.topLevelItemCount()):
-                file_item = self.thumbnail_panel.topLevelItem(i)
-                for j in range(file_item.childCount()):
-                    child = file_item.child(j)
-                    if child.data(0, Qt.UserRole) == moved_page_idx:
-                        if file_item.isExpanded():
-                            self.thumbnail_panel.setCurrentItem(child)
-                            restored = True
-                        break
-                if restored:
-                    break
-
-        # Only use the "first page" fallback if we had no dragged page recorded
-        if not restored and self.thumbnail_panel.count() > 0:
+        # Restore selection to the page(s) we were dragging, at their new positions.
+        # set_selected_page_indices() already skips collapsed parents (no auto-expand).
+        new_positions = sorted(
+            new_order.index(old_idx) for old_idx in moved_old_indices if old_idx in new_order
+        )
+        if new_positions:
+            self.thumbnail_panel.set_selected_page_indices(new_positions)
+        elif self.thumbnail_panel.count() > 0:
             self.thumbnail_panel.setCurrentRow(0)
-
-        # Clear the marker
-        if hasattr(self.thumbnail_panel, '_dragged_page_idx'):
-            self.thumbnail_panel._dragged_page_idx = -1
 
         self._mark_dirty()
         self.statusBar().showMessage("ページ順を更新しました")
-
-    # === Stub actions (to be implemented) ===
-    def merge_documents(self):
-        """連結 = 現在のページ状態（並び替え・回転・ヘッダー適用済み）を1つのPDFとして保存"""
-        if self.pdf_manager.get_page_count() == 0:
-            QMessageBox.information(self, "情報", "PDFを先に開いてください")
-            return
-        self.statusBar().showMessage("連結（マージ）: 現在の状態を1つのPDFとして保存します")
-        self.save_pdf()
 
     def split_document(self):
         """Toolbar: PDF cut-out using current selection (delegates to smart default path)."""
@@ -745,6 +908,7 @@ class MainWindow(QMainWindow):
         )
         if not output_path:
             return
+        self._remember_dir_from_path(output_path)
 
         def _do_export():
             return self.pdf_manager.save_selected_pages(indices, Path(output_path))
@@ -795,10 +959,12 @@ class MainWindow(QMainWindow):
             initial_dir=default_dir,
             suggested_prefix=suggested_prefix,
             has_crop=has_crop,
+            initial=self._export_settings,
         )
         if dialog.exec() != QDialog.Accepted:
             return
         cfg = dialog.get_settings()
+        self._export_settings = {"format": cfg["format"], "dpi": cfg["dpi"], "jpeg_quality": cfg["jpeg_quality"]}
         use_indices = selected if (cfg["scope"] == "selected" and selected) else list(range(total))
         clip = self.preview_label.get_pdf_clip_rect() if cfg["area"] == "crop" else None
         out_dir = cfg["output_dir"]
@@ -855,10 +1021,12 @@ class MainWindow(QMainWindow):
             initial_dir=default_dir,
             suggested_prefix=suggested_prefix,
             has_crop=has_crop,
+            initial=self._export_settings,
         )
         if dialog.exec() != QDialog.Accepted:
             return
         cfg = dialog.get_settings()
+        self._export_settings = {"format": cfg["format"], "dpi": cfg["dpi"], "jpeg_quality": cfg["jpeg_quality"]}
         use_indices = indices if (cfg["scope"] == "selected" and indices) else list(range(total))
         clip = self.preview_label.get_pdf_clip_rect() if cfg["area"] == "crop" else None
         out_dir = cfg["output_dir"]
@@ -890,66 +1058,108 @@ class MainWindow(QMainWindow):
         self._run_in_background(_do_export, _on_exported, busy_message="画像をエクスポートしています...")
 
     def rotate_current_page(self, degrees: int):
-        """Rotate the currently selected page by the given degrees. Keep selection."""
-        current = self.thumbnail_panel.currentRow()
-        if current >= 0:
-            self.pdf_manager.rotate_page(current, degrees)
+        """Rotate the selected page(s) by the given degrees. Keep selection."""
+        indices = self._get_selected_page_indices_in_order()
+        if not indices:
+            current = self.thumbnail_panel.currentRow()
+            if current >= 0:
+                indices = [current]
+        self._rotate_pages(indices, degrees)
 
-            # Remember selection and restore after refresh
-            self.thumbnail_panel.refresh()
-            self.thumbnail_panel.setCurrentRow(current)
+    def _on_page_rotate_requested(self, indices: list[int], degrees: int):
+        """Context menu (thumbnail right-click) → 回転"""
+        if not indices:
+            indices = self.thumbnail_panel.get_selected_page_indices()
+        if not indices:
+            cur = self.thumbnail_panel.currentRow()
+            if cur >= 0:
+                indices = [cur]
+        self._rotate_pages(indices, degrees)
 
-            # Refresh preview (signal will also fire, but we force it for safety)
-            current_item = self.thumbnail_panel.currentItem()
-            if self.current_preview_pixmap is not None and current_item:
-                self._on_thumbnail_selected(current_item)
-
-            self._mark_dirty()
-            self.statusBar().showMessage(f"ページを{degrees}度回転しました")
-        else:
+    def _rotate_pages(self, indices: list[int], degrees: int):
+        if not indices:
             QMessageBox.information(self, "情報", "回転したいページを選択してください")
-
-    def edit_header_footer(self):
-        """Open header/footer settings dialog (pre-filled with last-used values)."""
-        if self.pdf_manager.get_page_count() == 0:
-            QMessageBox.information(self, "情報", "PDFを先に開いてください")
             return
 
-        dialog = HeaderFooterDialog(self, initial=self._hf_settings)
-        result = dialog.exec()
+        self.pdf_manager.rotate_pages(indices, degrees)
 
-        if result == HeaderFooterDialog._RESULT_DELETE:
-            self.pdf_manager.remove_header_footer()
-            self._refresh_after_hf()
-            self._mark_dirty()
-            self.statusBar().showMessage("ヘッダー/フッターを削除しました")
-            return
-
-        if result != QDialog.Accepted:
-            return
-
-        cfg = dialog.get_settings()
-        self._hf_settings = cfg  # remember for next open
-
-        self.pdf_manager.add_header_footer(
-            header_enabled=cfg["header_enabled"],
-            header_text=cfg["header_text"],
-            header_align=cfg["header_align"],
-            footer_page_num=cfg["footer_page_num"],
-            footer_page_num_align=cfg["footer_page_num_align"],
-            footer_text_enabled=cfg["footer_text_enabled"],
-            footer_text=cfg["footer_text"],
-            footer_text_align=cfg["footer_text_align"],
-        )
-        self._refresh_after_hf()
-        self._mark_dirty()
-        self.statusBar().showMessage("ヘッダー/フッターを適用しました")
-
-    def _refresh_after_hf(self):
+        # Remember selection and restore after refresh
         self.thumbnail_panel.refresh()
+        self.thumbnail_panel.set_selected_page_indices(indices)
+
+        # Refresh preview (signal will also fire, but we force it for safety)
         current_item = self.thumbnail_panel.currentItem()
-        if current_item:
+        if self.current_preview_pixmap is not None and current_item:
             self._on_thumbnail_selected(current_item)
+
+        self._mark_dirty()
+        if len(indices) > 1:
+            self.statusBar().showMessage(f"{len(indices)}ページを{degrees}度回転しました")
+        else:
+            self.statusBar().showMessage(f"ページを{degrees}度回転しました")
+
+    def delete_selected_pages(self):
+        """Delete the selected page(s). Bound to the Delete key."""
+        indices = self._get_selected_page_indices_in_order()
+        if not indices:
+            current = self.thumbnail_panel.currentRow()
+            if current >= 0:
+                indices = [current]
+        self._delete_pages(indices)
+
+    def _on_page_delete_requested(self, indices: list[int]):
+        """Context menu (thumbnail right-click) → ページを削除"""
+        if not indices:
+            indices = self.thumbnail_panel.get_selected_page_indices()
+        if not indices:
+            cur = self.thumbnail_panel.currentRow()
+            if cur >= 0:
+                indices = [cur]
+        self._delete_pages(indices)
+
+    def _delete_pages(self, indices: list[int]):
+        if not indices:
+            QMessageBox.information(self, "情報", "削除したいページを選択してください")
+            return
+        if self.pdf_manager.get_page_count() == 0:
+            return
+
+        self.pdf_manager.delete_pages(indices)
+        self.thumbnail_panel.refresh()
+
+        if self.pdf_manager.get_page_count() > 0:
+            # Select the page that now occupies the position of the first deleted
+            # page (or the last remaining page, if the tail was deleted).
+            next_row = min(min(indices), self.pdf_manager.get_page_count() - 1)
+            self.thumbnail_panel.setCurrentRow(next_row)
+            current_item = self.thumbnail_panel.currentItem()
+            if current_item:
+                self._on_thumbnail_selected(current_item)
+        else:
+            self._clear_pdf_preview()
+
+        self._mark_dirty()
+        count = len(indices)
+        self.statusBar().showMessage(f"{count}ページを削除しました" if count > 1 else "ページを削除しました")
+
+    def undo_last_action(self):
+        """Undo the most recent reorder/rotate/page-delete/file-close."""
+        if self.current_mode != "pdf":
+            return
+        if not self.pdf_manager.undo():
+            self.statusBar().showMessage("元に戻す操作がありません")
+            return
+
+        self.thumbnail_panel.refresh()
+        if self.thumbnail_panel.count() > 0:
+            first_page = self.thumbnail_panel.item(0)
+            self.thumbnail_panel.setCurrentItem(first_page)
+            self._on_thumbnail_selected(first_page)
+        else:
+            self._clear_pdf_preview()
+
+        self._mark_dirty()
+        self.statusBar().showMessage("元に戻しました")
 
     def _save_markdown_as_pdf(self):
         if self.current_markdown_document is None or self.markdown_view is None:
@@ -1005,7 +1215,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "エラー", f"Markdown の PDF 保存に失敗しました。\n{file_path or path}")
 
     def save_pdf(self):
-        """Export current state (after reorder/rotate/header) as a new PDF."""
+        """Export current state (after reorder/rotate) as a new PDF, or overwrite the source."""
         if self.current_mode == "markdown":
             self._save_markdown_as_pdf()
             return
@@ -1014,14 +1224,70 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "情報", "保存する内容がありません")
             return
 
+        if self.pdf_manager.can_overwrite_source():
+            choice = self._ask_overwrite_or_save_as()
+            if choice == "cancel":
+                return
+            if choice == "overwrite":
+                self._overwrite_current_pdf()
+                return
+            # choice == "save_as": fall through to the normal Save As flow below
+
+        self._save_pdf_as_new_file()
+
+    def _ask_overwrite_or_save_as(self) -> str:
+        """Ask whether to overwrite the currently open source file or save as a new
+        file. Returns "overwrite", "save_as", or "cancel".
+        """
+        box = QMessageBox(self)
+        box.setWindowTitle("保存方法の選択")
+        box.setText("開いているファイルを上書き保存しますか？\nそれとも新しいファイルとして保存しますか？")
+        overwrite_btn = box.addButton("上書き保存", QMessageBox.AcceptRole)
+        save_as_btn = box.addButton("新規で保存", QMessageBox.ActionRole)
+        box.addButton("キャンセル", QMessageBox.RejectRole)
+        box.setDefaultButton(save_as_btn)
+        box.exec()
+
+        clicked = box.clickedButton()
+        if clicked is overwrite_btn:
+            return "overwrite"
+        if clicked is save_as_btn:
+            return "save_as"
+        return "cancel"
+
+    def _overwrite_current_pdf(self):
+        def _do_overwrite():
+            return self.pdf_manager.overwrite_source()
+
+        def _on_overwritten(success):
+            if success:
+                self.thumbnail_panel.refresh()
+                if self.thumbnail_panel.count() > 0:
+                    first_page = self.thumbnail_panel.item(0)
+                    self.thumbnail_panel.setCurrentItem(first_page)
+                    self._on_thumbnail_selected(first_page)
+                self.statusBar().showMessage("上書き保存しました")
+                self._mark_clean()
+            else:
+                self.statusBar().showMessage("上書き保存に失敗しました")
+                QMessageBox.warning(
+                    self, "エラー",
+                    "上書き保存に失敗しました。\nファイルが他のアプリで開かれていないか確認してください。"
+                )
+
+        self._run_in_background(_do_overwrite, _on_overwritten, busy_message="上書き保存しています...")
+
+    def _save_pdf_as_new_file(self):
+        default_path = str(Path(self._last_used_dir) / "edited.pdf") if self._last_used_dir else "edited.pdf"
         output_path, _ = QFileDialog.getSaveFileName(
             self,
             "名前を付けて保存",
-            "edited.pdf",
+            default_path,
             "PDF Files (*.pdf)"
         )
         if not output_path:
             return
+        self._remember_dir_from_path(output_path)
 
         def _do_save():
             return self.pdf_manager.save_as(Path(output_path))
@@ -1031,6 +1297,9 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"保存しました: {output_path}")
                 QMessageBox.information(self, "完了", f"PDFを保存しました。\n{output_path}")
                 self._mark_clean()
+            else:
+                self.statusBar().showMessage("PDFの保存に失敗しました")
+                QMessageBox.warning(self, "エラー", f"PDFの保存に失敗しました。\n{output_path}")
 
         self._run_in_background(_do_save, _on_saved, busy_message="PDFを保存しています...")
 
@@ -1054,13 +1323,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"サムネイルサイズを「{size_name}」に変更しました")
 
     def _get_selected_page_indices_in_order(self):
-        """Return list of page indices currently selected in the tree, in visual order (delegates to panel)."""
+        """Return list of page indices currently selected in the list, in visual order (delegates to panel)."""
         return self.thumbnail_panel.get_selected_page_indices()
 
     def _on_file_close_requested(self, path: Path):
-        """Close an entire PDF file that was opened (right-click on file header in tree)."""
+        """Close an entire PDF file that was opened (right-click on any of its pages)."""
         if self.pdf_manager.close_document(path):
-            # Block tree signals during refresh + selection to prevent any stale
+            # Block panel signals during refresh + selection to prevent any stale
             # currentItemChanged from re-setting an old preview pixmap.
             self.thumbnail_panel.blockSignals(True)
             try:
@@ -1076,7 +1345,7 @@ class MainWindow(QMainWindow):
 
                 if self.pdf_manager.get_page_count() > 0:
                     # Directly load preview for the first remaining page from the manager.
-                    # This bypasses tree selection entirely to guarantee the old closed page's image is replaced.
+                    # This bypasses list selection entirely to guarantee the old closed page's image is replaced.
                     pix = self.pdf_manager.get_preview_pixmap(0, zoom=1.5)
                     if pix is not None:
                         img_data = pix.tobytes("png")
@@ -1089,13 +1358,10 @@ class MainWindow(QMainWindow):
                         self.preview_label.setText("PDFページをここに表示します")
                         self.current_preview_pixmap = None
 
-                # Now set the tree selection (signals are blocked so it won't trigger preview update)
-                if self.thumbnail_panel.topLevelItemCount() > 0:
-                    first_file = self.thumbnail_panel.topLevelItem(0)
-                    first_file.setExpanded(True)
-                    if first_file.childCount() > 0:
-                        first_page_item = first_file.child(0)
-                        self.thumbnail_panel.setCurrentItem(first_page_item)
+                # Now set the selection (signals are blocked so it won't trigger preview update)
+                if self.thumbnail_panel.count() > 0:
+                    first_page_item = self.thumbnail_panel.item(0)
+                    self.thumbnail_panel.setCurrentItem(first_page_item)
 
             finally:
                 self.thumbnail_panel.blockSignals(False)
@@ -1105,17 +1371,28 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "エラー", f"{path.name} のクローズに失敗しました")
 
+    def _confirm_discard_pdf_changes(self, question: str) -> bool:
+        """If there are unsaved PDF edits, ask the user before discarding them.
+
+        Returns True if it's OK to proceed (no unsaved changes, or the user
+        confirmed discarding them). Shared by closeEvent and opening a Markdown
+        document (which also discards the current PDF session state).
+        """
+        if not self._is_dirty:
+            return True
+        reply = QMessageBox.question(
+            self,
+            "未保存の変更",
+            question,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return reply == QMessageBox.Yes
+
     def closeEvent(self, event):
         """Confirm before closing if there are unsaved PDF edits."""
-        if self._is_dirty:
-            reply = QMessageBox.question(
-                self,
-                "未保存の変更",
-                "保存されていない変更があります。終了しますか？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply != QMessageBox.Yes:
-                event.ignore()
-                return
+        if not self._confirm_discard_pdf_changes("保存されていない変更があります。終了しますか？"):
+            event.ignore()
+            return
+        self._save_settings()
         event.accept()

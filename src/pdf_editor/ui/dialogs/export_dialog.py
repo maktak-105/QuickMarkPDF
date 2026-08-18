@@ -24,6 +24,7 @@ class ExportDialog(QDialog):
         initial_dir: str = "",
         suggested_prefix: str = "page",
         has_crop: bool = False,
+        initial: dict | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("画像としてエクスポート")
@@ -31,6 +32,10 @@ class ExportDialog(QDialog):
 
         self._total = max(0, total_pages)
         self._selected = max(0, selected_pages)
+        # Remembered user preferences (format/DPI/JPEG quality) from the last
+        # export in this session. Scope/area/output dir/prefix stay contextual
+        # (recomputed per call) and are intentionally not part of this.
+        s = initial or {}
 
         root = QVBoxLayout(self)
 
@@ -73,6 +78,8 @@ class ExportDialog(QDialog):
         self.fmt_combo = QComboBox()
         self.fmt_combo.addItem("PNG（可逆・高品質）", "png")
         self.fmt_combo.addItem("JPEG（圧縮）", "jpg")
+        if s.get("format") == "jpg":
+            self.fmt_combo.setCurrentIndex(1)
         self.fmt_combo.currentIndexChanged.connect(self._on_format_changed)
         fmt_row.addWidget(self.fmt_combo)
         fmt_row.addStretch()
@@ -86,14 +93,20 @@ class ExportDialog(QDialog):
         self.dpi_combo.addItem("150（標準）", 150)
         self.dpi_combo.addItem("300（印刷品質）", 300)
         self.dpi_combo.addItem("カスタム...", 0)
+        saved_dpi = s.get("dpi")
+        standard_dpi_rows = {72: 0, 150: 1, 300: 2}
+        if saved_dpi in standard_dpi_rows:
+            self.dpi_combo.setCurrentIndex(standard_dpi_rows[saved_dpi])
+        elif saved_dpi:
+            self.dpi_combo.setCurrentIndex(3)  # "カスタム..."
         self.dpi_combo.currentIndexChanged.connect(self._on_dpi_changed)
         dpi_row.addWidget(self.dpi_combo)
 
         self.dpi_spin = QSpinBox()
         self.dpi_spin.setRange(50, 1200)
-        self.dpi_spin.setValue(150)
+        self.dpi_spin.setValue(saved_dpi if saved_dpi else 150)
         self.dpi_spin.setSuffix(" DPI")
-        self.dpi_spin.setEnabled(False)
+        self.dpi_spin.setEnabled(saved_dpi not in standard_dpi_rows and bool(saved_dpi))
         dpi_row.addWidget(self.dpi_spin)
         dpi_row.addStretch()
         il.addLayout(dpi_row)
@@ -103,12 +116,12 @@ class ExportDialog(QDialog):
         self.quality_row.addWidget(QLabel("JPEG画質:"))
         self.quality_slider = QSlider(Qt.Horizontal)
         self.quality_slider.setRange(60, 100)
-        self.quality_slider.setValue(90)
+        self.quality_slider.setValue(s.get("jpeg_quality", 90))
         self.quality_slider.setTickInterval(10)
         self.quality_slider.setTickPosition(QSlider.TicksBelow)
         self.quality_slider.valueChanged.connect(self._on_quality_changed)
         self.quality_row.addWidget(self.quality_slider)
-        self.quality_label = QLabel("90")
+        self.quality_label = QLabel(str(self.quality_slider.value()))
         self.quality_label.setMinimumWidth(30)
         self.quality_row.addWidget(self.quality_label)
         il.addLayout(self.quality_row)

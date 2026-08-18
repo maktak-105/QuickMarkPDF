@@ -1,0 +1,227 @@
+704 INFO: PyInstaller: 6.20.0, contrib hooks: 2026.5
+705 INFO: Python: 3.13.12
+782 INFO: Platform: Windows-11-10.0.26100-SP0
+783 INFO: Python environment: C:\Users\0120025-Z100\source\project\pdf-editor\.venv
+pdf_editor.spec:7: SyntaxWarning: invalid escape sequence '\S'
+  .venv\Scripts\pyinstaller.exe pdf_editor.spec
+1043 WARNING: Failed to collect submodules for 'PySide6.scripts.deploy_lib' because importing 'PySide6.scripts.deploy_lib' raised: ModuleNotFoundError: No module named 'project_lib'
+14253 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Scripts\\pyinstaller.exe',
+ 'C:\\Users\\0120025-Z100\\AppData\\Local\\Programs\\Python\\Python313\\python313.zip',
+ 'C:\\Users\\0120025-Z100\\AppData\\Local\\Programs\\Python\\Python313\\DLLs',
+ 'C:\\Users\\0120025-Z100\\AppData\\Local\\Programs\\Python\\Python313\\Lib',
+ 'C:\\Users\\0120025-Z100\\AppData\\Local\\Programs\\Python\\Python313',
+ 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv',
+ 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages',
+ 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor']
+15500 INFO: Appending 'binaries' from .spec
+15721 INFO: Appending 'datas' from .spec
+17735 INFO: checking Analysis
+17816 INFO: Building because excludes changed
+17816 INFO: Looking for Python shared library...
+17816 INFO: Using Python shared library: C:\Users\0120025-Z100\AppData\Local\Programs\Python\Python313\python313.dll
+17816 INFO: Running Analysis Analysis-00.toc
+17816 INFO: Target bytecode optimization level: 0
+17817 INFO: Initializing module dependency graph...
+17825 INFO: Initializing module graph hook caches...
+17921 INFO: Analyzing modules for base_library.zip ...
+22923 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+26157 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+27791 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+30056 INFO: Caching module dependency graph...
+30103 INFO: Analyzing C:\Users\0120025-Z100\source\project\pdf-editor\main.py
+30116 INFO: Processing standard module hook 'hook-PySide6.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+31258 INFO: Processing standard module hook 'hook-shiboken6.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+31423 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+36246 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+41646 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+47138 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+91281 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+91412 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+93062 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+93105 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+93314 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+93688 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+94454 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+94466 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+94554 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+94961 INFO: Processing standard module hook 'hook-markdown.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+97326 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+97330 INFO: SetuptoolsInfo: initializing cached setuptools info...
+99829 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+99839 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+99868 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+99914 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+99915 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+99932 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+99933 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+100098 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+100200 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+100456 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+100459 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+100715 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+100716 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+101217 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+101218 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+101916 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+101918 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+102003 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+102102 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+102103 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+102463 INFO: Processing standard module hook 'hook-PySide6.QtWebEngineCore.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+105463 INFO: Processing standard module hook 'hook-PySide6.QtWebChannel.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+106974 INFO: Processing standard module hook 'hook-PySide6.QtWebEngineWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+108610 INFO: Processing standard module hook 'hook-PySide6.QtPrintSupport.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+110140 INFO: Analyzing hidden import 'PySide6.Qt3DAnimation'
+110169 INFO: Processing standard module hook 'hook-PySide6.Qt3DAnimation.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+111632 INFO: Processing standard module hook 'hook-PySide6.Qt3DCore.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+113810 INFO: Processing standard module hook 'hook-PySide6.Qt3DRender.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+121463 INFO: Processing standard module hook 'hook-PySide6.QtOpenGL.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+127465 INFO: Analyzing hidden import 'PySide6.Qt3DExtras'
+127562 INFO: Processing standard module hook 'hook-PySide6.Qt3DExtras.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+130469 INFO: Analyzing hidden import 'PySide6.Qt3DInput'
+130508 INFO: Processing standard module hook 'hook-PySide6.Qt3DInput.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+132813 INFO: Analyzing hidden import 'PySide6.Qt3DLogic'
+132819 INFO: Processing standard module hook 'hook-PySide6.Qt3DLogic.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+134379 INFO: Analyzing hidden import 'PySide6.QtAsyncio'
+135202 INFO: Analyzing hidden import 'PySide6.QtAxContainer'
+135217 INFO: Processing standard module hook 'hook-PySide6.QtAxContainer.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+137430 INFO: Analyzing hidden import 'PySide6.QtBluetooth'
+137529 INFO: Processing standard module hook 'hook-PySide6.QtBluetooth.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+140070 INFO: Analyzing hidden import 'PySide6.QtCharts'
+140212 INFO: Processing standard module hook 'hook-PySide6.QtCharts.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+142466 INFO: Analyzing hidden import 'PySide6.QtConcurrent'
+142475 INFO: Processing standard module hook 'hook-PySide6.QtConcurrent.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+143989 INFO: Analyzing hidden import 'PySide6.QtDBus'
+144038 INFO: Processing standard module hook 'hook-PySide6.QtDBus.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+145772 INFO: Analyzing hidden import 'PySide6.QtDataVisualization'
+145897 INFO: Processing standard module hook 'hook-PySide6.QtDataVisualization.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+148993 INFO: Analyzing hidden import 'PySide6.QtDesigner'
+149046 INFO: Processing standard module hook 'hook-PySide6.QtDesigner.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+153990 INFO: Analyzing hidden import 'PySide6.QtExampleIcons'
+153991 INFO: Analyzing hidden import 'PySide6.QtGraphs'
+154189 INFO: Processing standard module hook 'hook-PySide6.QtGraphs.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+157210 INFO: Processing standard module hook 'hook-PySide6.QtQml.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+206929 INFO: Analyzing hidden import 'PySide6.QtGraphsWidgets'
+206949 INFO: Processing standard module hook 'hook-PySide6.QtGraphsWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+208490 INFO: Processing standard module hook 'hook-PySide6.QtQuick.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+212214 INFO: Processing standard module hook 'hook-PySide6.QtQuickWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+213724 INFO: Analyzing hidden import 'PySide6.QtHelp'
+213751 INFO: Processing standard module hook 'hook-PySide6.QtHelp.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+215356 INFO: Analyzing hidden import 'PySide6.QtHttpServer'
+215373 INFO: Processing standard module hook 'hook-PySide6.QtHttpServer.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+217024 INFO: Analyzing hidden import 'PySide6.QtLocation'
+217113 INFO: Processing standard module hook 'hook-PySide6.QtLocation.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+219906 INFO: Processing standard module hook 'hook-PySide6.QtPositioning.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+223110 INFO: Analyzing hidden import 'PySide6.QtMultimedia'
+223208 INFO: Processing standard module hook 'hook-PySide6.QtMultimedia.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+226838 INFO: Analyzing hidden import 'PySide6.QtMultimediaWidgets'
+226897 INFO: Processing standard module hook 'hook-PySide6.QtMultimediaWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+229162 INFO: Analyzing hidden import 'PySide6.QtNetworkAuth'
+229202 INFO: Processing standard module hook 'hook-PySide6.QtNetworkAuth.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+232447 INFO: Analyzing hidden import 'PySide6.QtNfc'
+234414 INFO: Processing standard module hook 'hook-PySide6.QtNfc.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+249854 INFO: Analyzing hidden import 'PySide6.QtOpenGLWidgets'
+249867 INFO: Processing standard module hook 'hook-PySide6.QtOpenGLWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+251998 INFO: Analyzing hidden import 'PySide6.QtPdf'
+252033 INFO: Processing standard module hook 'hook-PySide6.QtPdf.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+255283 INFO: Analyzing hidden import 'PySide6.QtPdfWidgets'
+255296 INFO: Processing standard module hook 'hook-PySide6.QtPdfWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+259147 INFO: Analyzing hidden import 'PySide6.QtQuick3D'
+259164 INFO: Processing standard module hook 'hook-PySide6.QtQuick3D.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+262606 INFO: Analyzing hidden import 'PySide6.QtQuickControls2'
+262618 INFO: Processing standard module hook 'hook-PySide6.QtQuickControls2.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+265205 INFO: Analyzing hidden import 'PySide6.QtQuickTest'
+265210 INFO: Analyzing hidden import 'PySide6.QtRemoteObjects'
+265254 INFO: Processing standard module hook 'hook-PySide6.QtRemoteObjects.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+267713 INFO: Analyzing hidden import 'PySide6.QtScxml'
+267743 INFO: Processing standard module hook 'hook-PySide6.QtScxml.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+270320 INFO: Analyzing hidden import 'PySide6.QtSensors'
+270363 INFO: Processing standard module hook 'hook-PySide6.QtSensors.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+273815 INFO: Analyzing hidden import 'PySide6.QtSerialBus'
+273903 INFO: Processing standard module hook 'hook-PySide6.QtSerialBus.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+277360 INFO: Analyzing hidden import 'PySide6.QtSerialPort'
+277372 INFO: Processing standard module hook 'hook-PySide6.QtSerialPort.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+280173 INFO: Analyzing hidden import 'PySide6.QtSpatialAudio'
+280197 INFO: Processing standard module hook 'hook-PySide6.QtSpatialAudio.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+283637 INFO: Analyzing hidden import 'PySide6.QtSql'
+283727 INFO: Processing standard module hook 'hook-PySide6.QtSql.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+287673 INFO: Analyzing hidden import 'PySide6.QtStateMachine'
+287699 INFO: Processing standard module hook 'hook-PySide6.QtStateMachine.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+289968 INFO: Analyzing hidden import 'PySide6.QtSvg'
+289981 INFO: Processing standard module hook 'hook-PySide6.QtSvg.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+291887 INFO: Analyzing hidden import 'PySide6.QtSvgWidgets'
+291894 INFO: Processing standard module hook 'hook-PySide6.QtSvgWidgets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+293612 INFO: Analyzing hidden import 'PySide6.QtTest'
+293632 INFO: Processing standard module hook 'hook-PySide6.QtTest.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+295423 INFO: Analyzing hidden import 'PySide6.QtTextToSpeech'
+295440 INFO: Processing standard module hook 'hook-PySide6.QtTextToSpeech.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+297707 INFO: Analyzing hidden import 'PySide6.QtUiTools'
+297717 INFO: Processing standard module hook 'hook-PySide6.QtUiTools.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+299675 INFO: Analyzing hidden import 'PySide6.QtWebEngineQuick'
+299687 INFO: Processing standard module hook 'hook-PySide6.QtWebEngineQuick.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+302127 INFO: Analyzing hidden import 'PySide6.QtWebSockets'
+302143 INFO: Processing standard module hook 'hook-PySide6.QtWebSockets.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+303961 INFO: Analyzing hidden import 'PySide6.QtWebView'
+303965 INFO: Analyzing hidden import 'PySide6.QtXml'
+303990 INFO: Processing standard module hook 'hook-PySide6.QtXml.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+306083 INFO: Analyzing hidden import 'PySide6._config'
+306087 INFO: Analyzing hidden import 'PySide6._git_pyside_version'
+306090 INFO: Analyzing hidden import 'PySide6.scripts'
+306093 INFO: Analyzing hidden import 'PySide6.scripts.deploy'
+306109 INFO: Analyzing hidden import 'PySide6.scripts.metaobjectdump'
+306132 INFO: Analyzing hidden import 'PySide6.scripts.project'
+306159 INFO: Analyzing hidden import 'PySide6.scripts.project_lib'
+306207 INFO: Analyzing hidden import 'PySide6.scripts.pyside_tool'
+306220 INFO: Analyzing hidden import 'PySide6.scripts.qml'
+306236 INFO: Analyzing hidden import 'PySide6.scripts.qtpy2cpp'
+306253 INFO: Analyzing hidden import 'PySide6.support'
+306257 INFO: Analyzing hidden import 'PySide6.support.deprecated'
+306264 INFO: Analyzing hidden import 'PySide6.support.generate_pyi'
+306281 INFO: Analyzing hidden import 'pymupdf.__main__'
+306373 INFO: Processing module hooks (post-graph stage)...
+307332 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+310212 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+311025 INFO: Performing binary vs. data reclassification (3557 entries)
+317046 INFO: Looking for ctypes DLLs
+317122 INFO: Analyzing run-time hooks ...
+317126 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+317131 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+317135 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+317144 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+317149 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+317155 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+317162 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+317274 INFO: Creating base_library.zip...
+317367 INFO: Looking for dynamic libraries
+322514 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\shiboken6']
+322514 INFO: Extra DLL search directories (PATH): ['C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PySide6']
+363945 WARNING: Library not found: could not resolve 'MIMAPI64.dll', dependency of 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PySide6\\plugins\\sqldrivers\\qsqlmimer.dll'.
+363952 WARNING: Library not found: could not resolve 'LIBPQ.dll', dependency of 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PySide6\\plugins\\sqldrivers\\qsqlpsql.dll'.
+364128 WARNING: Library not found: could not resolve 'Qt63DQuickScene3D.dll', dependency of 'C:\\Users\\0120025-Z100\\source\\project\\pdf-editor\\.venv\\Lib\\site-packages\\PySide6\\qml\\QtQuick\\Scene3D\\qtquickscene3dplugin.dll'.
+366665 INFO: Warnings written to C:\Users\0120025-Z100\source\project\pdf-editor\build\pdf_editor\warn-pdf_editor.txt
+366780 INFO: Graph cross-reference written to C:\Users\0120025-Z100\source\project\pdf-editor\build\pdf_editor\xref-pdf_editor.html
+367199 INFO: checking PYZ
+367756 INFO: Building because C:\Users\0120025-Z100\source\project\pdf-editor\src\pdf_editor\pdf\pdf_manager.py changed
+367756 INFO: Building PYZ (ZlibArchive) C:\Users\0120025-Z100\source\project\pdf-editor\build\pdf_editor\PYZ-00.pyz
+368888 INFO: Building PYZ (ZlibArchive) C:\Users\0120025-Z100\source\project\pdf-editor\build\pdf_editor\PYZ-00.pyz completed successfully.
+368934 INFO: checking PKG
+368938 INFO: Building because C:\Users\0120025-Z100\source\project\pdf-editor\build\pdf_editor\PYZ-00.pyz changed
+368939 INFO: Building PKG (CArchive) PDF_Editor.pkg
+369005 INFO: Building PKG (CArchive) PDF_Editor.pkg completed successfully.
+369008 INFO: Bootloader C:\Users\0120025-Z100\source\project\pdf-editor\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+369008 INFO: checking EXE
+369014 INFO: Rebuilding EXE-00.toc because pkg is more recent
+369014 INFO: Building EXE from EXE-00.toc
+369018 INFO: Copying bootloader EXE to C:\Users\0120025-Z100\source\project\pdf-editor\build\pdf_editor\PDF_Editor.exe
+369094 INFO: Copying icon to EXE
+369168 INFO: Copying 0 resources to EXE
+369169 INFO: Embedding manifest in EXE
+369234 INFO: Appending PKG archive to EXE
+369291 INFO: Fixing EXE headers
+369436 INFO: Building EXE from EXE-00.toc completed successfully.
+369484 INFO: checking COLLECT
+369534 INFO: Removing dir C:\Users\0120025-Z100\source\project\pdf-editor\dist\PDF_Editor
+376626 INFO: Building COLLECT COLLECT-00.toc
+420579 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+420785 INFO: Build complete! The results are available in: C:\Users\0120025-Z100\source\project\pdf-editor\dist

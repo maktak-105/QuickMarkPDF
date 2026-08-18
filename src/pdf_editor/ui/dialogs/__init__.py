@@ -1,5 +1,5 @@
 """Dialogs for PDF Editor."""
-from .header_footer_dialog import HeaderFooterDialog
 from .export_dialog import ExportDialog
+from .preferences_dialog import PreferencesDialog
 
-__all__ = ["HeaderFooterDialog", "ExportDialog"]
+__all__ = ["ExportDialog", "PreferencesDialog"]

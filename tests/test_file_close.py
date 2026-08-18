@@ -37,8 +37,8 @@ def test_close_document_removes_pages():
         create_temp_pdf(pdf_b, 2, "FileB")
 
         mgr = PDFManager()
-        loaded = mgr.load_pdfs([pdf_a, pdf_b])
-        assert loaded == 2
+        result = mgr.load_pdfs([pdf_a, pdf_b])
+        assert result.loaded_count == 2
         assert mgr.get_page_count() == 5
 
         # Simulate closing file_a (resolve to match what load_pdfs stores)

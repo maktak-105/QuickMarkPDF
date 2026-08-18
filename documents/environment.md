@@ -58,7 +58,7 @@ pdf-editor/
 │       ├── pdf/
 │       │   └── pdf_manager.py     # PDF読み込み・編集・保存・キャッシュ
 │       └── ui/
-│           ├── main_window.py     # メインウィンドウ・ツールバー・プレビュー・ヘッダーフッターダイアログ
+│           ├── main_window.py     # メインウィンドウ・ツールバー・プレビュー
 │           └── thumbnail_panel.py # サムネイルツリー（QTreeWidget）
 └── tests/
 ```
@@ -74,7 +74,6 @@ pdf-editor/
   - サムネキャンバスは `(icon_w × 実際の画像高さ + TEXT_H)` の可変高さ。横長ページも余白なし
   - `Qt.UserRole` = ページインデックス、`Qt.UserRole + 1` = キャンバス高さ（デリゲートが参照）
   - パネル幅 = `icon_w + 2 × indent + scrollbar_margin`（Qt の rootIsDecorated=True により子アイテムは 2×indent ぶん右にオフセットされるため）
-- **HeaderFooterDialog**: `main_window.py` 内で定義。ヘッダー・フッターページ番号・フッターテキストをそれぞれ独立制御
 
 ## PDFManagerの主要な設計
 
@@ -85,15 +84,13 @@ pdf-editor/
 | `rotate_page` | 指定ページを回転（キャッシュ無効化付き） |
 | `get_thumbnail_pixmap` | サムネ生成（スケール1回・キャッシュ利用） |
 | `get_preview_pixmap` | プレビュー用高解像度レンダリング |
-| `add_header_footer` | ページにテキストを直接挿入。ページ番号・テキストは別行配置 |
-| `remove_header_footer` | ディスクから再読み込みしてテキスト消去・回転再適用 |
 | `save_as` | 全ページを新しいPDFとして出力 |
 | `save_selected_pages` | 選択ページのみを新しいPDFとして出力 |
 
 ## サムネイルキャッシュ設計
 
 - キー: `(id(page), max_size, page.rotation)`
-- 無効化タイミング: 回転・ヘッダー/フッター適用・全ページ閉じ・ヘッダー/フッター削除
+- 無効化タイミング: 回転・全ページ閉じ
 - 並び替えはページオブジェクトの参照を並び替えるだけなので `id()` が変わらずキャッシュはそのまま有効
 
 ## 配布方法（予定）
