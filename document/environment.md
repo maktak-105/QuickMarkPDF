@@ -1,6 +1,18 @@
 # 開発環境
 
-## 採用技術スタック
+## 現行の採用技術スタック
+
+### 移行後のネイティブ版
+
+- **言語**: C++17
+- **GUI**: Microsoft WebView2（HTML/CSS/JavaScript）
+- **バックエンド**: C++ PDFエンジンアダプター（選定中）
+- **ビルド**: CMake + Visual Studio 2022 Build Tools + Windows SDK
+- **UIとC++の連携**: WebView2 WebMessage API（JSONメッセージ）
+
+WebView2 SDKはNuGetパッケージ `Microsoft.Web.WebView2` から取得します。SDK本体はリポジトリへコミットせず、`.gitignore`対象の `third_party/webview2/` に展開します。
+
+### 移行期間のPython版（比較基準）
 
 - **言語**: Python 3.12 以上
 - **GUIフレームワーク**: PySide6 (Qt 6)
@@ -25,7 +37,7 @@
 - Pythonのため開発速度が速く、ライブラリのエコシステムが成熟している
 - 「シンプルなUI」を目指す上で、Qtは十分なコントロールが可能
 
-## 開発環境セットアップ手順
+## Python版の開発環境セットアップ手順
 
 ```bash
 # 1. Python仮想環境の作成
@@ -42,10 +54,27 @@ pip install PyInstaller
 python python/main.py
 ```
 
+## C++ WebView2版のセットアップ
+
+1. Visual Studio 2022 Build Toolsの「C++によるデスクトップ開発」とWindows 10/11 SDKを導入する。
+2. `powershell -ExecutionPolicy Bypass -File scripts/fetch_webview2_sdk.ps1` でWebView2 SDKを `third_party/webview2/` に展開する。
+3. CMakeでx64のWebView2ホストをビルドする。
+
+```powershell
+cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
+cmake --build core/webview2/build --config Release
+```
+
+実行ファイルは `core/webview2/build/Release/QuickMarkPDF_webview.exe`。WebView2 RuntimeがインストールされたWindows 10/11環境で起動します。
+
 ## プロジェクト構成
 
 ```
 QuickMarkPDF/
+├── core/
+│   ├── native/                    # PDFエンジン非依存のC++モデル
+│   └── webview2/                  # WebView2ホスト
+├── ui/                            # WebView2で表示するHTML/CSS/JavaScript
 ├── python/
 │   ├── main.py                    # エントリーポイント
 │   └── src/                       # Pythonソース

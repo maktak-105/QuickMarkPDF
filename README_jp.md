@@ -6,7 +6,7 @@
   <img src="assets/quickmarkpdf-gui-ja.png" alt="QuickMarkPDF 日本語GUI" width="720">
 </p>
 
-Windows向けのシンプルなデスクトップPDF編集ツールです。複数PDFの読み込み、ページの並べ替え・回転・分割保存、MarkdownのPDFプレビューに対応します。
+Windows向けのシンプルなデスクトップPDF編集ツールです。最終版はC++バックエンド＋WebView2 GUIで構成し、移行期間中はPython/PySide6版を動作仕様の比較対象として残します。
 
 ## 主な機能
 
@@ -46,6 +46,17 @@ ctest --test-dir core/native/build --output-on-failure
 ```
 
 現時点のCLIはPDFエンジンに依存しないページモデルの検証用です。PDF読み込み・保存とGUIは段階的に移植します。詳細は [`plans/2026-08-18_C++移植_v1.0.md`](plans/2026-08-18_C++移植_v1.0.md) を参照してください。
+
+## WebView2版の開発
+
+Visual Studio 2022 Build ToolsのC++ワークロードを導入し、[`document/environment_jp.md`](document/environment_jp.md)の手順でWebView2 SDKを取得してからビルドします。
+
+```powershell
+cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
+cmake --build core/webview2/build --config Release
+```
+
+生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。現在はHTML UIの表示とC++↔JavaScriptメッセージ連携まで実装済みで、PDF操作を順次接続します。
 
 ## ライセンス
 

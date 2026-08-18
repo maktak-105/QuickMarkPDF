@@ -1,0 +1,18 @@
+:root { color-scheme: dark; font-family: "Segoe UI", "Yu Gothic UI", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #17191d; color: #edf0f4; height: 100vh; overflow: hidden; }
+.toolbar { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 18px; background: #242830; border-bottom: 1px solid #3a404a; }
+.brand { font-size: 20px; font-weight: 700; margin-right: 18px; }
+button { border: 1px solid #586273; border-radius: 5px; padding: 8px 14px; color: #fff; background: #303744; cursor: pointer; }
+button:hover:not(:disabled) { background: #3d485a; }
+button:disabled { opacity: .45; cursor: default; }
+#status { margin-left: auto; color: #9faabc; font-size: 13px; }
+.workspace { height: calc(100vh - 58px); display: grid; grid-template-columns: 280px 1fr; }
+.sidebar { background: #20232a; border-right: 1px solid #3a404a; padding: 18px; }
+h2 { font-size: 15px; margin: 0 0 16px; color: #cbd3df; }
+.empty { color: #8994a5; font-size: 13px; line-height: 1.6; }
+.preview { display: grid; place-items: center; background: #111316; }
+.welcome { text-align: center; color: #dce3ed; }
+.welcome h1 { font-size: 30px; margin: 0 0 12px; }
+.welcome p { margin: 6px; }
+.muted { color: #8994a5; font-size: 13px; }

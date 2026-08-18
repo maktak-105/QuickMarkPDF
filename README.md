@@ -6,7 +6,7 @@
   <img src="assets/quickmarkpdf-gui-en.png" alt="QuickMarkPDF GUI" width="720">
 </p>
 
-A simple Windows desktop PDF editor built with Python and PySide6.
+A simple Windows desktop PDF editor migrating to a C++ backend with a WebView2 UI. The Python/PySide6 version remains available as the behavior reference during migration.
 
 ## Features
 
@@ -34,6 +34,17 @@ See [`document/environment.md`](document/environment.md) and [`document/spec.md`
 ```
 
 The onedir package is generated under `dist/QuickMarkPDF/`. Keep `QuickMarkPDF.exe` and its `_internal` directory together.
+
+## Native WebView2 development
+
+Install Visual Studio 2022 Build Tools with the C++ workload, then obtain the WebView2 SDK according to [`document/environment.md`](document/environment.md). Build the current WebView2 host with:
+
+```powershell
+cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
+cmake --build core/webview2/build --config Release
+```
+
+The executable is `core/webview2/build/Release/QuickMarkPDF_webview.exe`. The current host loads the HTML UI, copies the WebView2 loader/runtime dependency, and verifies C++ ↔ JavaScript messaging. PDF operations are being connected incrementally.
 
 ## C++ development
 

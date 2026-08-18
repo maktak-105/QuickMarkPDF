@@ -59,3 +59,8 @@ CODEX_PROJECT_NOTE.txt
 core/native/*.o
 core/native/build/
 dist/native/
+
+# Downloaded SDKs and native build output
+third_party/webview2/
+third_party/*.nupkg
+core/webview2/build/
