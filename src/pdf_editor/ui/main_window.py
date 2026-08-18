@@ -579,7 +579,6 @@ class MainWindow(QMainWindow):
 
                 self.setWindowTitle("PDF Editor")
                 self.statusBar().showMessage(f"{loaded} ファイル読み込み完了（全{self.pdf_manager.get_page_count()}ページ）")
-                self._mark_dirty()
             else:
                 self.statusBar().showMessage("PDFの読み込みに失敗しました")
                 QMessageBox.warning(self, "エラー", "PDFの読み込みに失敗しました")
