@@ -10,6 +10,18 @@ add_executable(QuickMarkPDF_cli
     main_cli.cpp
 )
 
+add_executable(QuickMarkPDF_native_tests
+    engine.cpp
+    engine_tests.cpp
+)
+
 target_compile_options(QuickMarkPDF_cli PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-Wall;-Wextra;-pedantic>
 )
+
+target_compile_options(QuickMarkPDF_native_tests PRIVATE
+    $<$<CXX_COMPILER_ID:GNU>:-Wall;-Wextra;-pedantic>
+)
+
+enable_testing()
+add_test(NAME QuickMarkPDF.native_model COMMAND QuickMarkPDF_native_tests)

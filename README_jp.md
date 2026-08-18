@@ -42,6 +42,7 @@ C++17のネイティブコアは `core/native/` にあります。MinGWとCMake�
 cmake -G "MinGW Makefiles" -S core/native -B core/native/build
 cmake --build core/native/build --config Release
 .\core\native\build\QuickMarkPDF_cli.exe demo
+ctest --test-dir core/native/build --output-on-failure
 ```
 
 現時点のCLIはPDFエンジンに依存しないページモデルの検証用です。PDF読み込み・保存とGUIは段階的に移植します。詳細は [`plans/2026-08-18_C++移植_v1.0.md`](plans/2026-08-18_C++移植_v1.0.md) を参照してください。

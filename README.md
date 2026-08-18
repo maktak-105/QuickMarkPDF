@@ -43,6 +43,7 @@ The native C++17 core is under `core/native/` and can be built with CMake and Mi
 cmake -G "MinGW Makefiles" -S core/native -B core/native/build
 cmake --build core/native/build --config Release
 .\core\native\build\QuickMarkPDF_cli.exe demo
+ctest --test-dir core/native/build --output-on-failure
 ```
 
 The current CLI validates the PDF-engine-independent page model. PDF I/O and the GUI will be migrated incrementally. See [`plans/2026-08-18_C++移植_v1.0.md`](plans/2026-08-18_C++移植_v1.0.md) for the migration plan.
