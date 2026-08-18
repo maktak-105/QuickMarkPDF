@@ -1,23 +1,62 @@
-# PDF Editor
+# QuickMarkPDF
 
-シンプルなデスクトップPDF編集ツール。
+[日本語版 README_jp.md](README_jp.md)
 
-## 機能
-- 複数PDFの読み込み・連結・分割
-- ページのドラッグ＆ドロップによる並び替え
-- ページ単位の回転
-- ヘッダー＆フッター挿入（ページ番号など）
-- Markdownファイルの表示
-  - Mermaid 図表と数式をプレビュー表示
-  - オフライン資産同梱で PDF として保存
+<p align="center">
+  <img src="assets/quickmarkpdf-gui-en.png" alt="QuickMarkPDF GUI" width="720">
+</p>
 
-## 開発環境
-詳細は `documents/environment.md` を参照。
+A simple Windows desktop PDF editor built with Python and PySide6.
 
-## セットアップ
-```bash
+## Features
+
+- Open, combine, split, reorder, and rotate PDF pages
+- Drag and drop page reordering, including moving pages between files
+- Markdown preview with Mermaid diagrams and mathematical formulas
+- Export selected pages to PDF or PNG/JPG
+- Undo and unsaved-change protection
+
+## Running from source
+
+```powershell
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
+python -m pip install -r requirements.txt
+python python/main.py
 ```
+
+See [`document/environment.md`](document/environment.md) and [`document/spec.md`](document/spec.md) for development details.
+
+## Building the Windows application
+
+```powershell
+.venv\Scripts\pyinstaller.exe quickmarkpdf.spec --noconfirm
+```
+
+The onedir package is generated under `dist/QuickMarkPDF/`. Keep `QuickMarkPDF.exe` and its `_internal` directory together.
+
+## C++ development
+
+The native C++17 core is under `core/native/` and can be built with CMake and MinGW:
+
+```powershell
+cmake -G "MinGW Makefiles" -S core/native -B core/native/build
+cmake --build core/native/build --config Release
+.\core\native\build\QuickMarkPDF_cli.exe demo
+```
+
+The current CLI validates the PDF-engine-independent page model. PDF I/O and the GUI will be migrated incrementally. See [`plans/2026-08-18_C++移植_v1.0.md`](plans/2026-08-18_C++移植_v1.0.md) for the migration plan.
+
+## License
+
+This project is released under the MIT License. See [`LICENSE`](LICENSE) and the distribution copies under [`dist/documents/`](dist/documents/).
+
+## Design philosophy
+
+- Keep page-level PDF editing direct and visible.
+- Keep Markdown preview assets bundled for offline use.
+- Prefer a small, dependable Windows desktop workflow over a complex document suite.
+
+## Disclaimer
+
+This software is provided as-is. Back up important PDFs before editing or exporting them.

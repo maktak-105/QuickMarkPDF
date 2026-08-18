@@ -6,7 +6,7 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+dist/*
 downloads/
 eggs/
 .eggs/
@@ -38,5 +38,24 @@ Thumbs.db
 
 # Project specific
 *.pdf
-!documents/*.pdf
+!document/*.pdf
 output/
+
+# PyInstaller build output
+dist/PDF_Editor/
+dist_tmp/
+*.manifest
+
+# Keep the distribution documentation and empty asset folders tracked.
+!dist/documents/
+!dist/documents/*
+!dist/assets/
+!dist/assets/.gitkeep
+
+# AI tools and local notes
+CODEX_PROJECT_NOTE.txt
+
+# Native C++ build output
+core/native/*.o
+core/native/build/
+dist/native/

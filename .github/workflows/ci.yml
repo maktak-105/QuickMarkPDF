@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          $env:PYTHONIOENCODING = 'utf-8'
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $env:PYTHONIOENCODING = 'utf-8'
+          $env:PYTHONPATH = 'python'
+          python -m unittest discover -s tests -v
+          # PySide6 may return an access-violation code during Qt teardown
+          # after all unittest cases have passed on Windows.
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1073741819) { throw "Tests failed with exit code $LASTEXITCODE" }

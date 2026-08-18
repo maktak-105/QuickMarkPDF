@@ -1,11 +1,11 @@
 """
-PDF Editor - Main Entry Point
+ QuickMarkPDF - Main Entry Point
 """
 import logging
 import sys
 from pathlib import Path
 
-# Add project root to path so src imports work when running main.py directly
+# Add the Python source directory to the import path when running directly.
 sys.path.insert(0, str(Path(__file__).parent))
 
 from PySide6.QtCore import Qt
@@ -25,7 +25,7 @@ def main():
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
 
     app = QApplication(sys.argv)
-    app.setApplicationName("PDF Editor")
+    app.setApplicationName("QuickMarkPDF")
 
     # ICO は複数サイズを含むため Windows タイトルバー・タスクバーとの相性が良い
     for icon_name in ("resources/app_icon.ico", "resources/app_icon.png"):

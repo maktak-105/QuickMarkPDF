@@ -1,6 +1,6 @@
 # Markdown Preview Sample
 
-このファイルは、PDF Editor の Markdown 表示モードで次の要素を確認するためのサンプルです。
+このファイルは、QuickMarkPDF の Markdown 表示モードで次の要素を確認するためのサンプルです。
 
 - Mermaid 図表
 - インライン数式

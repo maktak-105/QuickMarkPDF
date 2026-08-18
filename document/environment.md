@@ -39,22 +39,23 @@ pip install PyMuPDF PySide6 Pillow
 pip install PyInstaller
 
 # 4. アプリ起動
-python main.py
+python python/main.py
 ```
 
 ## プロジェクト構成
 
 ```
-pdf-editor/
-├── main.py                        # エントリーポイント
+QuickMarkPDF/
+├── python/
+│   ├── main.py                    # エントリーポイント
+│   └── src/                       # Pythonソース
 ├── requirements.txt
-├── documents/
+├── document/
 │   ├── spec.md                    # 仕様書
 │   └── environment.md             # 本ファイル
 ├── resources/
 │   └── icons/                     # ツールバー用PNGアイコン（Pillowで自動生成）
-├── src/
-│   └── pdf_editor/
+│   └── src/pdf_editor/
 │       ├── pdf/
 │       │   └── pdf_manager.py     # PDF読み込み・編集・保存・キャッシュ
 │       └── ui/

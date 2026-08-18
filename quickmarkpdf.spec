@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""
-PyInstaller spec for PDF Editor
+r"""
+PyInstaller spec for QuickMarkPDF
 One-folder mode (recommended for faster startup with PySide6 + PyMuPDF)
 
 Build:
-  .venv\Scripts\pyinstaller.exe pdf_editor.spec
-  (or: python -m PyInstaller pdf_editor.spec)
+  .venv\Scripts\pyinstaller.exe quickmarkpdf.spec
+  (or: python -m PyInstaller quickmarkpdf.spec)
 
 Output:
-  dist/PDF_Editor/PDF_Editor.exe  +  dist/PDF_Editor/_internal/...
+  dist/QuickMarkPDF/QuickMarkPDF.exe  +  dist/QuickMarkPDF/_internal/...
 """
 
 import sys
@@ -43,8 +43,8 @@ if collect_all:
         pass
 
 a = Analysis(
-    ['main.py'],
-    pathex=['.'],
+    ['python/main.py'],
+    pathex=['python', '.'],
     binaries=extra_binaries,
     datas=[
         ('resources/icons/*.png', 'resources/icons'),
@@ -103,7 +103,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,   # One-folder モード用（起動高速化）
-    name='PDF_Editor',
+    name='QuickMarkPDF',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -119,7 +119,7 @@ exe = EXE(
     icon='resources/app_icon.ico',
 )
 
-# One-folder 出力（dist/PDF_Editor/ の中に exe + _internal フォルダができる）
+# One-folder 出力（dist/QuickMarkPDF/ の中に exe + _internal フォルダができる）
 coll = COLLECT(
     exe,
     a.binaries,
@@ -128,5 +128,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='PDF_Editor',
+    name='QuickMarkPDF',
 )

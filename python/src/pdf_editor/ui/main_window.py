@@ -170,7 +170,7 @@ class PreviewLabel(QLabel):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PDF Editor")
+        self.setWindowTitle("QuickMarkPDF")
         self.resize(1280, 820)
         self.setMinimumSize(900, 600)  # Allow reasonable resizing
 
@@ -197,7 +197,7 @@ class MainWindow(QMainWindow):
 
         # Persisted across app restarts: window geometry, last-used folder,
         # last-used thumbnail size, wheel mode (see _restore_settings / _save_settings)
-        self._qsettings = QSettings("pdf-editor", "PDFEditor")
+        self._qsettings = QSettings("maktak-105", "QuickMarkPDF")
         self._last_used_dir: str = ""
         # "zoom" (default): wheel = zoom, right-drag = pan.
         # "scroll": wheel = vertical scroll, right-drag = zoom (down=in, up=out).
@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
         base_url = QUrl.fromLocalFile(str(path.parent) + os.sep)
         self.markdown_view.setHtml(html, base_url)
         self._set_mode("markdown")
-        self.setWindowTitle(f"PDF Editor - {path.name}")
+        self.setWindowTitle(f"QuickMarkPDF - {path.name}")
         self.statusBar().showMessage(f"Markdown を読み込みました: {path.name}")
 
         # 高DPI環境におけるフォントのかすれ・ぼやけ対策
@@ -711,7 +711,7 @@ class MainWindow(QMainWindow):
                     # Force preview update in case the signal doesn't fire
                     self._on_thumbnail_selected(first_page)
 
-                self.setWindowTitle("PDF Editor")
+                self.setWindowTitle("QuickMarkPDF")
                 self.statusBar().showMessage(f"{total_loaded} ファイル読み込み完了（全{self.pdf_manager.get_page_count()}ページ）")
             elif not result.password_required and not result.duplicate_files:
                 self.statusBar().showMessage("PDFの読み込みに失敗しました")

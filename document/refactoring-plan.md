@@ -158,7 +158,7 @@ Phase 1（基盤・低リスク）→ Phase 2（構造整理）→ Phase 3（状
 
 - **Build / その他**
   - `pdf_editor.spec` の hiddenimports を新しいモジュール追加時に更新する手順をコメントに記載。
-  - `documents/spec.md` または新しい `docs/architecture.md` に「HFは破壊的である」という設計決定を明記（将来の開発者向け）。
+  - `document/spec.md` または新しい `document/architecture.md` に「HFは破壊的である」という設計決定を明記（将来の開発者向け）。
 
 ## 4. 変更対象ファイル一覧（優先度順）
 
@@ -181,7 +181,7 @@ Phase 1（基盤・低リスク）→ Phase 2（構造整理）→ Phase 3（状
 - （任意）`src/pdf_editor/utils/__init__.py`
 
 **ドキュメント**:
-- `documents/spec.md`（HF設計決定の追記推奨）
+- `document/spec.md`（HF設計決定の追記推奨）
 - 本プラン自体（実装後に更新）
 
 ## 5. 再利用する既存の重要コード（ファイル:行 または 機能）

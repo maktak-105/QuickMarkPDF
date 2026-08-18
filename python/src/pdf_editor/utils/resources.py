@@ -13,7 +13,7 @@ def get_project_root() -> Path:
     """Return the absolute path to the project root.
 
     Works in:
-    - Development: running python main.py from project root
+    - Development: running python python/main.py from the project root
     - Frozen (PyInstaller one-folder): sys._MEIPASS points to the temp extraction dir
     """
     if getattr(sys, "_MEIPASS", None):
@@ -21,14 +21,11 @@ def get_project_root() -> Path:
         return Path(sys._MEIPASS)
 
     # Running from source.
-    # This file lives at: <root>/src/pdf_editor/utils/resources.py
-    # parents[0]=resources.py dir, [1]=utils, [2]=pdf_editor, [3]=src, [4]=project root
+    # This file lives at: <root>/python/src/pdf_editor/utils/resources.py
     current = Path(__file__).resolve()
-    root = current.parents[3]
-
-    # Sanity check: prefer the layout that has resources/ or main.py
-    if (root / "resources").exists() or (root / "main.py").exists():
-        return root
+    for parent in current.parents:
+        if (parent / "resources").exists() and (parent / "requirements.txt").exists():
+            return parent
 
     # Last resort fallback
     return Path.cwd()

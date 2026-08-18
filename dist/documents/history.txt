@@ -1,0 +1,5 @@
+QuickMarkPDF - Change log
+
+Unreleased (2026-08-18)
+- Refreshed the PDF editing core and user interface.
+- Improved page tagging, thumbnail reordering, Markdown preview, and background processing.
