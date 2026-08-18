@@ -25,6 +25,8 @@ cmake --build core/webview2/build --config Release
 
 生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。
 
+現在のPDFページ数検査は移植初期の暫定実装です。正式なPDFエンジン統合後に、圧縮PDF・暗号化PDF・保存・画像化へ対応します。
+
 ## 移行期間のPython版
 
 - Windows 10/11（64-bit）

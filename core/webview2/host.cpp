@@ -7,6 +7,8 @@
 #include <wrl.h>
 #include <wrl/event.h>
 
+#include "pdf_backend.h"
+
 using Microsoft::WRL::Callback;
 using Microsoft::WRL::ComPtr;
 
@@ -18,6 +20,16 @@ ComPtr<ICoreWebView2> g_webview;
 std::wstring file_url(const std::filesystem::path& path) {
     std::wstring value = L"file:///" + path.generic_wstring();
     return value;
+}
+
+std::wstring json_string(const std::wstring& value) {
+    std::wstring escaped = L"\"";
+    for (const auto character : value) {
+        if (character == L'\\' || character == L'\"') escaped += L'\\';
+        escaped += character;
+    }
+    escaped += L"\"";
+    return escaped;
 }
 
 void resize_webview() {
@@ -54,8 +66,26 @@ void load_ui(const std::filesystem::path& ui_path) {
                                         const std::wstring message(raw_message);
                                         CoTaskMemFree(raw_message);
                                         if (message.find(L"open_pdf") != std::wstring::npos) {
-                                            g_webview->PostWebMessageAsString(
-                                                L"{\"type\":\"backend_status\",\"message\":\"PDFバックエンド接続待ち\"}");
+                                            OPENFILENAMEW dialog{};
+                                            wchar_t selected[MAX_PATH]{};
+                                            dialog.lStructSize = sizeof(dialog);
+                                            dialog.hwndOwner = g_window;
+                                            dialog.lpstrFilter = L"PDF files (*.pdf)\0*.pdf\0All files (*.*)\0*.*\0";
+                                            dialog.lpstrFile = selected;
+                                            dialog.nMaxFile = MAX_PATH;
+                                            dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+                                            if (!GetOpenFileNameW(&dialog)) return S_OK;
+                                            const auto path = std::filesystem::path(selected);
+                                            try {
+                                                const auto info = quickmarkpdf::PdfBackend::inspect(path.u8string());
+                                                const auto response = L"{\"type\":\"pdf_opened\",\"path\":"
+                                                    + json_string(path.wstring())
+                                                    + L",\"page_count\":" + std::to_wstring(info.page_count) + L"}";
+                                                g_webview->PostWebMessageAsString(response.c_str());
+                                            } catch (const std::exception&) {
+                                                g_webview->PostWebMessageAsString(
+                                                    L"{\"type\":\"backend_status\",\"message\":\"PDFの検査に失敗しました\"}");
+                                            }
                                         } else if (message.find(L"save_pdf") != std::wstring::npos) {
                                             g_webview->PostWebMessageAsString(
                                                 L"{\"type\":\"backend_status\",\"message\":\"保存機能はPDFエンジン接続後に有効になります\"}");

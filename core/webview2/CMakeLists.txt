@@ -12,9 +12,9 @@ set(WEBVIEW2_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../third_party/webview2/build/na
 set(WEBVIEW2_INCLUDE "${WEBVIEW2_ROOT}/include")
 set(WEBVIEW2_LIB "${WEBVIEW2_ROOT}/x64/WebView2Loader.dll.lib")
 
-add_executable(QuickMarkPDF_webview WIN32 host.cpp)
-target_include_directories(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_INCLUDE}")
-target_link_libraries(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_LIB}" ole32 user32 comctl32)
+add_executable(QuickMarkPDF_webview WIN32 host.cpp ../native/pdf_backend.cpp)
+target_include_directories(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_INCLUDE}" "${CMAKE_CURRENT_LIST_DIR}/../native")
+target_link_libraries(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_LIB}" ole32 user32 comctl32 comdlg32)
 target_compile_definitions(QuickMarkPDF_webview PRIVATE UNICODE _UNICODE NOMINMAX)
 target_compile_options(QuickMarkPDF_webview PRIVATE /utf-8)
 

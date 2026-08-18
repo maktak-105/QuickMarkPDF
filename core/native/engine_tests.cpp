@@ -1,6 +1,9 @@
 #include "engine.h"
+#include "pdf_backend.h"
 
 #include <cassert>
+#include <cstdio>
+#include <fstream>
 #include <stdexcept>
 
 using quickmarkpdf::PageRef;
@@ -58,11 +61,26 @@ void test_invalid_operations_are_rejected() {
     }
     assert(invalid_erase);
 }
+
+void test_pdf_inspection_boundary() {
+    const auto path = std::string("quickmarkpdf_test_pages.pdf");
+    std::ofstream output(path, std::ios::binary);
+    output << "%PDF-1.7\n"
+           << "1 0 obj << /Type /Page >> endobj\n"
+           << "2 0 obj << /Type /Pages /Kids [1 0 R 3 0 R] >> endobj\n"
+           << "3 0 obj << /Type /Page >> endobj\n"
+           << "%%EOF\n";
+    output.close();
+    const auto info = quickmarkpdf::PdfBackend::inspect(path);
+    assert(info.page_count == 2);
+    std::remove(path.c_str());
+}
 }  // namespace
 
 int main() {
     test_append_and_rotation_normalization();
     test_reorder_and_erase();
     test_invalid_operations_are_rejected();
+    test_pdf_inspection_boundary();
     return 0;
 }

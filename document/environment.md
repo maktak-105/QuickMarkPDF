@@ -12,6 +12,8 @@
 
 WebView2 SDKはNuGetパッケージ `Microsoft.Web.WebView2` から取得します。SDK本体はリポジトリへコミットせず、`.gitignore`対象の `third_party/webview2/` に展開します。
 
+現在の `PdfBackend::inspect` は移植初期の暫定検査実装です。PDFエンジン統合後はこのAPIをMuPDFまたはPDFiumの実装へ置き換え、圧縮・暗号化・保存・画像化を正式対応します。
+
 ### 移行期間のPython版（比較基準）
 
 - **言語**: Python 3.12 以上

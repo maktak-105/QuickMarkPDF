@@ -11,6 +11,8 @@ button:disabled { opacity: .45; cursor: default; }
 .sidebar { background: #20232a; border-right: 1px solid #3a404a; padding: 18px; }
 h2 { font-size: 15px; margin: 0 0 16px; color: #cbd3df; }
 .empty { color: #8994a5; font-size: 13px; line-height: 1.6; }
+.page-items { display: grid; gap: 6px; }
+.page-item { padding: 10px 12px; border: 1px solid #3a404a; border-radius: 4px; background: #292e37; color: #d7deea; font-size: 13px; }
 .preview { display: grid; place-items: center; background: #111316; }
 .welcome { text-align: center; color: #dce3ed; }
 .welcome h1 { font-size: 30px; margin: 0 0 12px; }

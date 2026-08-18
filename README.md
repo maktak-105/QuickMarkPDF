@@ -44,7 +44,7 @@ cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
 cmake --build core/webview2/build --config Release
 ```
 
-The executable is `core/webview2/build/Release/QuickMarkPDF_webview.exe`. The current host loads the HTML UI, copies the WebView2 loader/runtime dependency, and verifies C++ ↔ JavaScript messaging. PDF operations are being connected incrementally.
+The executable is `core/webview2/build/Release/QuickMarkPDF_webview.exe`. The current host loads the HTML UI, opens a PDF through the native file picker, inspects its page count, and reflects the page list through the C++ ↔ JavaScript bridge. Full PDF engine operations are still being connected incrementally.
 
 ## C++ development
 

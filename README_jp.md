@@ -56,7 +56,7 @@ cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
 cmake --build core/webview2/build --config Release
 ```
 
-生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。現在はHTML UIの表示とC++↔JavaScriptメッセージ連携まで実装済みで、PDF操作を順次接続します。
+生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。現在はHTML UI、C++↔JavaScriptメッセージ連携、PDFファイル選択、ページ数検査、ページ一覧反映まで実装済みです。完全なPDFエンジン接続は引き続き実装します。
 
 ## ライセンス
 

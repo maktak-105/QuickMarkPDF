@@ -7,11 +7,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(QuickMarkPDF_cli
     engine.cpp
+    pdf_backend.cpp
     main_cli.cpp
 )
 
 add_executable(QuickMarkPDF_native_tests
     engine.cpp
+    pdf_backend.cpp
     engine_tests.cpp
 )
 
