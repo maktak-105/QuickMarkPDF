@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QuickMarkPDF</title>
+  <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <button id="open-button" class="tool">開く</button>
+    <span class="sep"></span>
+    <button id="rotate-right-button" class="tool" disabled>右90°</button>
+    <button id="rotate-left-button" class="tool" disabled>左90°</button>
+    <button id="rotate-180-button" class="tool" disabled>180°</button>
+    <button id="delete-button" class="tool" disabled>削除</button>
+    <button id="undo-button" class="tool" disabled>元に戻す</button>
+    <span class="sep"></span>
+    <button id="export-button" class="tool" disabled>画像出力</button>
+    <button id="save-button" class="tool" disabled>保存</button>
+  </header>
+  <main class="workspace">
+    <aside class="thumbnail-panel">
+      <div id="page-list" class="empty">PDFを開くとページ一覧を表示します。</div>
+    </aside>
+    <section class="preview" id="preview">
+      <div class="welcome">
+        <h1>QuickMarkPDF</h1>
+        <p>「開く」からPDFを選択してください。</p>
+      </div>
+    </section>
+  </main>
+  <footer class="statusbar">
+    <span id="status">準備完了</span>
+  </footer>
+  <script src="../static/js/app.js"></script>
+</body>
+</html>
