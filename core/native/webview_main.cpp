@@ -643,6 +643,7 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                     g_controller->AddRef();
                     g_controller->get_CoreWebView2(&g_webview);
 
+                    EventRegistrationToken message_token{};
                     g_webview->add_WebMessageReceived(
                         new WebMessageReceivedHandler(
                             [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
@@ -653,7 +654,7 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                                 dispatch_message(message);
                                 return S_OK;
                             }),
-                        nullptr);
+                        &message_token);
                     resize_webview();
                     g_webview->Navigate(file_url(ui_path).c_str());
                     return S_OK;
