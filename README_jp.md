@@ -8,6 +8,8 @@
 
 Windows向けのシンプルなデスクトップPDF編集ツールです。最終版はC++バックエンド＋WebView2 GUIで構成し、移行期間中はPython/PySide6版を動作仕様の比較対象として残します。
 
+**リポジトリ構成は共通テンプレート`___appli-template`(ワークスペース内の別リポジトリ、QuickFolderSize/QuickDiskBenchと同じ)に従います** — 正式なフォルダ構成ルールは[`01_フォルダ構成.md`](../___appli-template/01_フォルダ構成.md)を参照してください(`core/native/`にWebView2ホスト含む全ネイティブコードを配置、`templates/`+`static/`が開発用UIソースで`bundle_html.py`がバンドル、`dist/binary/`がGit管理外のビルド出力、`build_native.py`+`build.bat`でビルド)。本プロジェクトはこの構成への移行途中です。まだ準拠していない箇所(CMakeビルドの残存など)は既知のギャップであり、目標構成ではありません。
+
 ## 主な機能
 
 - 複数PDFの読み込み・連結・分割
@@ -34,29 +36,16 @@ python python/main.py
 
 生成物は `dist/QuickMarkPDF/` に作成されます。`QuickMarkPDF.exe` と `_internal` フォルダは同じ場所に置いてください。
 
-## C++版の開発
+## C++/WebView2版の開発
 
-C++17のネイティブコアは `core/native/` にあります。MinGWとCMakeを使ってビルドできます。
-
-```powershell
-cmake -G "MinGW Makefiles" -S core/native -B core/native/build
-cmake --build core/native/build --config Release
-.\core\native\build\QuickMarkPDF_cli.exe demo
-ctest --test-dir core/native/build --output-on-failure
-```
-
-現時点のCLIはPDFエンジンに依存しないページモデルの検証用です。PDF読み込み・保存とGUIは段階的に移植します。詳細は [`plans/2026-08-18_C++移植_v1.0.md`](plans/2026-08-18_C++移植_v1.0.md) を参照してください。
-
-## WebView2版の開発
-
-Visual Studio 2022 Build ToolsのC++ワークロードを導入し、[`document/environment_jp.md`](document/environment_jp.md)の手順でWebView2 SDKを取得してからビルドします。
+C++17のネイティブコアは `core/native/` にあります(WebView2ホストも同じフォルダ)。MinGW-w64のg++でビルドします(MSVC/Visual Studioは不要)。[`document/environment_jp.md`](document/environment_jp.md)の手順でWebView2 SDKとPDFiumを`third_party/`へ取得してからビルドします。
 
 ```powershell
-cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
-cmake --build core/webview2/build --config Release
+python build_native.py
+# または: build.bat
 ```
 
-生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。現在はHTML UI、C++↔JavaScriptメッセージ連携、PDFファイル選択、ページ数検査、ページ一覧反映まで実装済みです。完全なPDFエンジン接続は引き続き実装します。
+`templates/`+`static/`を自己完結HTML(`dist/binary/index.html`)へバンドルし、`dist/binary/QuickMarkPDF.exe`と`QuickMarkPDF_cli.exe`をビルド、必要なDLLをコピーし、最後に`core/native/engine_tests.cpp`をコンパイル・実行してビルド時チェックとします。`dist/binary/`はそのまま実行できるフラット構成になります。詳細は [`plans/2026-08-18_C++移植_v1.0.md`](plans/2026-08-18_C++移植_v1.0.md) を参照してください。
 
 ## ライセンス
 

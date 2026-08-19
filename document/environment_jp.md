@@ -5,14 +5,13 @@
 ## C++ WebView2版（最終構成）
 
 - Windows 10/11（64-bit）
-- Visual Studio 2022 Build Tools
-- C++によるデスクトップ開発ワークロード
-- Windows 10/11 SDK
-- CMake 3.20以上
+- MinGW-w64 g++（本リポジトリはWinLibs UCRT版で動作確認済み。`build_native.py`が自動検出。**MSVC/Visual Studioは不要**）
 - WebView2 Runtime
 - WebView2 SDK（NuGet: `Microsoft.Web.WebView2`）
 
-SDKは `third_party/webview2/` に展開します。このフォルダはGit管理対象外です。
+本プロジェクトはワークスペース共通テンプレート`___appli-template`(リポジトリ直下READMEの冒頭に記載)に従います。`core/native/`にWebView2ホスト含む全ネイティブコードを配置、開発用UIは`templates/`+`static/`に置き`bundle_html.py`が単一HTMLへバンドル、`build_native.py`/`build.bat`が`dist/binary/`へフラットなビルド成果物を生成します。CMakeビルドツリーや独立した`core/webview2/`はありません。
+
+**MSVC/WRLは使いません**: `webview_main.cpp`は`Microsoft::WRL::Callback`/`ComPtr`(`<wrl.h>`/`<wrl/event.h>`)を使用しません。単なるスタイルの選択ではなく、このMinGW-w64ディストリビューションには`<wrl/event.h>`自体が存在しないことを実際に確認した上での対応です。WebView2の3つの完了/イベントハンドラ(`EnvCompletedHandler`・`ControllerCompletedHandler`・`WebMessageReceivedHandler`)は、`std::function`をラップした自作の`IUnknown`実装で、ワークスペース内`QuickFolderSize/core/native/webview_main.cpp`で既に実証済みのパターンを踏襲しています。`CreateCoreWebView2EnvironmentWithOptions`は`WebView2Loader.dll.lib`をリンクするのではなく、`WebView2Loader.dll`を`LoadLibraryW`/`GetProcAddress`で実行時に解決します(`CreateEnvFn`関数ポインタ型)。理由は下記の`pdfium.dll`と同じで、Microsoft形式のインポートライブラリがMinGWの`ld`で確実にリンクできるかを気にしなくて済むためです。`IFileOpenDialog`/`IShellItem`/WICの各インターフェースには、標準ライブラリのみで書いた小さな`ComPtr<T>`(`std::unique_ptr<T, ComDeleter<T>>`)を使い、早期returnでのCOM参照リークを防いでいます。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/fetch_webview2_sdk.ps1
@@ -25,21 +24,21 @@ powershell -ExecutionPolicy Bypass -File scripts/fetch_pdfium.ps1
 ```
 
 ```powershell
-cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
-cmake --build core/webview2/build --config Release
+python build_native.py
+# または: build.bat
 ```
 
-生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。`pdfium.dll` は実行ファイルと同じフォルダへビルド時にコピーされ、`LoadLibraryW` で実行時に動的ロードされます。
+`templates/index.html` + `static/css/style.css` + `static/js/app.js` を自己完結HTML(`dist/binary/index.html`)へバンドル(`bundle_html.py`)し、`dist/binary/QuickMarkPDF.exe`(GUI)と`dist/binary/QuickMarkPDF_cli.exe`(PDFエンジン非依存のページモデルCLIデモ)をビルド、`pdfium.dll`と`WebView2Loader.dll`を同じフォルダへコピーします。最後に`core/native/engine_tests.cpp`をコンパイル・実行してビルド時回帰チェックとします(`--skip-tests`でスキップ可)。`dist/binary/`はそのまま実行できるフラット構成で、`___appli-template/01_フォルダ構成.md`のZIP配布規約と一致します。WebView2 Runtimeがインストールされた Windows 10/11 で動作します。
 
-`PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。`PdfBackend::save` は `WorkingDocument`(並べ替え・ファイル間移動・回転・削除)から `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy` で新規PDFを書き出します。パスワード付きソースで正しいパスワードがない場合は `PdfPasswordRequiredError` を送出します。`PdfBackend::render_page` はページを左上原点のRGBA8ピクセルへラスタライズします(`FPDFBitmap_Create` + `FPDF_RenderPageBitmap`、pdfium標準のBGRAからRGBAへ変換)。`host.cpp` は `render_page` WebMessageに対し、ピクセルをBase64化(`CryptBinaryToStringA`)した `page_rendered` を返し、`ui/app.js` が `atob` でデコードして `canvas` へ `ImageData` として描画します(ページ一覧のサムネイル)。クリックして拡大するプレビューペインはまだなく、サムネイル一覧のみ配線済みです。
+`PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。`PdfBackend::save` は `WorkingDocument`(並べ替え・ファイル間移動・回転・削除)から `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy` で新規PDFを書き出します。パスワード付きソースで正しいパスワードがない場合は `PdfPasswordRequiredError` を送出します。`PdfBackend::render_page` はページを左上原点のRGBA8ピクセルへラスタライズします(`FPDFBitmap_Create` + `FPDF_RenderPageBitmap`、pdfium標準のBGRAからRGBAへ変換)。`webview_main.cpp` は `render_page` WebMessageに対し、ピクセルをBase64化(`CryptBinaryToStringA`)した `page_rendered` を返し、`static/js/app.js` が `atob` でデコードして `canvas` へ `ImageData` として描画します(ページ一覧のサムネイル)。クリックして拡大するプレビューペインはまだなく、サムネイル一覧のみ配線済みです。
 
 `WorkingDocument`(`core/native/engine.h`)はUndo履歴とdirtyフラグを持ちます。変更系メソッド(`append_page`・`reorder`・`rotate`・`erase`)は、確定直前にページ一覧をスナップショットし(例外を投げて失敗する呼び出しではスナップショットを積まない)、dirtyを立てます。`undo()`は最新のスナップショットを1件戻します。Python版の`push_undo_snapshot`と同じ上限20件です。`clear()`はハードリセット扱いで、それ自体はUndo対象にならずUndo履歴とdirtyフラグを両方消します(clear後は以前の`PageRef`を復元する意味がないため)。`mark_saved()`はdirtyを解除しますが、これは`PdfBackend::save()`が実際に成功した経路からのみ呼び出す想定です(catchブロックからは呼ばない)。保存失敗時はdirtyのままになります。
 
 `inspect()`は各ページ自身の回転(`page_rotations`、`FPDFPage_GetRotation`)も返します。`WorkingDocument`の回転は絶対値として`FPDFPage_SetRotation`で反映する契約のため、新規`append_page`時の初期値は0ではなくソースページ自身の回転にする必要があります(でなければ保存/レンダリング時にすでに回転していたページを無回転へ戻してしまいます)。`render_page`と新設の`render_page_at_dpi`(同じレンダリング経路をピクセル幅ではなくDPI指定で使う、画像出力用)はどちらも、幅・高さを問い合わせる前に`FPDFPage_SetRotation`で回転を適用するため、90/270度回転時に出力アスペクト比が正しく入れ替わります。
 
-### `host.cpp`と`WorkingDocument`の統合
+### `webview_main.cpp`と`WorkingDocument`の統合
 
-`host.cpp`はセッション全体で1つの`WorkingDocument`(`g_document`)を保持するようになりました(以前の「直近に開いた1ファイルのパス」から変更)。加えて`source_path -> password`のマップを持ち、`PdfBackend::save`が暗号化ソースを再度パスワード入力なしで開けるようにしています。WebMessageプロトコル:
+`webview_main.cpp`(`core/native/`、旧`core/webview2/host.cpp`)はセッション全体で1つの`WorkingDocument`(`g_document`)を保持するようになりました(以前の「直近に開いた1ファイルのパス」から変更)。加えて`source_path -> password`のマップを持ち、`PdfBackend::save`が暗号化ソースを再度パスワード入力なしで開けるようにしています。WebMessageプロトコル:
 
 | JSから | 動作 |
 |---|---|
@@ -49,15 +48,13 @@ cmake --build core/webview2/build --config Release
 | `save_pdf` | ネイティブSaveダイアログ後、`PdfBackend::save(g_document, path, g_source_passwords)`。`mark_saved()`は`save`が例外を投げずに完了した場合のみ呼ぶ |
 | `export_images {indices, dpi}` | ネイティブのフォルダ選択後、`render_page_at_dpi`(デフォルト150DPI、Python版と同じ)+WICによるPNGエンコード(`IWICImagingFactory`/`IWICBitmapEncoder`、`GUID_ContainerFormatPng`)を対象ページ(`indices`が空なら全ページ)ごとに実行、`page_0001.png`等の名前で保存 |
 
-パスワード入力は自作ダイアログではなく`CredUIPromptForCredentialsW`(`wincred.h`)を使用しました。ドキュメント化された1関数呼び出しの方が、実際に操作しないと気付けない細かい誤りが入り込みにくいためです。画像出力のフォルダ選択は、非推奨の`SHBrowseForFolder`ではなく、WebView2自体で既に使っている`ComPtr`/WRLスタイルに合わせた`IFileOpenDialog` + `FOS_PICKFOLDERS`(COM)を使用します。
+パスワード入力は自作ダイアログではなく`CredUIPromptForCredentialsW`(`wincred.h`)を使用しました。ドキュメント化された1関数呼び出しの方が、実際に操作しないと気付けない細かい誤りが入り込みにくいためです。画像出力のフォルダ選択は、非推奨の`SHBrowseForFolder`ではなく、上述の自作`ComPtr<T>`経由で`IFileOpenDialog` + `FOS_PICKFOLDERS`(COM)を使用します。
 
-`ui/app.js`も合わせて更新し、各ページ行に上へ移動・下へ移動・回転・削除ボタンを追加(`reorder_pages`/`rotate_page`/`delete_pages`を送信)、ツールバーにUndoと画像書き出しボタンを追加しました。ドラッグ&ドロップでの並べ替えとクリック拡大プレビューはまだ未着手のPhase 2項目のままです。
+`static/js/app.js`も合わせて更新し、各ページ行に上へ移動・下へ移動・回転・削除ボタンを追加(`reorder_pages`/`rotate_page`/`delete_pages`を送信)、ツールバーにUndoと画像書き出しボタンを追加しました。ドラッグ&ドロップでの並べ替えとクリック拡大プレビューはまだ未着手のPhase 2項目のままです。
 
-**まだ画面操作での確認はしていません**: 今回の`host.cpp`/`ui/`変更は`cmake --build`(クリーンビルド、警告ゼロ)でのみ確認しています。ネイティブの複数選択ダイアログ・パスワード入力・保存ダイアログ・フォルダ選択・新しいUIボタン類は、実際に操作しての確認がまだ必要です。
+**まだ画面操作での確認はしていません**: 今回のコードは`build_native.py`でのビルド確認(警告なし)と、同じくg++で直接コンパイルした`engine_tests.cpp`の全件PASSのみで検証しています。ネイティブの複数選択ダイアログ・パスワード入力・保存ダイアログ・フォルダ選択・新しいUIボタン類は、実際に操作しての確認がまだ必要です。
 
 ## 移行期間のPython版
-
-- Windows 10/11（64-bit）
 
 - Windows 10/11（64-bit）
 - Python 3.12以上

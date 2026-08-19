@@ -9,20 +9,22 @@
 - **Language**: C++17
 - **GUI**: Microsoft WebView2 (HTML/CSS/JavaScript)
 - **Backend**: PDFium (BSD-3 license, using the prebuilt DLL from `bblanchon/pdfium-binaries`)
-- **Build**: CMake + Visual Studio 2022 Build Tools (WebView2 host) / MinGW (native core and tests) + Windows SDK
+- **Build**: MinGW-w64 g++ (direct compilation via `build_native.py`, no CMake, no MSVC) + Windows SDK headers from the WebView2 SDK / MinGW itself
 - **UI/C++ bridge**: WebView2 WebMessage API (JSON messages)
 
-The WebView2 SDK is fetched from the NuGet package `Microsoft.Web.WebView2`. The SDK itself is not committed to the repository; it is extracted into `third_party/webview2/`, which is excluded via `.gitignore`.
+This follows the shared workspace template at `___appli-template` (see the note at the top of the repo's `README.md`): a single `core/native/` holds all native code including the WebView2 host (`webview_main.cpp`), dev UI source lives in `templates/`+`static/` and gets bundled into one self-contained `index.html` by `bundle_html.py`, and `build_native.py`/`build.bat` produce a flat `dist/binary/` folder -- no CMake build tree, no separate `core/webview2/`.
 
-For the PDF engine, we chose **PDFium** (BSD-3) over MuPDF (AGPL/commercial dual license), since PDFium is compatible with distributing an MIT-licensed EXE. See `plans/2026-08-19_PDFエンジン選定_v1.0.md` for the comparison. The prebuilt `pdfium.dll` extracted into `third_party/pdfium/` is copied next to each executable and loaded dynamically via `LoadLibraryW` + `GetProcAddress` (rather than statically linking the import library) because the same `pdf_backend.cpp` is built by both the MinGW and MSVC toolchains. `PdfBackend::inspect` retrieves the page count via `FPDF_LoadMemDocument64`, and `PdfBackend::save` builds a new PDF from a `WorkingDocument` (reordering, moving pages between files, rotating, and deleting) via `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy`. Encrypted sources without a correct password raise `PdfPasswordRequiredError`. `PdfBackend::render_page` rasterizes a page to top-left-origin RGBA8 pixels (`FPDFBitmap_Create` + `FPDF_RenderPageBitmap`, converting pdfium's native BGRA to RGBA) for the WebView2 UI: `host.cpp` answers a `render_page` WebMessage by base64-encoding the pixels (`CryptBinaryToStringA`) into a `page_rendered` response, and `ui/app.js` decodes them with `atob` into a `canvas` via `ImageData` for the page-list thumbnails. There is no click-to-preview pane yet; only the thumbnail strip is wired up.
+**No MSVC/WRL**: `webview_main.cpp` does not use `Microsoft::WRL::Callback`/`ComPtr` (`<wrl.h>`/`<wrl/event.h>`) -- confirmed that `<wrl/event.h>` isn't even present in this MinGW-w64 distribution's headers, so it isn't just a style choice. The three WebView2 completion/event handlers (`EnvCompletedHandler`, `ControllerCompletedHandler`, `WebMessageReceivedHandler`) are hand-rolled `IUnknown` implementations wrapping a `std::function`, matching the pattern already proven in this workspace's `QuickFolderSize/core/native/webview_main.cpp`. `CreateCoreWebView2EnvironmentWithOptions` is resolved from `WebView2Loader.dll` at runtime via `LoadLibraryW`/`GetProcAddress` (a `CreateEnvFn` function-pointer typedef) rather than by linking `WebView2Loader.dll.lib`, for the same reason `pdfium.dll` is loaded dynamically rather than statically linked (see below) -- sidesteps any question of whether a Microsoft-format import library links cleanly under MinGW's `ld`. `IFileOpenDialog`/`IShellItem`/the WIC interfaces use a small hand-rolled `ComPtr<T>` (`std::unique_ptr<T, ComDeleter<T>>`, standard library only) instead of WRL's, so early returns can't leak a COM reference.
+
+For the PDF engine, we chose **PDFium** (BSD-3) over MuPDF (AGPL/commercial dual license), since PDFium is compatible with distributing an MIT-licensed EXE. See `plans/2026-08-19_PDFエンジン選定_v1.0.md` for the comparison. The prebuilt `pdfium.dll` extracted into `third_party/pdfium/` is copied next to each executable and loaded dynamically via `LoadLibraryW` + `GetProcAddress` (rather than statically linking the import library) -- originally to keep `pdf_backend.cpp` portable across a MinGW native core and an MSVC WebView2 host; now that both are MinGW, that specific reason no longer applies, but dynamic loading still works and there's no reason to change it. `PdfBackend::inspect` retrieves the page count via `FPDF_LoadMemDocument64`, and `PdfBackend::save` builds a new PDF from a `WorkingDocument` (reordering, moving pages between files, rotating, and deleting) via `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy`. Encrypted sources without a correct password raise `PdfPasswordRequiredError`. `PdfBackend::render_page` rasterizes a page to top-left-origin RGBA8 pixels (`FPDFBitmap_Create` + `FPDF_RenderPageBitmap`, converting pdfium's native BGRA to RGBA) for the WebView2 UI: `webview_main.cpp` answers a `render_page` WebMessage by base64-encoding the pixels (`CryptBinaryToStringA`) into a `page_rendered` response, and `static/js/app.js` decodes them with `atob` into a `canvas` via `ImageData` for the page-list thumbnails. There is no click-to-preview pane yet; only the thumbnail strip is wired up.
 
 `WorkingDocument` (`core/native/engine.h`) tracks undo history and a dirty flag: every mutating call (`append_page`, `reorder`, `rotate`, `erase`) snapshots the page list right before it commits (never on a call that ends up throwing, so rejected input can't pollute the history) and marks the document dirty. `undo()` pops the most recent snapshot, capped at 20 entries like the Python baseline's `push_undo_snapshot`. `clear()` is a hard reset: it is not itself undoable and drops the whole undo history and dirty flag, since a `PageRef` from before a clear is meaningless afterward. `mark_saved()` clears the dirty flag and must only be called by whatever orchestrates a successful `PdfBackend::save()` -- never from a catch block -- so a failed save correctly leaves the document dirty.
 
 `inspect()` also returns each page's own stored rotation (`page_rotations`, via `FPDFPage_GetRotation`), since `WorkingDocument`'s rotation is an absolute value applied with `FPDFPage_SetRotation` at save/render time -- a freshly appended `PageRef` has to start from the source page's real rotation, not 0, or saving/rendering would silently un-rotate an already-rotated source page. `render_page` and the new `render_page_at_dpi` (same rendering path, sized from a DPI figure instead of an exact pixel width, for image export) both take that rotation and apply it with `FPDFPage_SetRotation` *before* querying the page's width/height, so a 90/270 rotation correctly swaps the rendered aspect ratio.
 
-### `host.cpp` <-> `WorkingDocument` integration
+### `webview_main.cpp` <-> `WorkingDocument` integration
 
-`host.cpp` now holds a single `WorkingDocument` (`g_document`) for the whole session instead of just a most-recently-opened file path, plus a `source_path -> password` map so `PdfBackend::save` can reopen encrypted sources without re-prompting. The WebMessage protocol:
+`webview_main.cpp` (`core/native/`, formerly `core/webview2/host.cpp`) holds a single `WorkingDocument` (`g_document`) for the whole session instead of just a most-recently-opened file path, plus a `source_path -> password` map so `PdfBackend::save` can reopen encrypted sources without re-prompting. The WebMessage protocol:
 
 | From JS | Behavior |
 |---|---|
@@ -32,11 +34,11 @@ For the PDF engine, we chose **PDFium** (BSD-3) over MuPDF (AGPL/commercial dual
 | `save_pdf` | Native Save dialog, then `PdfBackend::save(g_document, path, g_source_passwords)`; `mark_saved()` only runs after `save` returns without throwing. |
 | `export_images {indices, dpi}` | Native folder picker, then `render_page_at_dpi` (default 150 DPI, matching the Python baseline) + PNG encoding via WIC (`IWICImagingFactory`/`IWICBitmapEncoder`, `GUID_ContainerFormatPng`) for each requested page (all pages if `indices` is empty), named `page_0001.png` etc. |
 
-The password prompt uses `CredUIPromptForCredentialsW` (`wincred.h`) rather than a hand-built dialog, since a single documented API call is far less likely to have a subtle mistake that only interactive use would reveal. The folder picker for image export uses the modern `IFileOpenDialog` + `FOS_PICKFOLDERS` (COM, matching the existing `ComPtr`/WRL style already used for WebView2 itself), not the deprecated `SHBrowseForFolder`.
+The password prompt uses `CredUIPromptForCredentialsW` (`wincred.h`) rather than a hand-built dialog, since a single documented API call is far less likely to have a subtle mistake that only interactive use would reveal. The folder picker for image export uses the modern `IFileOpenDialog` + `FOS_PICKFOLDERS` (COM, via the hand-rolled `ComPtr<T>` described above), not the deprecated `SHBrowseForFolder`.
 
-`ui/app.js` was updated to match: it now builds each page-list row with move-up/move-down, rotate, and delete buttons (posting `reorder_pages`/`rotate_page`/`delete_pages`) instead of a static label, and adds toolbar buttons for undo and image export. There is still no drag-and-drop reordering or click-to-preview pane -- those remain open Phase 2 items.
+`static/js/app.js` was updated to match: it now builds each page-list row with move-up/move-down, rotate, and delete buttons (posting `reorder_pages`/`rotate_page`/`delete_pages`) instead of a static label, and adds toolbar buttons for undo and image export. There is still no drag-and-drop reordering or click-to-preview pane -- those remain open Phase 2 items.
 
-**Not yet interactively verified**: this round of `host.cpp`/`ui/` changes was checked with `cmake --build` (clean rebuild, zero warnings) only, not by launching the EXE -- the native multi-select dialog, password prompt, save dialog, folder picker, and the new UI buttons all still need a hands-on run to confirm they behave as intended.
+**Not yet interactively verified**: this code was checked with `build_native.py` (clean build, no warnings observed) and `engine_tests.cpp`'s full suite passing when compiled the same way, not by launching the EXE -- the native multi-select dialog, password prompt, save dialog, folder picker, and the new UI buttons all still need a hands-on run to confirm they behave as intended.
 
 ### Python version during the transition (comparison baseline)
 
@@ -82,26 +84,34 @@ python python/main.py
 
 ## C++ WebView2 version setup
 
-1. Install the "Desktop development with C++" workload and the Windows 10/11 SDK from Visual Studio 2022 Build Tools.
+1. Install a MinGW-w64 g++ toolchain (this repo has been built against the WinLibs UCRT build, found automatically by `build_native.py`; MSVC/Visual Studio is not required for this project).
 2. Run `powershell -ExecutionPolicy Bypass -File scripts/fetch_webview2_sdk.ps1` to extract the WebView2 SDK into `third_party/webview2/`.
 3. Run `powershell -ExecutionPolicy Bypass -File scripts/fetch_pdfium.ps1` to extract the prebuilt PDFium DLL into `third_party/pdfium/`.
-4. Build the x64 WebView2 host with CMake.
+4. Build:
 
 ```powershell
-cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
-cmake --build core/webview2/build --config Release
+python build_native.py
+# or: build.bat
 ```
 
-The resulting executable is `core/webview2/build/Release/QuickMarkPDF_webview.exe`. It runs on Windows 10/11 with the WebView2 Runtime installed.
+This bundles `templates/index.html` + `static/css/style.css` + `static/js/app.js` into a self-contained `dist/binary/index.html` (via `bundle_html.py`), compiles `dist/binary/QuickMarkPDF.exe` (GUI) and `dist/binary/QuickMarkPDF_cli.exe` (CLI demo of the PDF-engine-agnostic page model), copies `pdfium.dll` and `WebView2Loader.dll` next to them, and finally compiles and runs `core/native/engine_tests.cpp` as a build-time regression check (pass `--skip-tests` to skip that step). `dist/binary/` ends up as a flat, ready-to-run folder -- everything needed to launch `QuickMarkPDF.exe` is right there, matching the flat-ZIP distribution convention in `___appli-template/01_フォルダ構成.md`. It runs on Windows 10/11 with the WebView2 Runtime installed.
 
 ## Project layout
 
 ```
 QuickMarkPDF/
 ├── core/
-│   ├── native/                    # PDF-engine-agnostic C++ model
-│   └── webview2/                  # WebView2 host
-├── ui/                            # HTML/CSS/JavaScript shown in WebView2
+│   └── native/                    # All native C++: engine, PdfBackend, WebView2 host, CLI, tests, icon/resource
+├── templates/
+│   └── index.html                 # Dev-mode HTML (references static/ via relative paths)
+├── static/
+│   ├── css/style.css              # Dev-mode CSS
+│   └── js/app.js                  # Dev-mode JS (framework-free)
+├── build_native.py                # Builds dist/binary/ via direct g++ invocation (no CMake)
+├── bundle_html.py                 # Inlines templates/static into dist/binary/index.html
+├── build.bat                      # Thin wrapper around build_native.py
+├── dist/
+│   └── binary/                    # Build output (gitignored except .gitkeep) -- QuickMarkPDF.exe, _cli.exe, DLLs, index.html
 ├── python/
 │   ├── main.py                    # Entry point
 │   └── src/                       # Python sources

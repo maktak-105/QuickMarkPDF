@@ -3,28 +3,140 @@
 #include <wincred.h>
 #include <wincrypt.h>
 #include <shobjidl.h>
+#include <unknwn.h>
+#include <WebView2.h>
 
+#include <atomic>
 #include <cwctype>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <WebView2.h>
-#include <wrl.h>
-#include <wrl/event.h>
-
 #include "engine.h"
 #include "pdf_backend.h"
 
-using Microsoft::WRL::Callback;
-using Microsoft::WRL::ComPtr;
-
 namespace {
+
+// =====================
+// WebView2 event handler boilerplate
+// =====================
+//
+// The MSVC-only Microsoft::WRL::Callback<>/ComPtr<> helpers
+// (<wrl.h>/<wrl/event.h>) aren't available under this project's MinGW-w64
+// toolchain -- <wrl/event.h> doesn't exist in its header set at all (unlike
+// <wrl.h>, confirmed by trying to compile it). These three classes hand-roll
+// the same "wrap a std::function as a one-off COM callback" pattern with a
+// raw IUnknown implementation instead, matching the approach already proven
+// to build and run in this workspace's QuickFolderSize/core/native/
+// webview_main.cpp.
+
+class EnvCompletedHandler : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
+    std::function<HRESULT(HRESULT, ICoreWebView2Environment*)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit EnvCompletedHandler(std::function<HRESULT(HRESULT, ICoreWebView2Environment*)> fn)
+        : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler) {
+            *ppv = static_cast<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Environment* environment) override {
+        return fn_(result, environment);
+    }
+};
+
+class ControllerCompletedHandler : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
+    std::function<HRESULT(HRESULT, ICoreWebView2Controller*)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit ControllerCompletedHandler(std::function<HRESULT(HRESULT, ICoreWebView2Controller*)> fn)
+        : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler) {
+            *ppv = static_cast<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
+        return fn_(result, controller);
+    }
+};
+
+class WebMessageReceivedHandler : public ICoreWebView2WebMessageReceivedEventHandler {
+    std::function<HRESULT(ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs*)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit WebMessageReceivedHandler(
+        std::function<HRESULT(ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs*)> fn)
+        : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2WebMessageReceivedEventHandler) {
+            *ppv = static_cast<ICoreWebView2WebMessageReceivedEventHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) override {
+        return fn_(sender, args);
+    }
+};
+
+// Minimal RAII for CoCreateInstance-created interfaces (IFileOpenDialog,
+// IShellItem, the WIC objects) -- std::unique_ptr with a Release()-calling
+// deleter, so early returns can't leak a reference. Deliberately not
+// Microsoft::WRL::ComPtr (see the note above); this needs nothing beyond
+// the standard library.
+template <typename T>
+struct ComDeleter {
+    void operator()(T* p) const {
+        if (p) p->Release();
+    }
+};
+template <typename T>
+using ComPtr = std::unique_ptr<T, ComDeleter<T>>;
+
+// =====================
+// Global session state
+// =====================
+
 HWND g_window = nullptr;
-ComPtr<ICoreWebView2Controller> g_controller;
-ComPtr<ICoreWebView2> g_webview;
+ICoreWebView2Controller* g_controller = nullptr;
+ICoreWebView2* g_webview = nullptr;
 quickmarkpdf::WorkingDocument g_document;
 // Password used to open each source file, so PdfBackend::save can reopen
 // encrypted sources without asking again.
@@ -34,9 +146,9 @@ std::unordered_map<std::string, std::string> g_source_passwords;
 // String / JSON helpers
 // =====================
 //
-// ui/app.js is the only producer of the request messages below and the
-// only consumer of the response messages, and its shape never varies, so a
-// couple of targeted lookups are enough -- no need for a general JSON
+// static/js/app.js is the only producer of the request messages below and
+// the only consumer of the response messages, and its shape never varies,
+// so a couple of targeted lookups are enough -- no need for a general JSON
 // parser/serializer here.
 
 std::wstring file_url(const std::filesystem::path& path) {
@@ -204,16 +316,21 @@ std::optional<std::filesystem::path> prompt_save_pdf() {
 // Folder picker for image export, via the modern IFileOpenDialog +
 // FOS_PICKFOLDERS (the SHBrowseForFolder-era API is deprecated).
 std::optional<std::filesystem::path> prompt_pick_folder() {
-    ComPtr<IFileOpenDialog> dialog;
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+    IFileOpenDialog* raw_dialog = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&raw_dialog)))) {
         return std::nullopt;
     }
+    ComPtr<IFileOpenDialog> dialog(raw_dialog);
+
     DWORD options = 0;
     dialog->GetOptions(&options);
     dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM);
     if (FAILED(dialog->Show(g_window))) return std::nullopt;
-    ComPtr<IShellItem> item;
-    if (FAILED(dialog->GetResult(&item))) return std::nullopt;
+
+    IShellItem* raw_item = nullptr;
+    if (FAILED(dialog->GetResult(&raw_item))) return std::nullopt;
+    ComPtr<IShellItem> item(raw_item);
+
     PWSTR raw_path = nullptr;
     if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &raw_path))) return std::nullopt;
     std::filesystem::path result(raw_path);
@@ -255,20 +372,26 @@ std::optional<std::string> prompt_for_password(const std::filesystem::path& path
 // =====================
 
 bool write_png(const std::filesystem::path& path, const quickmarkpdf::RenderedPage& page) {
-    ComPtr<IWICImagingFactory> factory;
-    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))) {
+    IWICImagingFactory* raw_factory = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                 IID_PPV_ARGS(&raw_factory)))) {
         return false;
     }
-    ComPtr<IWICStream> stream;
-    if (FAILED(factory->CreateStream(&stream))) return false;
+    ComPtr<IWICImagingFactory> factory(raw_factory);
+
+    IWICStream* raw_stream = nullptr;
+    if (FAILED(factory->CreateStream(&raw_stream))) return false;
+    ComPtr<IWICStream> stream(raw_stream);
     if (FAILED(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE))) return false;
 
-    ComPtr<IWICBitmapEncoder> encoder;
-    if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder))) return false;
-    if (FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) return false;
+    IWICBitmapEncoder* raw_encoder = nullptr;
+    if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &raw_encoder))) return false;
+    ComPtr<IWICBitmapEncoder> encoder(raw_encoder);
+    if (FAILED(encoder->Initialize(stream.get(), WICBitmapEncoderNoCache))) return false;
 
-    ComPtr<IWICBitmapFrameEncode> frame;
-    if (FAILED(encoder->CreateNewFrame(&frame, nullptr))) return false;
+    IWICBitmapFrameEncode* raw_frame = nullptr;
+    if (FAILED(encoder->CreateNewFrame(&raw_frame, nullptr))) return false;
+    ComPtr<IWICBitmapFrameEncode> frame(raw_frame);
     if (FAILED(frame->Initialize(nullptr))) return false;
     if (FAILED(frame->SetSize(static_cast<UINT>(page.width), static_cast<UINT>(page.height)))) return false;
 
@@ -452,6 +575,14 @@ void handle_export_images(const std::wstring& message) {
 // WebView2 host plumbing
 // =====================
 
+// CreateCoreWebView2EnvironmentWithOptions, resolved from WebView2Loader.dll
+// at runtime instead of linking its import library -- the same pattern
+// already used for pdfium.dll in pdf_backend.cpp, and for WebView2Loader.dll
+// in QuickFolderSize's webview_main.cpp. Avoids any question of whether a
+// Microsoft-format import .lib links cleanly under MinGW's ld.
+using CreateEnvFn = HRESULT(STDAPICALLTYPE*)(PCWSTR, PCWSTR, ICoreWebView2EnvironmentOptions*,
+                                              ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler*);
+
 void resize_webview() {
     if (!g_controller) return;
     RECT bounds{};
@@ -479,44 +610,56 @@ void dispatch_message(const std::wstring& message) {
     }
 }
 
-void load_ui(const std::filesystem::path& ui_path) {
-    CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, nullptr, nullptr,
-        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [ui_path](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
-                if (FAILED(result) || environment == nullptr) return result;
-                return environment->CreateCoreWebView2Controller(
-                    g_window,
-                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [ui_path](HRESULT controller_result,
-                                  ICoreWebView2Controller* controller) -> HRESULT {
-                            if (FAILED(controller_result) || controller == nullptr) {
-                                return controller_result;
-                            }
-                            g_controller = controller;
-                            g_controller->get_CoreWebView2(&g_webview);
-                            EventRegistrationToken message_token{};
-                            g_webview->add_WebMessageReceived(
-                                Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-                                    [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
-                                        LPWSTR raw_message = nullptr;
-                                        if (FAILED(args->TryGetWebMessageAsString(&raw_message))) {
-                                            return S_OK;
-                                        }
-                                        const std::wstring message(raw_message);
-                                        CoTaskMemFree(raw_message);
-                                        dispatch_message(message);
-                                        return S_OK;
-                                    })
-                                    .Get(),
-                                &message_token);
-                            resize_webview();
-                            g_webview->Navigate(file_url(ui_path).c_str());
-                            return S_OK;
-                        })
-                        .Get());
-            })
-            .Get());
+bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem::path& ui_path) {
+    const auto loader_path = executable_dir / L"WebView2Loader.dll";
+    HMODULE loader = LoadLibraryW(loader_path.c_str());
+    if (!loader) {
+        MessageBoxW(g_window, L"WebView2Loader.dll が見つかりません。\nQuickMarkPDF.exe と同じフォルダに配置してください。",
+                    L"QuickMarkPDF", MB_ICONERROR);
+        return false;
+    }
+    auto create_environment = reinterpret_cast<CreateEnvFn>(GetProcAddress(loader, "CreateCoreWebView2EnvironmentWithOptions"));
+    if (!create_environment) {
+        MessageBoxW(g_window, L"WebView2Loader.dll からCreateCoreWebView2EnvironmentWithOptionsを取得できませんでした。",
+                    L"QuickMarkPDF", MB_ICONERROR);
+        return false;
+    }
+
+    wchar_t temp_dir[MAX_PATH]{};
+    GetTempPathW(MAX_PATH, temp_dir);
+    const std::wstring user_data_folder = std::wstring(temp_dir) + L"QuickMarkPDF_WVData";
+    CreateDirectoryW(user_data_folder.c_str(), nullptr);
+
+    create_environment(
+        nullptr, user_data_folder.c_str(), nullptr,
+        new EnvCompletedHandler([ui_path](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
+            if (FAILED(result) || environment == nullptr) return result;
+            return environment->CreateCoreWebView2Controller(
+                g_window, new ControllerCompletedHandler([ui_path](HRESULT controller_result,
+                                                                    ICoreWebView2Controller* controller) -> HRESULT {
+                    if (FAILED(controller_result) || controller == nullptr) return controller_result;
+
+                    g_controller = controller;
+                    g_controller->AddRef();
+                    g_controller->get_CoreWebView2(&g_webview);
+
+                    g_webview->add_WebMessageReceived(
+                        new WebMessageReceivedHandler(
+                            [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                LPWSTR raw_message = nullptr;
+                                if (FAILED(args->TryGetWebMessageAsString(&raw_message))) return S_OK;
+                                const std::wstring message(raw_message);
+                                CoTaskMemFree(raw_message);
+                                dispatch_message(message);
+                                return S_OK;
+                            }),
+                        nullptr);
+                    resize_webview();
+                    g_webview->Navigate(file_url(ui_path).c_str());
+                    return S_OK;
+                }));
+        }));
+    return true;
 }
 
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -525,14 +668,22 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         resize_webview();
         return 0;
     case WM_DESTROY:
-        g_webview.Reset();
-        g_controller.Reset();
+        if (g_webview) {
+            g_webview->Release();
+            g_webview = nullptr;
+        }
+        if (g_controller) {
+            g_controller->Close();
+            g_controller->Release();
+            g_controller = nullptr;
+        }
         PostQuitMessage(0);
         return 0;
     default:
         return DefWindowProcW(window, message, wparam, lparam);
     }
 }
+
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_command) {
@@ -540,7 +691,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     wchar_t executable_path[MAX_PATH]{};
     GetModuleFileNameW(nullptr, executable_path, MAX_PATH);
     const auto executable_dir = std::filesystem::path(executable_path).parent_path();
-    const auto ui_path = std::filesystem::absolute(executable_dir / L"ui" / L"index.html");
+    // dist/binary/ is a flat layout (see ___appli-template/01_フォルダ構成.md):
+    // bundle_html.py always produces a single self-contained index.html next
+    // to the exe, so there is no "ui/" subfolder to look for.
+    const auto ui_path = std::filesystem::absolute(executable_dir / L"index.html");
 
     WNDCLASSW window_class{};
     window_class.hInstance = instance;
@@ -557,7 +711,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     ShowWindow(g_window, show_command);
     UpdateWindow(g_window);
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 1;
-    load_ui(ui_path);
+    if (!load_ui(executable_dir, ui_path)) return 1;
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {

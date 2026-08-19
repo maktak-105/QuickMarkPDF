@@ -55,14 +55,17 @@ dist_tmp/
 # AI tools and local notes
 CODEX_PROJECT_NOTE.txt
 
-# Native C++ build output
+# core/native: build_native.py が生成する中間ファイル
+core/native/*.dll
 core/native/*.o
-core/native/build/
-dist/native/
+core/native/*.exe
 
-# Downloaded SDKs and native build output
+# dist/binary: ビルド成果物はGit管理外、フォルダ構造だけ管理
+dist/binary/*
+!dist/binary/.gitkeep
+
+# Downloaded SDKs
 third_party/webview2/
 third_party/pdfium/
 third_party/*.nupkg
 third_party/*.tgz
-core/webview2/build/
