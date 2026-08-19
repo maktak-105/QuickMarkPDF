@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cwctype>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -181,10 +182,29 @@ std::wstring file_url(const std::filesystem::path& path) {
 }
 
 std::wstring json_string(const std::wstring& value) {
+    // Every response built here so far has been short, control-character-free
+    // text (statuses, file paths), so escaping just backslash/quote was
+    // enough. Markdown file content is neither -- it's arbitrary multi-line
+    // text -- so this also escapes the control characters JSON requires
+    // escaping (a bare newline inside a JSON string is invalid and breaks
+    // parsing on the JS side).
     std::wstring escaped = L"\"";
     for (const auto character : value) {
-        if (character == L'\\' || character == L'\"') escaped += L'\\';
-        escaped += character;
+        switch (character) {
+            case L'\\': escaped += L"\\\\"; break;
+            case L'\"': escaped += L"\\\""; break;
+            case L'\n': escaped += L"\\n"; break;
+            case L'\r': escaped += L"\\r"; break;
+            case L'\t': escaped += L"\\t"; break;
+            default:
+                if (character < 0x20) {
+                    wchar_t buf[8];
+                    swprintf_s(buf, L"\\u%04x", static_cast<unsigned>(character));
+                    escaped += buf;
+                } else {
+                    escaped += character;
+                }
+        }
     }
     escaped += L"\"";
     return escaped;
@@ -374,12 +394,15 @@ std::vector<std::filesystem::path> parse_multiselect_buffer(const wchar_t* buffe
     return result;
 }
 
-std::vector<std::filesystem::path> prompt_open_pdfs() {
+std::vector<std::filesystem::path> prompt_open_documents() {
     std::vector<wchar_t> buffer(65536, L'\0');
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.hwndOwner = g_window;
-    dialog.lpstrFilter = L"PDF files (*.pdf)\0*.pdf\0All files (*.*)\0*.*\0";
+    dialog.lpstrFilter =
+        L"Supported Files (*.pdf;*.md;*.markdown)\0*.pdf;*.md;*.markdown\0"
+        L"PDF Files (*.pdf)\0*.pdf\0Markdown Files (*.md;*.markdown)\0*.md;*.markdown\0"
+        L"All files (*.*)\0*.*\0";
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_ALLOWMULTISELECT;
@@ -467,17 +490,75 @@ std::optional<std::string> prompt_for_password(const std::filesystem::path& path
 // Request handlers
 // =====================
 
-// Shared by the dialog-driven open (handle_open_pdf) and the CLI-args
+std::wstring lowercase_extension(const std::filesystem::path& path) {
+    auto ext = path.extension().wstring();
+    for (auto& c : ext) c = static_cast<wchar_t>(std::towlower(c));
+    return ext;
+}
+
+bool is_markdown_path(const std::filesystem::path& path) {
+    const auto ext = lowercase_extension(path);
+    return ext == L".md" || ext == L".markdown";
+}
+
+// Reads a UTF-8 text file whole. Used for Markdown, which -- unlike PDF --
+// is read directly rather than through PdfBackend.
+std::string read_text_file_utf8(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) throw std::runtime_error("cannot open file: " + path.u8string());
+    std::string data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    return data;
+}
+
+void open_pdf_paths(const std::vector<std::filesystem::path>& paths);
+
+// Loads `path` as the current Markdown document and tells the frontend to
+// switch into Markdown view mode (Mermaid/MathJax rendering and PDF export
+// from Markdown are not implemented in this port yet -- see
+// plans/2026-08-20_*.md). The already-open PDF session (if any) is left
+// untouched in memory so switching back to a PDF loses nothing, unlike the
+// Python baseline's explicit discard-confirmation flow which this port
+// does not reproduce.
+void open_markdown_path(const std::filesystem::path& path) {
+    std::string content;
+    try {
+        content = read_text_file_utf8(path);
+    } catch (const std::exception&) {
+        post_status(L"Markdownファイルを読み込めませんでした: " + path.filename().wstring());
+        return;
+    }
+    const std::wstring response = L"{\"type\":\"markdown_opened\",\"path\":" +
+                                   json_string(path.wstring()) + L",\"content\":" +
+                                   json_string(utf8_to_wide(content)) + L"}";
+    if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
+    post_status(L"Markdownを読み込みました: " + path.filename().wstring());
+}
+
+// Shared by the dialog-driven open (handle_open_documents) and the CLI-args
 // startup path (see wWinMain) -- mirrors main.py calling
 // MainWindow.open_documents(files) directly to skip the dialog entirely,
 // per CPP_PORT_POSTMORTEM.md's explicit recommendation not to rely on
-// automating the native file dialog for verification.
-void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
+// automating the native file dialog for verification. A Markdown path
+// among `paths` takes priority (matching the Python baseline's "pick one,
+// not both" rule) -- only the first one is opened; the Python baseline
+// also has an explicit mixed-type error message this port skips for now.
+void open_document_paths(const std::vector<std::filesystem::path>& paths) {
     if (paths.empty()) {
         post_status(L"ファイル選択をキャンセルしました");
         return;
     }
 
+    for (const auto& path : paths) {
+        if (is_markdown_path(path)) {
+            open_markdown_path(path);
+            return;
+        }
+    }
+
+    open_pdf_paths(paths);
+}
+
+void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
     std::vector<std::string> utf8_paths;
     utf8_paths.reserve(paths.size());
     for (const auto& p : paths) utf8_paths.push_back(p.u8string());
@@ -522,8 +603,8 @@ void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
     if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
 }
 
-void handle_open_pdf() {
-    open_pdf_paths(prompt_open_pdfs());
+void handle_open_documents() {
+    open_document_paths(prompt_open_documents());
 }
 
 void handle_render_page(const std::wstring& message) {
@@ -709,7 +790,7 @@ void resize_webview() {
 void dispatch_message(const std::wstring& message) {
     const auto type = extract_type(message);
     if (type == L"open_pdf") {
-        handle_open_pdf();
+        handle_open_documents();
     } else if (type == L"render_page") {
         handle_render_page(message);
     } else if (type == L"reorder_pages") {
@@ -811,7 +892,7 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                                     std::vector<std::filesystem::path> paths;
                                     for (const auto& p : g_startup_paths) paths.emplace_back(p);
                                     g_startup_paths.clear();
-                                    open_pdf_paths(paths);
+                                    open_document_paths(paths);
                                 }
                                 return S_OK;
                             }),
@@ -870,7 +951,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 // Splits the command line into individual arguments (CommandLineToArgvW),
 // keeping only ones that look like an existing .pdf path -- mirrors
 // python/main.py's own filtering of sys.argv[1:].
-std::vector<std::wstring> parse_startup_pdf_args(PWSTR command_line) {
+std::vector<std::wstring> parse_startup_document_args(PWSTR command_line) {
     std::vector<std::wstring> result;
     if (!command_line || !*command_line) return result;
     int argc = 0;
@@ -878,9 +959,8 @@ std::vector<std::wstring> parse_startup_pdf_args(PWSTR command_line) {
     if (!argv) return result;
     for (int i = 0; i < argc; ++i) {
         std::filesystem::path candidate(argv[i]);
-        auto ext = candidate.extension().wstring();
-        for (auto& c : ext) c = static_cast<wchar_t>(std::towlower(c));
-        if (ext == L".pdf" && std::filesystem::exists(candidate)) {
+        const auto ext = lowercase_extension(candidate);
+        if ((ext == L".pdf" || ext == L".md" || ext == L".markdown") && std::filesystem::exists(candidate)) {
             result.push_back(std::filesystem::absolute(candidate).wstring());
         }
     }
@@ -891,7 +971,7 @@ std::vector<std::wstring> parse_startup_pdf_args(PWSTR command_line) {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_command) {
-    g_startup_paths = parse_startup_pdf_args(command_line);
+    g_startup_paths = parse_startup_document_args(command_line);
 
     wchar_t executable_path[MAX_PATH]{};
     GetModuleFileNameW(nullptr, executable_path, MAX_PATH);

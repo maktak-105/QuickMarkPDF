@@ -20,16 +20,19 @@
     <button id="export-button" class="tool" disabled>画像出力</button>
     <button id="save-button" class="tool" disabled>保存</button>
   </header>
-  <main class="workspace">
+  <main class="workspace" id="pdf-workspace">
     <aside class="thumbnail-panel">
       <div id="page-list" class="empty">PDFを開くとページ一覧を表示します。</div>
     </aside>
     <section class="preview" id="preview">
       <div class="welcome">
         <h1>QuickMarkPDF</h1>
-        <p>「開く」からPDFを選択してください。</p>
+        <p>「開く」からPDFまたはMarkdownファイルを選択してください。</p>
       </div>
     </section>
+  </main>
+  <main class="markdown-workspace" id="markdown-workspace" hidden>
+    <article id="markdown-content" class="markdown-content"></article>
   </main>
   <footer class="statusbar">
     <span id="status">準備完了</span>

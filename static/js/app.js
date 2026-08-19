@@ -5,6 +5,9 @@
   const statusEl = document.querySelector('#status');
   const pageList = document.querySelector('#page-list');
   const previewEl = document.querySelector('#preview');
+  const pdfWorkspace = document.querySelector('#pdf-workspace');
+  const markdownWorkspace = document.querySelector('#markdown-workspace');
+  const markdownContent = document.querySelector('#markdown-content');
 
   const openButton = document.querySelector('#open-button');
   const splitButton = document.querySelector('#split-button');
@@ -26,11 +29,145 @@
   let primaryIndex = -1;
   let anchorIndex = -1;
   let dragFromIndex = -1;
+  let canUndo = false;
+  let currentMode = 'pdf';
 
   const hasBridge = () => Boolean(window.chrome?.webview);
   const post = (payload) => {
     if (hasBridge()) window.chrome.webview.postMessage(JSON.stringify(payload));
   };
+
+  // Compact Markdown -> HTML converter. Covers headings, paragraphs,
+  // bold/italic, inline code, fenced code blocks, blockquotes (recursive),
+  // simple (non-nested) bullet/numbered lists, links, images, and
+  // horizontal rules -- deliberately not a full CommonMark implementation.
+  // Mermaid/MathJax rendering and tables are not implemented; see
+  // plans/2026-08-20_*.md for what's deferred. Escapes HTML in the source
+  // first, so raw HTML embedded in a Markdown file renders as literal text
+  // rather than executing -- a safe simplification, not a Python-parity
+  // feature (the Python baseline's `Markdown` package allows raw HTML
+  // passthrough).
+  function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderInline(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2">');
+    out = out.replace(/\[([^\]]*)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return out;
+  }
+
+  function markdownToHtml(source) {
+    const lines = source.replace(/\r\n?/g, '\n').split('\n');
+    const html = [];
+    let i = 0;
+    let paragraphLines = [];
+    let list = null;  // { type: 'ul'|'ol', items: [] }
+
+    const flushParagraph = () => {
+      if (paragraphLines.length) {
+        html.push('<p>' + renderInline(paragraphLines.join(' ')) + '</p>');
+        paragraphLines = [];
+      }
+    };
+    const flushList = () => {
+      if (list) {
+        html.push(`<${list.type}>` + list.items.map((item) => `<li>${renderInline(item)}</li>`).join('') +
+          `</${list.type}>`);
+        list = null;
+      }
+    };
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      if (/^```/.test(line)) {
+        flushParagraph();
+        flushList();
+        const codeLines = [];
+        i += 1;
+        while (i < lines.length && !/^```/.test(lines[i])) {
+          codeLines.push(lines[i]);
+          i += 1;
+        }
+        i += 1;
+        html.push('<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>');
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        flushParagraph();
+        flushList();
+        const level = heading[1].length;
+        html.push(`<h${level}>${renderInline(heading[2].trim())}</h${level}>`);
+        i += 1;
+        continue;
+      }
+
+      if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        flushParagraph();
+        flushList();
+        html.push('<hr>');
+        i += 1;
+        continue;
+      }
+
+      if (/^>\s?/.test(line)) {
+        flushParagraph();
+        flushList();
+        const quoted = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) {
+          quoted.push(lines[i].replace(/^>\s?/, ''));
+          i += 1;
+        }
+        html.push('<blockquote>' + markdownToHtml(quoted.join('\n')) + '</blockquote>');
+        continue;
+      }
+
+      const bullet = line.match(/^[-*+]\s+(.*)$/);
+      if (bullet) {
+        flushParagraph();
+        if (!list || list.type !== 'ul') {
+          flushList();
+          list = { type: 'ul', items: [] };
+        }
+        list.items.push(bullet[1]);
+        i += 1;
+        continue;
+      }
+
+      const numbered = line.match(/^\d+\.\s+(.*)$/);
+      if (numbered) {
+        flushParagraph();
+        if (!list || list.type !== 'ol') {
+          flushList();
+          list = { type: 'ol', items: [] };
+        }
+        list.items.push(numbered[1]);
+        i += 1;
+        continue;
+      }
+
+      if (line.trim() === '') {
+        flushParagraph();
+        flushList();
+        i += 1;
+        continue;
+      }
+
+      paragraphLines.push(line.trim());
+      i += 1;
+    }
+    flushParagraph();
+    flushList();
+    return html.join('\n');
+  }
 
   function setStatus(text) {
     statusEl.textContent = text;
@@ -46,14 +183,28 @@
   }
 
   function updateToolbarEnabled() {
-    const hasSelection = selectedIndices.size > 0;
+    // Rotate/delete/cut-out/export/undo are PDF-only -- in Markdown mode
+    // there is no page selection at all, so these are simply unusable
+    // (matches the Python baseline hiding/disabling the same controls
+    // outside PDF mode).
+    const isPdfMode = currentMode === 'pdf';
+    const hasSelection = isPdfMode && selectedIndices.size > 0;
     rotateRightButton.disabled = !hasSelection;
     rotateLeftButton.disabled = !hasSelection;
     rotate180Button.disabled = !hasSelection;
     deleteButton.disabled = !hasSelection;
     splitButton.disabled = !hasSelection;
-    exportButton.disabled = pages.length === 0;
-    saveButton.disabled = pages.length === 0;
+    exportButton.disabled = !isPdfMode || pages.length === 0;
+    undoButton.disabled = !isPdfMode || !canUndo;
+    saveButton.disabled = !isPdfMode || pages.length === 0;
+  }
+
+  function setMode(mode) {
+    currentMode = mode;
+    const isPdfMode = mode === 'pdf';
+    pdfWorkspace.hidden = !isPdfMode;
+    markdownWorkspace.hidden = isPdfMode;
+    updateToolbarEnabled();
   }
 
   function applySelectionToDom() {
@@ -214,7 +365,8 @@
 
   function renderPageList(data) {
     pages = data.pages || [];
-    undoButton.disabled = !data.can_undo;
+    canUndo = Boolean(data.can_undo);
+    setMode('pdf');
 
     if (pages.length === 0) {
       pageList.className = 'empty';
@@ -351,6 +503,11 @@
 
       if (data.type === 'document_state') {
         renderPageList(data);
+      }
+
+      if (data.type === 'markdown_opened') {
+        markdownContent.innerHTML = markdownToHtml(data.content || '');
+        setMode('markdown');
       }
 
       if (data.type === 'page_rendered') {
