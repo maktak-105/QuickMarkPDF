@@ -13,6 +13,8 @@ Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.Web.WebVi
 if (Test-Path $sdkRoot) {
     Remove-Item -LiteralPath $sdkRoot -Recurse -Force
 }
-Expand-Archive -LiteralPath $package -DestinationPath $sdkRoot -Force
-Remove-Item -LiteralPath $package -Force
+$zipPackage = [System.IO.Path]::ChangeExtension($package, ".zip")
+Move-Item -LiteralPath $package -Destination $zipPackage -Force
+Expand-Archive -LiteralPath $zipPackage -DestinationPath $sdkRoot -Force
+Remove-Item -LiteralPath $zipPackage -Force
 Write-Host "WebView2 SDK $Version extracted to $sdkRoot"
