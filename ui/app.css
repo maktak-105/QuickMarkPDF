@@ -14,6 +14,9 @@ h2 { font-size: 15px; margin: 0 0 16px; color: #cbd3df; }
 .page-items { display: grid; gap: 6px; }
 .page-item { padding: 10px 12px; border: 1px solid #3a404a; border-radius: 4px; background: #292e37; color: #d7deea; font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .page-thumbnail { width: 100%; max-width: 160px; height: auto; background: #fff; border-radius: 2px; }
+.page-label { font-size: 11px; color: #9faabc; text-align: center; word-break: break-all; }
+.page-controls { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.page-controls button { padding: 4px 8px; font-size: 12px; }
 .preview { display: grid; place-items: center; background: #111316; }
 .welcome { text-align: center; color: #dce3ed; }
 .welcome h1 { font-size: 30px; margin: 0 0 12px; }

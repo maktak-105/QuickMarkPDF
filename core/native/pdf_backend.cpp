@@ -35,6 +35,7 @@ using FPDF_ImportPagesByIndex_t =
 using FPDF_LoadPage_t = FPDF_PAGE(FPDF_CALLCONV*)(FPDF_DOCUMENT, int);
 using FPDF_ClosePage_t = void(FPDF_CALLCONV*)(FPDF_PAGE);
 using FPDFPage_SetRotation_t = void(FPDF_CALLCONV*)(FPDF_PAGE, int);
+using FPDFPage_GetRotation_t = int(FPDF_CALLCONV*)(FPDF_PAGE);
 using FPDF_SaveAsCopy_t = FPDF_BOOL(FPDF_CALLCONV*)(FPDF_DOCUMENT, FPDF_FILEWRITE*, FPDF_DWORD);
 using FPDF_GetPageWidthF_t = float(FPDF_CALLCONV*)(FPDF_PAGE);
 using FPDF_GetPageHeightF_t = float(FPDF_CALLCONV*)(FPDF_PAGE);
@@ -56,6 +57,7 @@ struct PdfiumApi {
     FPDF_LoadPage_t LoadPage = nullptr;
     FPDF_ClosePage_t ClosePage = nullptr;
     FPDFPage_SetRotation_t SetPageRotation = nullptr;
+    FPDFPage_GetRotation_t GetPageRotation = nullptr;
     FPDF_SaveAsCopy_t SaveAsCopy = nullptr;
     FPDF_GetPageWidthF_t GetPageWidthF = nullptr;
     FPDF_GetPageHeightF_t GetPageHeightF = nullptr;
@@ -93,6 +95,7 @@ const PdfiumApi& pdfium() {
         loaded.LoadPage = load_symbol<FPDF_LoadPage_t>(module, "FPDF_LoadPage");
         loaded.ClosePage = load_symbol<FPDF_ClosePage_t>(module, "FPDF_ClosePage");
         loaded.SetPageRotation = load_symbol<FPDFPage_SetRotation_t>(module, "FPDFPage_SetRotation");
+        loaded.GetPageRotation = load_symbol<FPDFPage_GetRotation_t>(module, "FPDFPage_GetRotation");
         loaded.SaveAsCopy = load_symbol<FPDF_SaveAsCopy_t>(module, "FPDF_SaveAsCopy");
         loaded.GetPageWidthF = load_symbol<FPDF_GetPageWidthF_t>(module, "FPDF_GetPageWidthF");
         loaded.GetPageHeightF = load_symbol<FPDF_GetPageHeightF_t>(module, "FPDF_GetPageHeightF");
@@ -166,13 +169,30 @@ PdfDocumentInfo PdfBackend::inspect(const std::string& path, const std::string& 
     FPDF_DOCUMENT document = open_source(api, path, password, bytes);
 
     const int pages = api.GetPageCount(document);
+    if (pages <= 0) {
+        api.CloseDocument(document);
+        throw std::runtime_error("PDF page tree could not be inspected: " + path);
+    }
+
+    std::vector<int> rotations;
+    rotations.reserve(static_cast<std::size_t>(pages));
+    for (int i = 0; i < pages; ++i) {
+        FPDF_PAGE page = api.LoadPage(document, i);
+        if (!page) {
+            rotations.push_back(0);
+            continue;
+        }
+        const int quarter_turns = ((api.GetPageRotation(page) % 4) + 4) % 4;
+        rotations.push_back(quarter_turns * 90);
+        api.ClosePage(page);
+    }
+
     api.CloseDocument(document);
-    if (pages <= 0) throw std::runtime_error("PDF page tree could not be inspected: " + path);
-    return {path, static_cast<std::size_t>(pages)};
+    return {path, static_cast<std::size_t>(pages), std::move(rotations)};
 }
 
 RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_index, int target_width,
-                                      const std::string& password) {
+                                      int rotation, const std::string& password) {
     if (target_width < 1) throw std::invalid_argument("target_width must be at least 1");
 
     const auto& api = pdfium();
@@ -184,6 +204,11 @@ RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_i
         api.CloseDocument(document);
         throw std::runtime_error("page not found: " + path + " page " + std::to_string(page_index));
     }
+
+    // Must happen before querying width/height below: FPDF_GetPageWidthF/
+    // HeightF reflect the page's current rotation, so a 90/270 rotation has
+    // to be applied first for the swapped aspect ratio to be picked up.
+    api.SetPageRotation(page, ((rotation / 90) % 4 + 4) % 4);
 
     const float page_width = api.GetPageWidthF(page);
     const float page_height = api.GetPageHeightF(page);
@@ -223,6 +248,28 @@ RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_i
     api.ClosePage(page);
     api.CloseDocument(document);
     return result;
+}
+
+RenderedPage PdfBackend::render_page_at_dpi(const std::string& path, std::size_t page_index, int dpi,
+                                             int rotation, const std::string& password) {
+    if (dpi < 1) throw std::invalid_argument("dpi must be at least 1");
+
+    const auto& api = pdfium();
+    std::string bytes;
+    FPDF_DOCUMENT document = open_source(api, path, password, bytes);
+
+    FPDF_PAGE page = api.LoadPage(document, static_cast<int>(page_index));
+    if (!page) {
+        api.CloseDocument(document);
+        throw std::runtime_error("page not found: " + path + " page " + std::to_string(page_index));
+    }
+    api.SetPageRotation(page, ((rotation / 90) % 4 + 4) % 4);
+    const float page_width = api.GetPageWidthF(page);
+    api.ClosePage(page);
+    api.CloseDocument(document);
+
+    const int target_width = std::max(1, static_cast<int>(std::lround(page_width * dpi / 72.0f)));
+    return render_page(path, page_index, target_width, rotation, password);
 }
 
 void PdfBackend::save(const WorkingDocument& document, const std::string& output_path,

@@ -19,7 +19,8 @@ namespace {
 // Writes a structurally valid minimal PDF (catalog + pages tree + xref
 // table with byte-exact offsets), since pdfium needs one to parse the file
 // at all -- unlike the text-scanning placeholder PdfBackend used to have.
-void write_min_pdf(const std::string& path, int num_pages) {
+void write_min_pdf(const std::string& path, int num_pages, int page_width = 200, int page_height = 200,
+                    const std::vector<int>& page_rotations = {}) {
     std::string buf = "%PDF-1.7\n";
     std::vector<std::size_t> offsets(static_cast<std::size_t>(num_pages) + 3, 0);
 
@@ -38,8 +39,13 @@ void write_min_pdf(const std::string& path, int num_pages) {
     kids += "]";
     append_obj(2, "<< /Type /Pages /Kids " + kids + " /Count " + std::to_string(num_pages) + " >>");
 
+    const std::string media_box =
+        "[0 0 " + std::to_string(page_width) + " " + std::to_string(page_height) + "]";
     for (int i = 0; i < num_pages; ++i) {
-        append_obj(3 + i, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>");
+        const std::string rotate_entry = static_cast<std::size_t>(i) < page_rotations.size()
+            ? " /Rotate " + std::to_string(page_rotations[static_cast<std::size_t>(i)])
+            : "";
+        append_obj(3 + i, "<< /Type /Page /Parent 2 0 R /MediaBox " + media_box + rotate_entry + " >>");
     }
 
     const auto xref_offset = buf.size();
@@ -229,6 +235,24 @@ void test_pdf_inspection_boundary() {
     write_min_pdf(path, 2);
     const auto info = quickmarkpdf::PdfBackend::inspect(path);
     assert(info.page_count == 2);
+    assert(info.page_rotations.size() == 2);
+    assert(info.page_rotations[0] == 0);
+    assert(info.page_rotations[1] == 0);
+    std::remove(path.c_str());
+}
+
+void test_inspect_reports_each_pages_own_rotation() {
+    // A freshly appended PageRef must seed its rotation from the source
+    // page's own /Rotate, not 0 -- otherwise PdfBackend::save/render_page
+    // would silently un-rotate a page the source file already had rotated,
+    // since their rotation contract is absolute, not a delta.
+    const auto path = std::string("quickmarkpdf_test_rotated_source.pdf");
+    write_min_pdf(path, 3, 200, 200, {0, 90, 270});
+    const auto info = quickmarkpdf::PdfBackend::inspect(path);
+    assert(info.page_rotations.size() == 3);
+    assert(info.page_rotations[0] == 0);
+    assert(info.page_rotations[1] == 90);
+    assert(info.page_rotations[2] == 270);
     std::remove(path.c_str());
 }
 
@@ -281,20 +305,52 @@ void test_render_page_produces_blank_white_bitmap() {
     const auto path = std::string("quickmarkpdf_test_render.pdf");
     write_min_pdf(path, 1);
 
-    const auto page = quickmarkpdf::PdfBackend::render_page(path, 0, 100);
+    const auto page = quickmarkpdf::PdfBackend::render_page(path, 0, 100, /*rotation=*/0);
     assert(page.width == 100);
     assert(page.height == 100);
     assert(page.rgba.size() == static_cast<std::size_t>(100 * 100 * 4));
 
-    const auto pixel_at = [&](int x, int y) {
-        const auto offset = (static_cast<std::size_t>(y) * 100 + static_cast<std::size_t>(x)) * 4;
-        return std::array<unsigned char, 4>{page.rgba[offset], page.rgba[offset + 1], page.rgba[offset + 2],
-                                             page.rgba[offset + 3]};
+    const auto pixel_at = [&](const quickmarkpdf::RenderedPage& p, int x, int y) {
+        const auto offset = (static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) +
+                              static_cast<std::size_t>(x)) * 4;
+        return std::array<unsigned char, 4>{p.rgba[offset], p.rgba[offset + 1], p.rgba[offset + 2],
+                                             p.rgba[offset + 3]};
     };
     for (const auto& [x, y] : std::vector<std::pair<int, int>>{{0, 0}, {99, 0}, {0, 99}, {50, 50}}) {
-        const auto pixel = pixel_at(x, y);
+        const auto pixel = pixel_at(page, x, y);
         assert(pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255 && pixel[3] == 255);
     }
+
+    std::remove(path.c_str());
+}
+
+void test_render_page_rotation_swaps_aspect_ratio() {
+    // A 100x200pt (portrait) page rotated 90 degrees should render as
+    // landscape: requesting a 100pt-wide render should come back ~50pt
+    // tall (matching the rotated page's own aspect ratio), not 200pt tall.
+    const auto path = std::string("quickmarkpdf_test_render_rotated.pdf");
+    write_min_pdf(path, 1, /*page_width=*/100, /*page_height=*/200);
+
+    const auto unrotated = quickmarkpdf::PdfBackend::render_page(path, 0, 100, /*rotation=*/0);
+    assert(unrotated.width == 100);
+    assert(unrotated.height == 200);
+
+    const auto rotated = quickmarkpdf::PdfBackend::render_page(path, 0, 100, /*rotation=*/90);
+    assert(rotated.width == 100);
+    assert(rotated.height == 50);
+
+    std::remove(path.c_str());
+}
+
+void test_render_page_at_dpi_matches_pdf_point_size() {
+    // A 72x144pt page (i.e. exactly 1x2 inches) at 100 DPI should come back
+    // as a 100x200px bitmap: DPI is literally pixels-per-72pt-inch.
+    const auto path = std::string("quickmarkpdf_test_render_dpi.pdf");
+    write_min_pdf(path, 1, /*page_width=*/72, /*page_height=*/144);
+
+    const auto page = quickmarkpdf::PdfBackend::render_page_at_dpi(path, 0, /*dpi=*/100, /*rotation=*/0);
+    assert(page.width == 100);
+    assert(page.height == 200);
 
     std::remove(path.c_str());
 }
@@ -313,8 +369,11 @@ int main() {
     test_clear_wipes_undo_history_and_dirty_flag();
     test_dirty_tracks_unsaved_changes();
     test_pdf_inspection_boundary();
+    test_inspect_reports_each_pages_own_rotation();
     test_save_merges_reorders_and_rotates_pages();
     test_save_reports_missing_source_file();
     test_render_page_produces_blank_white_bitmap();
+    test_render_page_rotation_swaps_aspect_ratio();
+    test_render_page_at_dpi_matches_pdf_point_size();
     return 0;
 }

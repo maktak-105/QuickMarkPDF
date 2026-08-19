@@ -13,6 +13,13 @@ class WorkingDocument;
 struct PdfDocumentInfo {
     std::string path;
     std::size_t page_count = 0;
+    // Each page's own stored rotation in degrees (0/90/180/270), read via
+    // FPDFPage_GetRotation. WorkingDocument's rotation contract is an
+    // absolute value applied via FPDFPage_SetRotation at save/render time,
+    // so a freshly appended PageRef must start from this -- not 0 -- or a
+    // save/render would silently un-rotate a page the source file already
+    // had rotated.
+    std::vector<int> page_rotations;
 };
 
 // A page rasterized to top-left-origin, row-major RGBA8 pixels (no stride
@@ -51,9 +58,18 @@ public:
 
     // Rasterizes one page for a thumbnail or preview. `target_width` is the
     // desired output width in pixels; the height is derived from the page's
-    // own aspect ratio (post-rotation).
+    // own aspect ratio after `rotation` (an absolute value in degrees --
+    // typically a WorkingDocument PageRef's rotation, not a delta -- 0/90/
+    // 180/270) is applied, so a 90/270 rotation swaps the output's aspect
+    // ratio the same way PdfBackend::save's output page would.
     static RenderedPage render_page(const std::string& path, std::size_t page_index, int target_width,
-                                     const std::string& password = "");
+                                     int rotation, const std::string& password = "");
+
+    // Like render_page, but sized from a target resolution in DPI (pixels
+    // per 72pt inch) instead of an exact pixel width -- for image export,
+    // where the caller thinks in DPI rather than pixels.
+    static RenderedPage render_page_at_dpi(const std::string& path, std::size_t page_index, int dpi,
+                                            int rotation, const std::string& password = "");
 };
 
 }  // namespace quickmarkpdf

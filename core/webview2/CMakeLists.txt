@@ -18,7 +18,7 @@ set(PDFIUM_DLL "${PDFIUM_ROOT}/bin/pdfium.dll")
 
 add_executable(QuickMarkPDF_webview WIN32 host.cpp ../native/pdf_backend.cpp ../native/engine.cpp)
 target_include_directories(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_INCLUDE}" "${PDFIUM_INCLUDE}" "${CMAKE_CURRENT_LIST_DIR}/../native")
-target_link_libraries(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_LIB}" ole32 user32 comctl32 comdlg32 crypt32)
+target_link_libraries(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_LIB}" ole32 user32 comctl32 comdlg32 crypt32 credui windowscodecs shell32 uuid)
 target_compile_definitions(QuickMarkPDF_webview PRIVATE UNICODE _UNICODE NOMINMAX)
 target_compile_options(QuickMarkPDF_webview PRIVATE /utf-8)
 
