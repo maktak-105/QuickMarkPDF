@@ -33,6 +33,8 @@ cmake --build core/webview2/build --config Release
 
 `PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。`PdfBackend::save` は `WorkingDocument`(並べ替え・ファイル間移動・回転・削除)から `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy` で新規PDFを書き出します。パスワード付きソースで正しいパスワードがない場合は `PdfPasswordRequiredError` を送出します。`PdfBackend::render_page` はページを左上原点のRGBA8ピクセルへラスタライズします(`FPDFBitmap_Create` + `FPDF_RenderPageBitmap`、pdfium標準のBGRAからRGBAへ変換)。`host.cpp` は `render_page` WebMessageに対し、ピクセルをBase64化(`CryptBinaryToStringA`)した `page_rendered` を返し、`ui/app.js` が `atob` でデコードして `canvas` へ `ImageData` として描画します(ページ一覧のサムネイル)。クリックして拡大するプレビューペインはまだなく、サムネイル一覧のみ配線済みです。
 
+`WorkingDocument`(`core/native/engine.h`)はUndo履歴とdirtyフラグを持ちます。変更系メソッド(`append_page`・`reorder`・`rotate`・`erase`)は、確定直前にページ一覧をスナップショットし(例外を投げて失敗する呼び出しではスナップショットを積まない)、dirtyを立てます。`undo()`は最新のスナップショットを1件戻します。Python版の`push_undo_snapshot`と同じ上限20件です。`clear()`はハードリセット扱いで、それ自体はUndo対象にならずUndo履歴とdirtyフラグを両方消します(clear後は以前の`PageRef`を復元する意味がないため)。`mark_saved()`はdirtyを解除しますが、これは`PdfBackend::save()`が実際に成功した経路からのみ呼び出す想定です(catchブロックからは呼ばない)。保存失敗時はdirtyのままになります。この一式はまだ`host.cpp`には未接続です。現状のアプリは`PdfBackend::inspect`/`render_page`で単一ファイルを開くだけで、`WorkingDocument`は構築していません。この統合とPhase 2のUI配線一式は未着手のままです。
+
 ## 移行期間のPython版
 
 - Windows 10/11（64-bit）

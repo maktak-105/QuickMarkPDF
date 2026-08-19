@@ -108,6 +108,122 @@ void test_invalid_operations_are_rejected() {
     assert(invalid_erase);
 }
 
+void test_no_undo_available_initially() {
+    WorkingDocument document;
+    assert(!document.can_undo());
+    assert(!document.undo());
+}
+
+void test_undo_reorder() {
+    WorkingDocument document;
+    document.append_page({"a.pdf", 0, 0});
+    document.append_page({"a.pdf", 1, 0});
+    document.mark_saved();
+
+    document.reorder({1, 0});
+    assert(document.page(0).source_page == 1);
+    assert(document.is_dirty());
+
+    assert(document.undo());
+    assert(document.page(0).source_page == 0);
+    assert(document.page(1).source_page == 1);
+}
+
+void test_undo_delete_pages() {
+    WorkingDocument document;
+    document.append_page({"a.pdf", 0, 0});
+    document.append_page({"a.pdf", 1, 0});
+    document.append_page({"a.pdf", 2, 0});
+
+    document.erase({1});
+    assert(document.page_count() == 2);
+
+    assert(document.undo());
+    assert(document.page_count() == 3);
+    assert(document.page(1).source_page == 1);
+}
+
+void test_undo_rotate_restores_actual_rotation() {
+    WorkingDocument document;
+    document.append_page({"a.pdf", 0, 0});
+
+    document.rotate(0, 90);
+    assert(document.page(0).rotation == 90);
+
+    assert(document.undo());
+    assert(document.page(0).rotation == 0);
+}
+
+void test_invalid_rotate_does_not_create_undo_step() {
+    // A rejected mutation must not pollute the undo history with a no-op
+    // snapshot -- undo() should still reach further back to the last real
+    // change.
+    WorkingDocument document;
+    document.append_page({"a.pdf", 0, 0});
+    document.rotate(0, 90);
+    assert(document.can_undo());
+
+    bool rejected = false;
+    try {
+        document.rotate(0, 45);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    assert(rejected);
+
+    // Only the two real edits above (append_page, rotate) should be
+    // undoable -- the rejected rotate must not have pushed a spurious
+    // third snapshot.
+    int steps = 0;
+    while (document.undo()) ++steps;
+    assert(steps == 2);
+    assert(document.page_count() == 0);
+}
+
+void test_undo_stack_capped() {
+    WorkingDocument document;
+    document.append_page({"a.pdf", 0, 0});
+    for (int i = 0; i < 25; ++i) {
+        document.rotate(0, 90);
+    }
+
+    int undone = 0;
+    while (document.undo()) ++undone;
+    assert(undone == 20);
+}
+
+void test_clear_wipes_undo_history_and_dirty_flag() {
+    WorkingDocument document;
+    document.append_page({"a.pdf", 0, 0});
+    document.rotate(0, 90);
+    assert(document.can_undo());
+    assert(document.is_dirty());
+
+    document.clear();
+    assert(!document.can_undo());
+    assert(!document.undo());
+    assert(!document.is_dirty());
+}
+
+void test_dirty_tracks_unsaved_changes() {
+    WorkingDocument document;
+    assert(!document.is_dirty());
+
+    document.append_page({"a.pdf", 0, 0});
+    assert(document.is_dirty());
+
+    document.mark_saved();
+    assert(!document.is_dirty());
+
+    document.rotate(0, 90);
+    assert(document.is_dirty());
+
+    // Undoing back to the last-saved arrangement is still treated as a
+    // change relative to what's on disk -- a real save is required again.
+    assert(document.undo());
+    assert(document.is_dirty());
+}
+
 void test_pdf_inspection_boundary() {
     const auto path = std::string("quickmarkpdf_test_pages.pdf");
     write_min_pdf(path, 2);
@@ -188,6 +304,14 @@ int main() {
     test_append_and_rotation_normalization();
     test_reorder_and_erase();
     test_invalid_operations_are_rejected();
+    test_no_undo_available_initially();
+    test_undo_reorder();
+    test_undo_delete_pages();
+    test_undo_rotate_restores_actual_rotation();
+    test_invalid_rotate_does_not_create_undo_step();
+    test_undo_stack_capped();
+    test_clear_wipes_undo_history_and_dirty_flag();
+    test_dirty_tracks_unsaved_changes();
     test_pdf_inspection_boundary();
     test_save_merges_reorders_and_rotates_pages();
     test_save_reports_missing_source_file();
