@@ -7,6 +7,7 @@
   const previewEl = document.querySelector('#preview');
 
   const openButton = document.querySelector('#open-button');
+  const splitButton = document.querySelector('#split-button');
   const rotateRightButton = document.querySelector('#rotate-right-button');
   const rotateLeftButton = document.querySelector('#rotate-left-button');
   const rotate180Button = document.querySelector('#rotate-180-button');
@@ -50,6 +51,7 @@
     rotateLeftButton.disabled = !hasSelection;
     rotate180Button.disabled = !hasSelection;
     deleteButton.disabled = !hasSelection;
+    splitButton.disabled = !hasSelection;
     exportButton.disabled = pages.length === 0;
     saveButton.disabled = pages.length === 0;
   }
@@ -227,6 +229,10 @@
   deleteButton.addEventListener('click', () => {
     if (selectedIndices.size === 0) return;
     post({ type: 'delete_pages', indices: selectedIndicesSorted() });
+  });
+  splitButton.addEventListener('click', () => {
+    if (selectedIndices.size === 0) return;
+    post({ type: 'split_pdf', indices: selectedIndicesSorted() });
   });
   undoButton.addEventListener('click', () => post({ type: 'undo_edit' }));
   exportButton.addEventListener('click', () => post({ type: 'export_images', indices: [], dpi: 150 }));

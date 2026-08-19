@@ -142,6 +142,14 @@ public:
     bool save_as(const std::string& output_path,
                  const std::unordered_map<std::string, std::string>& passwords = {});
 
+    // "PDF切り出し" (cut out): writes only the given pages, in the given
+    // order, to a brand-new PDF at `output_path` -- the current document
+    // and its undo history are untouched. Matches the Python baseline's
+    // save_selected_pages(). Returns false if `indices` is empty or every
+    // entry is out of range.
+    bool save_selected_pages(const std::vector<std::size_t>& indices, const std::string& output_path,
+                              const std::unordered_map<std::string, std::string>& passwords = {});
+
     // Renders each page in `indices` (or every page, if `indices` is empty)
     // to a PNG in `output_dir`, named "{prefix}_{0001-based index}.png".
     // `clip`, if set, is a crop rectangle in PDF points (page-space, before

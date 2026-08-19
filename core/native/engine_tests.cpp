@@ -652,6 +652,44 @@ void test_manager_save_as_creates_new_file_without_touching_sources() {
     std::remove(out.c_str());
 }
 
+void test_manager_save_selected_pages_cuts_out_a_new_pdf() {
+    // Matches Python's split_document()/save_selected_pages(): cut out a
+    // subset of pages (in the given order) into a brand-new file, leaving
+    // the open document and its undo history untouched.
+    const auto p1 = std::string("quickmarkpdf_test_mgr_cutout.pdf");
+    const auto out = std::string("quickmarkpdf_test_mgr_cutout_out.pdf");
+    write_min_pdf(p1, 4);
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1});
+    mgr.rotate_page(2, 90);
+    const bool had_undo_before = mgr.can_undo();
+
+    const bool ok = mgr.save_selected_pages({2, 0}, out);
+    assert(ok);
+    assert(mgr.get_page_count() == 4);              // source document untouched
+    assert(mgr.can_undo() == had_undo_before);       // no new undo step from cutting out
+
+    const auto info = quickmarkpdf::PdfBackend::inspect(out);
+    assert(info.page_count == 2);
+    assert(info.page_rotations[0] == 90);  // was page index 2, rotated
+    assert(info.page_rotations[1] == 0);   // was page index 0
+
+    std::remove(p1.c_str());
+    std::remove(out.c_str());
+}
+
+void test_manager_save_selected_pages_rejects_empty_selection() {
+    const auto p1 = std::string("quickmarkpdf_test_mgr_cutout_empty.pdf");
+    write_min_pdf(p1, 2);
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1});
+    assert(!mgr.save_selected_pages({}, "quickmarkpdf_should_not_exist.pdf"));
+
+    std::remove(p1.c_str());
+}
+
 void test_manager_export_images_with_clip() {
     // Matches tests/test_pdf_manager.py::test_export_images_with_clip: a
     // 200x300pt page, a 100x100pt crop at (10,10), 72 DPI (1pt == 1px) ->
@@ -818,6 +856,8 @@ int main() {
     test_manager_can_overwrite_source_only_with_single_file();
     test_manager_overwrite_source_replaces_file_and_reloads();
     test_manager_save_as_creates_new_file_without_touching_sources();
+    test_manager_save_selected_pages_cuts_out_a_new_pdf();
+    test_manager_save_selected_pages_rejects_empty_selection();
     test_manager_export_images_with_clip();
     test_manager_password_flow();
     test_manager_undo_reorder_and_rotate_and_delete();

@@ -306,6 +306,28 @@ bool PdfManager::save_as(const std::string& output_path,
     return true;
 }
 
+bool PdfManager::save_selected_pages(const std::vector<std::size_t>& indices, const std::string& output_path,
+                                      const std::unordered_map<std::string, std::string>& passwords) {
+    if (indices.empty()) return false;
+
+    WorkingDocument subset;
+    for (const auto index : indices) {
+        if (index >= document_.page_count()) continue;
+        subset.append_page(document_.page(index));
+    }
+    if (subset.page_count() == 0) return false;
+
+    std::unordered_map<std::string, std::string> merged = known_passwords_;
+    for (const auto& [key, value] : passwords) merged[key] = value;
+
+    try {
+        PdfBackend::save(subset, output_path, merged);
+    } catch (const std::exception&) {
+        return false;
+    }
+    return true;
+}
+
 PdfManager::ExportResult PdfManager::export_pages_to_images(
     const std::vector<std::size_t>& indices, const std::string& output_dir, const std::string& fmt, int dpi,
     const std::string& prefix, const std::optional<std::array<double, 4>>& clip) {

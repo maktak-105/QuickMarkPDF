@@ -646,6 +646,24 @@ void handle_save_pdf() {
     post_document_state(L"document_state");
 }
 
+// "PDF切り出し": writes the selected pages out as a brand-new PDF, leaving
+// the currently open document untouched. Mirrors main_window.py's
+// split_document()/_export_selected_as_pdf().
+void handle_split_pdf(const std::wstring& message) {
+    const auto indices = extract_size_t_array(message, L"indices");
+    if (indices.empty() || g_manager.get_page_count() == 0) {
+        post_status(L"PDFを切り出したいページをサムネイルで選択してください");
+        return;
+    }
+    const auto picked = prompt_save_pdf();
+    if (!picked) return;
+    if (g_manager.save_selected_pages(indices, picked->u8string())) {
+        post_status(std::to_wstring(indices.size()) + L"ページを切り出しました: " + picked->wstring());
+    } else {
+        post_status(L"PDFの切り出しに失敗しました");
+    }
+}
+
 void handle_export_images(const std::wstring& message) {
     if (g_manager.get_page_count() == 0) return;
     auto indices = extract_size_t_array(message, L"indices");
@@ -697,6 +715,8 @@ void dispatch_message(const std::wstring& message) {
         handle_export_images(message);
     } else if (type == L"save_pdf") {
         handle_save_pdf();
+    } else if (type == L"split_pdf") {
+        handle_split_pdf(message);
     }
 }
 
