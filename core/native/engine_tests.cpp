@@ -1,12 +1,14 @@
 #include "engine.h"
 #include "pdf_backend.h"
 
+#include <array>
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using quickmarkpdf::PageRef;
@@ -155,6 +157,31 @@ void test_save_reports_missing_source_file() {
     assert(threw);
     std::remove(out_path.c_str());
 }
+
+void test_render_page_produces_blank_white_bitmap() {
+    // write_min_pdf's pages are a 200x200pt MediaBox with no content stream,
+    // so a blank render should come back as an opaque white square scaled
+    // to the requested width.
+    const auto path = std::string("quickmarkpdf_test_render.pdf");
+    write_min_pdf(path, 1);
+
+    const auto page = quickmarkpdf::PdfBackend::render_page(path, 0, 100);
+    assert(page.width == 100);
+    assert(page.height == 100);
+    assert(page.rgba.size() == static_cast<std::size_t>(100 * 100 * 4));
+
+    const auto pixel_at = [&](int x, int y) {
+        const auto offset = (static_cast<std::size_t>(y) * 100 + static_cast<std::size_t>(x)) * 4;
+        return std::array<unsigned char, 4>{page.rgba[offset], page.rgba[offset + 1], page.rgba[offset + 2],
+                                             page.rgba[offset + 3]};
+    };
+    for (const auto& [x, y] : std::vector<std::pair<int, int>>{{0, 0}, {99, 0}, {0, 99}, {50, 50}}) {
+        const auto pixel = pixel_at(x, y);
+        assert(pixel[0] == 255 && pixel[1] == 255 && pixel[2] == 255 && pixel[3] == 255);
+    }
+
+    std::remove(path.c_str());
+}
 }  // namespace
 
 int main() {
@@ -164,5 +191,6 @@ int main() {
     test_pdf_inspection_boundary();
     test_save_merges_reorders_and_rotates_pages();
     test_save_reports_missing_source_file();
+    test_render_page_produces_blank_white_bitmap();
     return 0;
 }

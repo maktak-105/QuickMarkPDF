@@ -31,7 +31,7 @@ cmake --build core/webview2/build --config Release
 
 生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。`pdfium.dll` は実行ファイルと同じフォルダへビルド時にコピーされ、`LoadLibraryW` で実行時に動的ロードされます。
 
-`PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。`PdfBackend::save` は `WorkingDocument`(並べ替え・ファイル間移動・回転・削除)から `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy` で新規PDFを書き出します。パスワード付きソースで正しいパスワードがない場合は `PdfPasswordRequiredError` を送出します。WebView2向けのサムネイル・プレビューのレンダリングはまだ未実装です。
+`PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。`PdfBackend::save` は `WorkingDocument`(並べ替え・ファイル間移動・回転・削除)から `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy` で新規PDFを書き出します。パスワード付きソースで正しいパスワードがない場合は `PdfPasswordRequiredError` を送出します。`PdfBackend::render_page` はページを左上原点のRGBA8ピクセルへラスタライズします(`FPDFBitmap_Create` + `FPDF_RenderPageBitmap`、pdfium標準のBGRAからRGBAへ変換)。`host.cpp` は `render_page` WebMessageに対し、ピクセルをBase64化(`CryptBinaryToStringA`)した `page_rendered` を返し、`ui/app.js` が `atob` でデコードして `canvas` へ `ImageData` として描画します(ページ一覧のサムネイル)。クリックして拡大するプレビューペインはまだなく、サムネイル一覧のみ配線済みです。
 
 ## 移行期間のPython版
 

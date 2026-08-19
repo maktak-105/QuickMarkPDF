@@ -1,5 +1,7 @@
 #include "pdf_backend.h"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -34,6 +36,14 @@ using FPDF_LoadPage_t = FPDF_PAGE(FPDF_CALLCONV*)(FPDF_DOCUMENT, int);
 using FPDF_ClosePage_t = void(FPDF_CALLCONV*)(FPDF_PAGE);
 using FPDFPage_SetRotation_t = void(FPDF_CALLCONV*)(FPDF_PAGE, int);
 using FPDF_SaveAsCopy_t = FPDF_BOOL(FPDF_CALLCONV*)(FPDF_DOCUMENT, FPDF_FILEWRITE*, FPDF_DWORD);
+using FPDF_GetPageWidthF_t = float(FPDF_CALLCONV*)(FPDF_PAGE);
+using FPDF_GetPageHeightF_t = float(FPDF_CALLCONV*)(FPDF_PAGE);
+using FPDFBitmap_Create_t = FPDF_BITMAP(FPDF_CALLCONV*)(int, int, int);
+using FPDFBitmap_FillRect_t = FPDF_BOOL(FPDF_CALLCONV*)(FPDF_BITMAP, int, int, int, int, FPDF_DWORD);
+using FPDF_RenderPageBitmap_t = void(FPDF_CALLCONV*)(FPDF_BITMAP, FPDF_PAGE, int, int, int, int, int, int);
+using FPDFBitmap_GetBuffer_t = void*(FPDF_CALLCONV*)(FPDF_BITMAP);
+using FPDFBitmap_GetStride_t = int(FPDF_CALLCONV*)(FPDF_BITMAP);
+using FPDFBitmap_Destroy_t = void(FPDF_CALLCONV*)(FPDF_BITMAP);
 
 struct PdfiumApi {
     FPDF_InitLibrary_t InitLibrary = nullptr;
@@ -47,6 +57,14 @@ struct PdfiumApi {
     FPDF_ClosePage_t ClosePage = nullptr;
     FPDFPage_SetRotation_t SetPageRotation = nullptr;
     FPDF_SaveAsCopy_t SaveAsCopy = nullptr;
+    FPDF_GetPageWidthF_t GetPageWidthF = nullptr;
+    FPDF_GetPageHeightF_t GetPageHeightF = nullptr;
+    FPDFBitmap_Create_t BitmapCreate = nullptr;
+    FPDFBitmap_FillRect_t BitmapFillRect = nullptr;
+    FPDF_RenderPageBitmap_t RenderPageBitmap = nullptr;
+    FPDFBitmap_GetBuffer_t BitmapGetBuffer = nullptr;
+    FPDFBitmap_GetStride_t BitmapGetStride = nullptr;
+    FPDFBitmap_Destroy_t BitmapDestroy = nullptr;
 };
 
 template <typename Fn>
@@ -76,6 +94,14 @@ const PdfiumApi& pdfium() {
         loaded.ClosePage = load_symbol<FPDF_ClosePage_t>(module, "FPDF_ClosePage");
         loaded.SetPageRotation = load_symbol<FPDFPage_SetRotation_t>(module, "FPDFPage_SetRotation");
         loaded.SaveAsCopy = load_symbol<FPDF_SaveAsCopy_t>(module, "FPDF_SaveAsCopy");
+        loaded.GetPageWidthF = load_symbol<FPDF_GetPageWidthF_t>(module, "FPDF_GetPageWidthF");
+        loaded.GetPageHeightF = load_symbol<FPDF_GetPageHeightF_t>(module, "FPDF_GetPageHeightF");
+        loaded.BitmapCreate = load_symbol<FPDFBitmap_Create_t>(module, "FPDFBitmap_Create");
+        loaded.BitmapFillRect = load_symbol<FPDFBitmap_FillRect_t>(module, "FPDFBitmap_FillRect");
+        loaded.RenderPageBitmap = load_symbol<FPDF_RenderPageBitmap_t>(module, "FPDF_RenderPageBitmap");
+        loaded.BitmapGetBuffer = load_symbol<FPDFBitmap_GetBuffer_t>(module, "FPDFBitmap_GetBuffer");
+        loaded.BitmapGetStride = load_symbol<FPDFBitmap_GetStride_t>(module, "FPDFBitmap_GetStride");
+        loaded.BitmapDestroy = load_symbol<FPDFBitmap_Destroy_t>(module, "FPDFBitmap_Destroy");
         loaded.InitLibrary();
         return loaded;
     }();
@@ -143,6 +169,60 @@ PdfDocumentInfo PdfBackend::inspect(const std::string& path, const std::string& 
     api.CloseDocument(document);
     if (pages <= 0) throw std::runtime_error("PDF page tree could not be inspected: " + path);
     return {path, static_cast<std::size_t>(pages)};
+}
+
+RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_index, int target_width,
+                                      const std::string& password) {
+    if (target_width < 1) throw std::invalid_argument("target_width must be at least 1");
+
+    const auto& api = pdfium();
+    std::string bytes;
+    FPDF_DOCUMENT document = open_source(api, path, password, bytes);
+
+    FPDF_PAGE page = api.LoadPage(document, static_cast<int>(page_index));
+    if (!page) {
+        api.CloseDocument(document);
+        throw std::runtime_error("page not found: " + path + " page " + std::to_string(page_index));
+    }
+
+    const float page_width = api.GetPageWidthF(page);
+    const float page_height = api.GetPageHeightF(page);
+    const float scale = page_width > 0 ? static_cast<float>(target_width) / page_width : 1.0f;
+    const int target_height = std::max(1, static_cast<int>(std::lround(page_height * scale)));
+
+    FPDF_BITMAP bitmap = api.BitmapCreate(target_width, target_height, /*alpha=*/1);
+    if (!bitmap) {
+        api.ClosePage(page);
+        api.CloseDocument(document);
+        throw std::runtime_error("failed to allocate render target for: " + path);
+    }
+
+    api.BitmapFillRect(bitmap, 0, 0, target_width, target_height, 0xFFFFFFFFu);
+    api.RenderPageBitmap(bitmap, page, 0, 0, target_width, target_height, /*rotate=*/0, FPDF_ANNOT);
+
+    RenderedPage result;
+    result.width = target_width;
+    result.height = target_height;
+    result.rgba.resize(static_cast<std::size_t>(target_width) * static_cast<std::size_t>(target_height) * 4);
+
+    const auto* buffer = static_cast<const unsigned char*>(api.BitmapGetBuffer(bitmap));
+    const int stride = api.BitmapGetStride(bitmap);
+    for (int y = 0; y < target_height; ++y) {
+        const unsigned char* src_row = buffer + static_cast<std::size_t>(y) * stride;
+        unsigned char* dst_row = result.rgba.data() + static_cast<std::size_t>(y) * target_width * 4;
+        for (int x = 0; x < target_width; ++x) {
+            // pdfium's BGRA -> canvas ImageData's RGBA.
+            dst_row[x * 4 + 0] = src_row[x * 4 + 2];
+            dst_row[x * 4 + 1] = src_row[x * 4 + 1];
+            dst_row[x * 4 + 2] = src_row[x * 4 + 0];
+            dst_row[x * 4 + 3] = src_row[x * 4 + 3];
+        }
+    }
+
+    api.BitmapDestroy(bitmap);
+    api.ClosePage(page);
+    api.CloseDocument(document);
+    return result;
 }
 
 void PdfBackend::save(const WorkingDocument& document, const std::string& output_path,

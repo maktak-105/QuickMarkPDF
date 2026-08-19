@@ -1,5 +1,7 @@
 #include <windows.h>
+#include <wincrypt.h>
 
+#include <cwctype>
 #include <filesystem>
 #include <string>
 
@@ -16,6 +18,7 @@ namespace {
 HWND g_window = nullptr;
 ComPtr<ICoreWebView2Controller> g_controller;
 ComPtr<ICoreWebView2> g_webview;
+std::filesystem::path g_current_document;
 
 std::wstring file_url(const std::filesystem::path& path) {
     std::wstring value = L"file:///" + path.generic_wstring();
@@ -30,6 +33,41 @@ std::wstring json_string(const std::wstring& value) {
     }
     escaped += L"\"";
     return escaped;
+}
+
+// Both request messages are produced by our own ui/app.js as
+// JSON.stringify({...}), so a couple of targeted lookups are enough --
+// no need for a general JSON parser here.
+int extract_int(const std::wstring& message, const wchar_t* key, int fallback) {
+    const std::wstring needle = std::wstring(L"\"") + key + L"\":";
+    const auto pos = message.find(needle);
+    if (pos == std::wstring::npos) return fallback;
+    auto cursor = pos + needle.size();
+    while (cursor < message.size() && message[cursor] == L' ') ++cursor;
+    bool negative = cursor < message.size() && message[cursor] == L'-';
+    if (negative) ++cursor;
+    int value = 0;
+    bool any_digit = false;
+    while (cursor < message.size() && std::iswdigit(message[cursor])) {
+        value = value * 10 + (message[cursor] - L'0');
+        ++cursor;
+        any_digit = true;
+    }
+    if (!any_digit) return fallback;
+    return negative ? -value : value;
+}
+
+std::string base64_encode(const unsigned char* data, DWORD size) {
+    DWORD out_len = 0;
+    if (!CryptBinaryToStringA(data, size, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, nullptr, &out_len)) {
+        return {};
+    }
+    std::string out(out_len, '\0');
+    if (!CryptBinaryToStringA(data, size, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, out.data(), &out_len)) {
+        return {};
+    }
+    out.resize(out_len);
+    return out;
 }
 
 void resize_webview() {
@@ -78,6 +116,7 @@ void load_ui(const std::filesystem::path& ui_path) {
                                             const auto path = std::filesystem::path(selected);
                                             try {
                                                 const auto info = quickmarkpdf::PdfBackend::inspect(path.u8string());
+                                                g_current_document = path;
                                                 const auto response = L"{\"type\":\"pdf_opened\",\"path\":"
                                                     + json_string(path.wstring())
                                                     + L",\"page_count\":" + std::to_wstring(info.page_count) + L"}";
@@ -85,6 +124,27 @@ void load_ui(const std::filesystem::path& ui_path) {
                                             } catch (const std::exception&) {
                                                 g_webview->PostWebMessageAsString(
                                                     L"{\"type\":\"backend_status\",\"message\":\"PDFの検査に失敗しました\"}");
+                                            }
+                                        } else if (message.find(L"render_page") != std::wstring::npos) {
+                                            if (g_current_document.empty()) return S_OK;
+                                            const int page_index = extract_int(message, L"page_index", 0);
+                                            const int width = extract_int(message, L"width", 160);
+                                            try {
+                                                const auto rendered = quickmarkpdf::PdfBackend::render_page(
+                                                    g_current_document.u8string(),
+                                                    static_cast<std::size_t>(page_index), width);
+                                                const auto pixels_b64 = base64_encode(
+                                                    rendered.rgba.data(), static_cast<DWORD>(rendered.rgba.size()));
+                                                const auto response = L"{\"type\":\"page_rendered\",\"page_index\":"
+                                                    + std::to_wstring(page_index)
+                                                    + L",\"width\":" + std::to_wstring(rendered.width)
+                                                    + L",\"height\":" + std::to_wstring(rendered.height)
+                                                    + L",\"pixels\":\""
+                                                    + std::wstring(pixels_b64.begin(), pixels_b64.end()) + L"\"}";
+                                                g_webview->PostWebMessageAsString(response.c_str());
+                                            } catch (const std::exception&) {
+                                                // Rendering is best-effort per page; leave that thumbnail blank
+                                                // rather than surfacing a global error for the whole document.
                                             }
                                         } else if (message.find(L"save_pdf") != std::wstring::npos) {
                                             g_webview->PostWebMessageAsString(
