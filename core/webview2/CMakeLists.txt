@@ -12,8 +12,12 @@ set(WEBVIEW2_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../third_party/webview2/build/na
 set(WEBVIEW2_INCLUDE "${WEBVIEW2_ROOT}/include")
 set(WEBVIEW2_LIB "${WEBVIEW2_ROOT}/x64/WebView2Loader.dll.lib")
 
+set(PDFIUM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../third_party/pdfium")
+set(PDFIUM_INCLUDE "${PDFIUM_ROOT}/include")
+set(PDFIUM_DLL "${PDFIUM_ROOT}/bin/pdfium.dll")
+
 add_executable(QuickMarkPDF_webview WIN32 host.cpp ../native/pdf_backend.cpp)
-target_include_directories(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_INCLUDE}" "${CMAKE_CURRENT_LIST_DIR}/../native")
+target_include_directories(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_INCLUDE}" "${PDFIUM_INCLUDE}" "${CMAKE_CURRENT_LIST_DIR}/../native")
 target_link_libraries(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_LIB}" ole32 user32 comctl32 comdlg32)
 target_compile_definitions(QuickMarkPDF_webview PRIVATE UNICODE _UNICODE NOMINMAX)
 target_compile_options(QuickMarkPDF_webview PRIVATE /utf-8)
@@ -22,6 +26,9 @@ add_custom_command(TARGET QuickMarkPDF_webview POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_CURRENT_LIST_DIR}/../../third_party/webview2/runtimes/win-x64/native/WebView2Loader.dll"
         "$<TARGET_FILE_DIR:QuickMarkPDF_webview>/WebView2Loader.dll"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${PDFIUM_DLL}"
+        "$<TARGET_FILE_DIR:QuickMarkPDF_webview>/pdfium.dll"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_LIST_DIR}/../../ui"
         "$<TARGET_FILE_DIR:QuickMarkPDF_webview>/ui"

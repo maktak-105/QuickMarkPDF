@@ -6,13 +6,13 @@
 
 - **言語**: C++17
 - **GUI**: Microsoft WebView2（HTML/CSS/JavaScript）
-- **バックエンド**: C++ PDFエンジンアダプター（選定中）
-- **ビルド**: CMake + Visual Studio 2022 Build Tools + Windows SDK
+- **バックエンド**: PDFium（BSD-3ライセンス、`bblanchon/pdfium-binaries`のビルド済みDLLを使用）
+- **ビルド**: CMake + Visual Studio 2022 Build Tools（WebView2ホスト）/ MinGW（native core・テスト）+ Windows SDK
 - **UIとC++の連携**: WebView2 WebMessage API（JSONメッセージ）
 
 WebView2 SDKはNuGetパッケージ `Microsoft.Web.WebView2` から取得します。SDK本体はリポジトリへコミットせず、`.gitignore`対象の `third_party/webview2/` に展開します。
 
-現在の `PdfBackend::inspect` は移植初期の暫定検査実装です。PDFエンジン統合後はこのAPIをMuPDFまたはPDFiumの実装へ置き換え、圧縮・暗号化・保存・画像化を正式対応します。
+PDFエンジンにはMuPDF（AGPL/商用デュアルライセンス）ではなく、MITライセンスでのEXE配布と両立する**PDFium**（BSD-3）を採用しました。比較の詳細は `plans/2026-08-19_PDFエンジン選定_v1.0.md` を参照。`third_party/pdfium/` に展開したビルド済み `pdfium.dll` を各実行ファイルの隣にコピーし、`LoadLibraryW` + `GetProcAddress` による動的ロードで呼び出します（MinGWビルドとMSVCビルドの両方から同じ `pdf_backend.cpp` を使うため、インポートライブラリの静的リンクではなく動的ロードを選択）。`PdfBackend::inspect` は `FPDF_LoadMemDocument64` でページ数を取得する実装です。読み込み・レンダリング・編集・保存は未実装。
 
 ### 移行期間のPython版（比較基準）
 
@@ -60,7 +60,8 @@ python python/main.py
 
 1. Visual Studio 2022 Build Toolsの「C++によるデスクトップ開発」とWindows 10/11 SDKを導入する。
 2. `powershell -ExecutionPolicy Bypass -File scripts/fetch_webview2_sdk.ps1` でWebView2 SDKを `third_party/webview2/` に展開する。
-3. CMakeでx64のWebView2ホストをビルドする。
+3. `powershell -ExecutionPolicy Bypass -File scripts/fetch_pdfium.ps1` でPDFiumのビルド済みDLLを `third_party/pdfium/` に展開する。
+4. CMakeでx64のWebView2ホストをビルドする。
 
 ```powershell
 cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build

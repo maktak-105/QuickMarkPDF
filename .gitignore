@@ -62,5 +62,7 @@ dist/native/
 
 # Downloaded SDKs and native build output
 third_party/webview2/
+third_party/pdfium/
 third_party/*.nupkg
+third_party/*.tgz
 core/webview2/build/

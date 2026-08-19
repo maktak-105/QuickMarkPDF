@@ -18,14 +18,20 @@ SDKは `third_party/webview2/` に展開します。このフォルダはGit管�
 powershell -ExecutionPolicy Bypass -File scripts/fetch_webview2_sdk.ps1
 ```
 
+PDFエンジンはPDFium（BSD-3、`bblanchon/pdfium-binaries`のビルド済みDLL）を使用します。MuPDFはAGPL/商用デュアルライセンスでMIT配布のEXEモデルと非互換のため不採用（詳細は `plans/2026-08-19_PDFエンジン選定_v1.0.md`）。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/fetch_pdfium.ps1
+```
+
 ```powershell
 cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
 cmake --build core/webview2/build --config Release
 ```
 
-生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。
+生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。`pdfium.dll` は実行ファイルと同じフォルダへビルド時にコピーされ、`LoadLibraryW` で実行時に動的ロードされます。
 
-現在のPDFページ数検査は移植初期の暫定実装です。正式なPDFエンジン統合後に、圧縮PDF・暗号化PDF・保存・画像化へ対応します。
+`PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。読み込み・レンダリング・編集・保存はまだ未実装です。
 
 ## 移行期間のPython版
 

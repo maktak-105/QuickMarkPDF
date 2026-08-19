@@ -63,13 +63,24 @@ void test_invalid_operations_are_rejected() {
 }
 
 void test_pdf_inspection_boundary() {
+    // A structurally valid minimal 2-page PDF (catalog + pages tree + xref
+    // table with byte-exact offsets) since PdfBackend now parses with
+    // pdfium instead of text-scanning for "/Type /Page".
     const auto path = std::string("quickmarkpdf_test_pages.pdf");
     std::ofstream output(path, std::ios::binary);
     output << "%PDF-1.7\n"
-           << "1 0 obj << /Type /Page >> endobj\n"
-           << "2 0 obj << /Type /Pages /Kids [1 0 R 3 0 R] >> endobj\n"
-           << "3 0 obj << /Type /Page >> endobj\n"
-           << "%%EOF\n";
+           << "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+           << "2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n"
+           << "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n"
+           << "4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n"
+           << "xref\n0 5\n"
+           << "0000000000 65535 f \n"
+           << "0000000009 00000 n \n"
+           << "0000000058 00000 n \n"
+           << "0000000121 00000 n \n"
+           << "0000000192 00000 n \n"
+           << "trailer\n<< /Size 5 /Root 1 0 R >>\n"
+           << "startxref\n263\n%%EOF\n";
     output.close();
     const auto info = quickmarkpdf::PdfBackend::inspect(path);
     assert(info.page_count == 2);
