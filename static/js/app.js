@@ -121,7 +121,17 @@
 
   if (hasBridge()) {
     window.chrome.webview.addEventListener('message', (event) => {
-      const data = event.data;
+      // The C++ side sends every reply via PostWebMessageAsString (not
+      // PostWebMessageAsJson), so event.data arrives as the raw JSON text,
+      // not an already-parsed object -- without this parse, every branch
+      // below silently no-ops forever since e.g. "someJsonString".type is
+      // always undefined.
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (err) {
+        return;
+      }
       if (!data) return;
 
       if (data.type === 'backend_status') {

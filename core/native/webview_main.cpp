@@ -466,7 +466,14 @@ bool write_png(const std::filesystem::path& path, const quickmarkpdf::RenderedPa
 
 void handle_open_pdf() {
     const auto selected = prompt_open_pdfs();
-    if (selected.empty()) return;
+    if (selected.empty()) {
+        // Without this, the frontend is stuck on "PDFバックエンドへ接続中…"
+        // forever on a plain cancel (app.js sets that text optimistically on
+        // click and only clears it on a reply) -- there was previously no
+        // reply at all in this branch.
+        post_status(L"ファイル選択をキャンセルしました");
+        return;
+    }
 
     std::size_t loaded_files = 0;
     std::vector<std::wstring> failed_files;
