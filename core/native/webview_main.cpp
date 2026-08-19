@@ -425,6 +425,12 @@ bool write_png(const std::filesystem::path& path, const quickmarkpdf::RenderedPa
 // =====================
 
 void handle_open_pdf() {
+    // Temporary diagnostic: confirms whether the WebMessage from JS is
+    // reaching the native side at all before the (blocking) file dialog
+    // call, so a report of "nothing happens" can be narrowed down to
+    // either "the message never arrived" or "it arrived but the dialog
+    // itself didn't show/return anything".
+    post_status(L"[診断] open_pdfを受信、ダイアログを開きます…");
     const auto selected = prompt_open_pdfs();
     if (selected.empty()) return;
 
@@ -640,21 +646,37 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
     const std::wstring user_data_folder = std::wstring(temp_dir) + L"QuickMarkPDF_WVData";
     CreateDirectoryW(user_data_folder.c_str(), nullptr);
 
-    create_environment(
+    const HRESULT create_result = create_environment(
         nullptr, user_data_folder.c_str(), nullptr,
         new EnvCompletedHandler([ui_path](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
-            if (FAILED(result) || environment == nullptr) return result;
-            return environment->CreateCoreWebView2Controller(
+            if (FAILED(result) || environment == nullptr) {
+                wchar_t msg[256]{};
+                swprintf_s(msg, L"WebView2環境の作成に失敗しました。WebView2 Runtimeが未インストールの可能性があります。\nHRESULT: 0x%08X",
+                            static_cast<unsigned>(result));
+                MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
+                return result;
+            }
+            const HRESULT controller_request = environment->CreateCoreWebView2Controller(
                 g_window, new ControllerCompletedHandler([ui_path](HRESULT controller_result,
                                                                     ICoreWebView2Controller* controller) -> HRESULT {
-                    if (FAILED(controller_result) || controller == nullptr) return controller_result;
+                    if (FAILED(controller_result) || controller == nullptr) {
+                        wchar_t msg[256]{};
+                        swprintf_s(msg, L"WebView2コントローラの作成に失敗しました。\nHRESULT: 0x%08X",
+                                    static_cast<unsigned>(controller_result));
+                        MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
+                        return controller_result;
+                    }
 
                     g_controller = controller;
                     g_controller->AddRef();
                     g_controller->get_CoreWebView2(&g_webview);
+                    if (!g_webview) {
+                        MessageBoxW(g_window, L"get_CoreWebView2に失敗しました。", L"QuickMarkPDF", MB_ICONERROR);
+                        return E_FAIL;
+                    }
 
                     EventRegistrationToken message_token{};
-                    g_webview->add_WebMessageReceived(
+                    const HRESULT add_result = g_webview->add_WebMessageReceived(
                         new WebMessageReceivedHandler(
                             [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
                                 LPWSTR raw_message = nullptr;
@@ -665,11 +687,37 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                                 return S_OK;
                             }),
                         &message_token);
+                    if (FAILED(add_result)) {
+                        wchar_t msg[256]{};
+                        swprintf_s(msg, L"add_WebMessageReceivedに失敗しました。\nHRESULT: 0x%08X",
+                                    static_cast<unsigned>(add_result));
+                        MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
+                    }
                     resize_webview();
-                    g_webview->Navigate(file_url(ui_path).c_str());
+                    const HRESULT nav_result = g_webview->Navigate(file_url(ui_path).c_str());
+                    if (FAILED(nav_result)) {
+                        wchar_t msg[512]{};
+                        swprintf_s(msg, L"Navigateに失敗しました。\nHRESULT: 0x%08X\nパス: %s",
+                                    static_cast<unsigned>(nav_result), file_url(ui_path).c_str());
+                        MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
+                    }
                     return S_OK;
                 }));
+            if (FAILED(controller_request)) {
+                wchar_t msg[256]{};
+                swprintf_s(msg, L"CreateCoreWebView2Controllerの呼び出しに失敗しました。\nHRESULT: 0x%08X",
+                            static_cast<unsigned>(controller_request));
+                MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
+            }
+            return S_OK;
         }));
+    if (FAILED(create_result)) {
+        wchar_t msg[256]{};
+        swprintf_s(msg, L"CreateCoreWebView2EnvironmentWithOptionsの呼び出しに失敗しました。\nHRESULT: 0x%08X",
+                    static_cast<unsigned>(create_result));
+        MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
+        return false;
+    }
     return true;
 }
 
