@@ -115,6 +115,48 @@
     }
   }
 
+  // Right-click context menu (open/close-file, rotate, cut out, export,
+  // delete) -- mirrors the Python baseline's thumbnail right-click menu.
+  let contextMenuEl = null;
+  function closeContextMenu() {
+    if (contextMenuEl) {
+      contextMenuEl.remove();
+      contextMenuEl = null;
+    }
+  }
+  function showContextMenu(x, y, sourcePath) {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    const items = [
+      ['右90°回転', () => doRotate(90)],
+      ['左90°回転', () => doRotate(-90)],
+      ['180°回転', () => doRotate(180)],
+      ['PDF切り出し', doSplit],
+      ['画像を切り出し', () => doExport(selectedIndicesSorted())],
+      ['ページを削除', doDelete],
+      ['このファイルを閉じる', () => post({ type: 'close_document', path: sourcePath })],
+    ];
+    items.forEach(([label, handler]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        handler();
+        closeContextMenu();
+      });
+      menu.appendChild(btn);
+    });
+
+    document.body.appendChild(menu);
+    contextMenuEl = menu;
+  }
+  document.addEventListener('click', closeContextMenu);
+  document.addEventListener('scroll', closeContextMenu, true);
+
   function buildPageItem(page, index) {
     const item = document.createElement('div');
     item.className = 'page-item';
@@ -136,6 +178,11 @@
     item.appendChild(number);
 
     item.addEventListener('click', (event) => selectPage(index, event));
+    item.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      if (!selectedIndices.has(index)) selectPage(index, event);
+      showContextMenu(event.clientX, event.clientY, page.path);
+    });
 
     item.addEventListener('dragstart', (event) => {
       dragFromIndex = index;
@@ -205,38 +252,71 @@
     post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_WIDTH });
   }
 
-  openButton.addEventListener('click', () => {
+  function doOpen() {
     if (!hasBridge()) {
       setStatus('WebView2ブリッジ未接続（ブラウザプレビュー）');
       return;
     }
     setStatus('PDFバックエンドへ接続中…');
     post({ type: 'open_pdf' });
-  });
-
-  rotateRightButton.addEventListener('click', () => {
+  }
+  function doRotate(degrees) {
     if (selectedIndices.size === 0) return;
-    post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees: 90 });
-  });
-  rotateLeftButton.addEventListener('click', () => {
-    if (selectedIndices.size === 0) return;
-    post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees: -90 });
-  });
-  rotate180Button.addEventListener('click', () => {
-    if (selectedIndices.size === 0) return;
-    post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees: 180 });
-  });
-  deleteButton.addEventListener('click', () => {
+    post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees });
+  }
+  function doDelete() {
     if (selectedIndices.size === 0) return;
     post({ type: 'delete_pages', indices: selectedIndicesSorted() });
-  });
-  splitButton.addEventListener('click', () => {
+  }
+  function doSplit() {
     if (selectedIndices.size === 0) return;
     post({ type: 'split_pdf', indices: selectedIndicesSorted() });
+  }
+  function doUndo() {
+    post({ type: 'undo_edit' });
+  }
+  function doExport(indices) {
+    if (pages.length === 0) return;
+    post({ type: 'export_images', indices: indices || [], dpi: 150 });
+  }
+  function doSave() {
+    if (pages.length === 0) return;
+    post({ type: 'save_pdf' });
+  }
+
+  openButton.addEventListener('click', doOpen);
+  rotateRightButton.addEventListener('click', () => doRotate(90));
+  rotateLeftButton.addEventListener('click', () => doRotate(-90));
+  rotate180Button.addEventListener('click', () => doRotate(180));
+  deleteButton.addEventListener('click', doDelete);
+  splitButton.addEventListener('click', doSplit);
+  undoButton.addEventListener('click', doUndo);
+  exportButton.addEventListener('click', () => doExport());
+  saveButton.addEventListener('click', doSave);
+
+  // Keyboard shortcuts, matching the Python baseline: Delete removes the
+  // selection, Ctrl+Z undoes, Ctrl+S saves, Ctrl+O opens. Ignored while
+  // focus is in a text field (none exist in this UI today, but this is
+  // cheap insurance against a future one swallowing Delete/typed text).
+  document.addEventListener('keydown', (event) => {
+    const target = event.target;
+    const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (typing) return;
+
+    if (event.key === 'Delete') {
+      event.preventDefault();
+      doDelete();
+    } else if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      doUndo();
+    } else if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      doSave();
+    } else if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'o') {
+      event.preventDefault();
+      doOpen();
+    }
   });
-  undoButton.addEventListener('click', () => post({ type: 'undo_edit' }));
-  exportButton.addEventListener('click', () => post({ type: 'export_images', indices: [], dpi: 150 }));
-  saveButton.addEventListener('click', () => post({ type: 'save_pdf' }));
 
   if (hasBridge()) {
     window.chrome.webview.addEventListener('message', (event) => {

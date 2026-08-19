@@ -51,6 +51,17 @@ button.tool:disabled { opacity: .4; cursor: default; }
 .welcome { text-align: center; color: #555; margin-top: 15vh; }
 .welcome h1 { font-size: 26px; margin: 0 0 10px; }
 
+.context-menu {
+  position: fixed; z-index: 1000; background: #fff; border: 1px solid #b8b8b8;
+  border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.2); padding: 4px;
+  display: flex; flex-direction: column; min-width: 160px;
+}
+.context-menu button {
+  border: none; background: none; text-align: left; padding: 7px 12px;
+  font-size: 13px; color: #202020; cursor: pointer; border-radius: 3px;
+}
+.context-menu button:hover { background: #e8f0fb; }
+
 .statusbar {
   flex: 0 0 auto; padding: 4px 10px; background: #eef0f2; border-top: 1px solid #ccc;
   font-size: 12px; color: #444;
