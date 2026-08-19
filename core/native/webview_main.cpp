@@ -262,6 +262,42 @@ void post_status(const wchar_t* text) {
 // Native dialogs
 // =====================
 
+// Native dialogs triggered from a WebView2 WebMessage callback don't
+// reliably get focus on their own: confirmed by window enumeration that
+// GetOpenFileNameW's dialog was appearing fully on-screen, enabled, not
+// minimized -- just not the foreground window (Windows' focus-stealing
+// prevention apparently doesn't treat "click inside the WebView2-rendered
+// page" as equivalent to direct native window input for this purpose). The
+// dialog then sits there waiting for input behind whatever else has focus,
+// and since it's modal, the whole app looks frozen. Force the owner window
+// to the foreground immediately before showing any of these.
+void force_foreground_window() {
+    if (!g_window) return;
+    if (IsIconic(g_window)) ShowWindow(g_window, SW_RESTORE);
+
+    // Plain SetForegroundWindow() and toggling HWND_TOPMOST were both
+    // verified (via direct window inspection: GetForegroundWindow() stayed
+    // on an unrelated app even after both) to have zero effect when called
+    // from here -- a WebView2 WebMessage callback rather than a
+    // same-process input handler. AttachThreadInput to temporarily share
+    // input state with whatever thread currently owns the foreground is
+    // the standard, more forceful workaround for exactly this situation.
+    const HWND foreground = GetForegroundWindow();
+    const DWORD foreground_thread = foreground ? GetWindowThreadProcessId(foreground, nullptr) : 0;
+    const DWORD current_thread = GetCurrentThreadId();
+    const bool attached =
+        foreground_thread != 0 && foreground_thread != current_thread &&
+        AttachThreadInput(foreground_thread, current_thread, TRUE);
+
+    SetWindowPos(g_window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    SetWindowPos(g_window, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    SetForegroundWindow(g_window);
+    BringWindowToTop(g_window);
+    SetActiveWindow(g_window);
+
+    if (attached) AttachThreadInput(foreground_thread, current_thread, FALSE);
+}
+
 // GetOpenFileNameW with OFN_ALLOWMULTISELECT + OFN_EXPLORER returns either a
 // single null-terminated full path (one file picked), or a directory
 // followed by one null-terminated filename per picked file, the whole
@@ -295,6 +331,7 @@ std::vector<std::filesystem::path> prompt_open_pdfs() {
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_ALLOWMULTISELECT;
+    force_foreground_window();
     if (!GetOpenFileNameW(&dialog)) {
         // CommDlgExtendedError() is 0 when the user simply cancelled/closed
         // the dialog; anything else is a real failure that would otherwise
@@ -319,6 +356,7 @@ std::optional<std::filesystem::path> prompt_save_pdf() {
     dialog.nMaxFile = MAX_PATH;
     dialog.lpstrDefExt = L"pdf";
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+    force_foreground_window();
     if (!GetSaveFileNameW(&dialog)) return std::nullopt;
     return std::filesystem::path(selected);
 }
@@ -335,6 +373,7 @@ std::optional<std::filesystem::path> prompt_pick_folder() {
     DWORD options = 0;
     dialog->GetOptions(&options);
     dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM);
+    force_foreground_window();
     if (FAILED(dialog->Show(g_window))) return std::nullopt;
 
     IShellItem* raw_item = nullptr;
@@ -369,6 +408,7 @@ std::optional<std::string> prompt_for_password(const std::filesystem::path& path
     wcsncpy_s(username, filename.c_str(), _TRUNCATE);
     BOOL save = FALSE;
 
+    force_foreground_window();
     const DWORD result = CredUIPromptForCredentialsW(
         &ui_info, filename.c_str(), nullptr, retry ? static_cast<DWORD>(ERROR_LOGON_FAILURE) : 0, username,
         CREDUI_MAX_USERNAME_LENGTH + 1, password, CREDUI_MAX_PASSWORD_LENGTH + 1, &save,
@@ -425,12 +465,6 @@ bool write_png(const std::filesystem::path& path, const quickmarkpdf::RenderedPa
 // =====================
 
 void handle_open_pdf() {
-    // Temporary diagnostic: confirms whether the WebMessage from JS is
-    // reaching the native side at all before the (blocking) file dialog
-    // call, so a report of "nothing happens" can be narrowed down to
-    // either "the message never arrived" or "it arrived but the dialog
-    // itself didn't show/return anything".
-    post_status(L"[診断] open_pdfを受信、ダイアログを開きます…");
     const auto selected = prompt_open_pdfs();
     if (selected.empty()) return;
 
