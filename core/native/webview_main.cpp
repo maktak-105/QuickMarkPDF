@@ -295,7 +295,17 @@ std::vector<std::filesystem::path> prompt_open_pdfs() {
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_ALLOWMULTISELECT;
-    if (!GetOpenFileNameW(&dialog)) return {};
+    if (!GetOpenFileNameW(&dialog)) {
+        // CommDlgExtendedError() is 0 when the user simply cancelled/closed
+        // the dialog; anything else is a real failure that would otherwise
+        // fail completely silently (no dialog, no error, nothing).
+        const DWORD error = CommDlgExtendedError();
+        if (error != 0) {
+            post_status((L"ファイル選択ダイアログを開けませんでした (エラーコード: " + std::to_wstring(error) + L")")
+                             .c_str());
+        }
+        return {};
+    }
     return parse_multiselect_buffer(buffer.data());
 }
 
@@ -712,6 +722,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     ShowWindow(g_window, show_command);
     UpdateWindow(g_window);
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 1;
+    // GetOpenFileNameW/GetSaveFileNameW's modern Explorer-style dialog is
+    // documented to require OLE to be initialized (not just plain COM) --
+    // without this, the common-item dialog can fail to appear at all, with
+    // GetOpenFileNameW simply returning FALSE and no dialog ever shown.
+    OleInitialize(nullptr);
     if (!load_ui(executable_dir, ui_path)) return 1;
 
     MSG message{};
@@ -719,6 +734,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+    OleUninitialize();
     CoUninitialize();
     return static_cast<int>(message.wParam);
 }
