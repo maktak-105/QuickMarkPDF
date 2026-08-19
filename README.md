@@ -6,9 +6,9 @@
   <img src="assets/quickmarkpdf-gui-en.png" alt="QuickMarkPDF GUI" width="720">
 </p>
 
-A simple Windows desktop PDF editor migrating to a C++ backend with a WebView2 UI. The Python/PySide6 version remains available as the behavior reference during migration.
+A simple Windows desktop PDF editor. The Python/PySide6 version under [`python/`](python/) is the spec of record — a prior attempt at a C++/WebView2 backend was abandoned; see [`CPP_PORT_POSTMORTEM.md`](CPP_PORT_POSTMORTEM.md) for why, and [`document/environment.md`](document/environment.md) for how this project now guards against repeating that failure (an automated test program built specifically around not letting native dialogs block a test run).
 
-**Repository structure follows the shared template** at `___appli-template` (sibling repo, alongside QuickFolderSize/QuickDiskBench in this workspace) — see [`01_フォルダ構成.md`](../___appli-template/01_フォルダ構成.md) there for the authoritative layout rules (`core/native/` holds all native code including the WebView2 host, `templates/`+`static/` are the dev UI source bundled by `bundle_html.py`, `dist/binary/` is the gitignored build output, `build_native.py`+`build.bat` build it). This project is mid-migration toward that layout; anything still deviating from it (e.g. a leftover CMake build) is a known gap, not the intended target.
+**Repository structure follows the shared template** at `___appli-template` (sibling repo, alongside QuickFolderSize/QuickDiskBench in this workspace) — see [`01_フォルダ構成.md`](../___appli-template/01_フォルダ構成.md) there for the authoritative layout rules. This repo currently follows the template's "Python版（PyInstaller配布）" variant.
 
 ## Features
 
@@ -27,7 +27,7 @@ python -m pip install -r requirements.txt
 python python/main.py
 ```
 
-See [`document/environment.md`](document/environment.md) and [`document/spec.md`](document/spec.md) for development details.
+See [`document/environment.md`](document/environment.md) for full development details.
 
 ## Building the Windows application
 
@@ -37,16 +37,18 @@ See [`document/environment.md`](document/environment.md) and [`document/spec.md`
 
 The onedir package is generated under `dist/QuickMarkPDF/`. Keep `QuickMarkPDF.exe` and its `_internal` directory together.
 
-## Native C++/WebView2 development
-
-Install a MinGW-w64 g++ toolchain (no MSVC/Visual Studio needed), then follow [`document/environment.md`](document/environment.md) to fetch the WebView2 SDK and PDFium binaries into `third_party/`. Build with:
+## Testing
 
 ```powershell
-python build_native.py
-# or: build.bat
+python -m pip install -r requirements-dev.txt
+python run_tests.py
 ```
 
-This bundles `templates/`+`static/` into a self-contained `dist/binary/index.html`, builds `dist/binary/QuickMarkPDF.exe` and `QuickMarkPDF_cli.exe`, copies the required DLLs, and compiles+runs `core/native/engine_tests.cpp` as a build-time check. `dist/binary/` ends up flat and ready to run. See [`plans/2026-08-18_C++移植_v1.0.md`](plans/2026-08-18_C++移植_v1.0.md) for the migration plan.
+Runs the full automated test program (unit, integration, appearance, and
+timing checks) and writes a report to `tests/reports/summary.md`. See
+[`document/environment.md`](document/environment.md#automated-tests) for the
+test tiers, how the native-dialog guard works, and how to run the opt-in
+real-screen tier.
 
 ## License
 

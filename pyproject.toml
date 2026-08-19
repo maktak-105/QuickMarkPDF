@@ -1,0 +1,12 @@
+[tool.pytest.ini_options]
+# Lets `pytest` find `src.pdf_editor...` imports without setting PYTHONPATH by hand.
+pythonpath = ["python"]
+testpaths = ["tests"]
+qt_api = "pyside6"
+timeout = 60
+markers = [
+    "real_screen: needs a real, visible desktop session (excluded by default; run with -m real_screen)",
+    "visual: screenshot-based appearance regression test",
+    "perf: timing-based smoothness/performance test",
+]
+addopts = "-m \"not real_screen\""

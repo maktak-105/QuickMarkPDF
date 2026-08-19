@@ -72,3 +72,10 @@ third_party/*.tgz
 
 # Build logs
 *.log
+
+# Test tooling: generated reports/caches are not tracked.
+# tests/visual_baselines/ (the actual reference screenshots) IS tracked.
+tests/reports/
+.pytest_cache/
+.coverage
+htmlcov/
