@@ -1,137 +1,139 @@
-# 開発環境
+# Development Environment
 
-## 現行の採用技術スタック
+[日本語版 environment_jp.md](environment_jp.md)
 
-### 移行後のネイティブ版
+## Current Technology Stack
 
-- **言語**: C++17
-- **GUI**: Microsoft WebView2（HTML/CSS/JavaScript）
-- **バックエンド**: PDFium（BSD-3ライセンス、`bblanchon/pdfium-binaries`のビルド済みDLLを使用）
-- **ビルド**: CMake + Visual Studio 2022 Build Tools（WebView2ホスト）/ MinGW（native core・テスト）+ Windows SDK
-- **UIとC++の連携**: WebView2 WebMessage API（JSONメッセージ）
+### Native version (post-migration)
 
-WebView2 SDKはNuGetパッケージ `Microsoft.Web.WebView2` から取得します。SDK本体はリポジトリへコミットせず、`.gitignore`対象の `third_party/webview2/` に展開します。
+- **Language**: C++17
+- **GUI**: Microsoft WebView2 (HTML/CSS/JavaScript)
+- **Backend**: PDFium (BSD-3 license, using the prebuilt DLL from `bblanchon/pdfium-binaries`)
+- **Build**: CMake + Visual Studio 2022 Build Tools (WebView2 host) / MinGW (native core and tests) + Windows SDK
+- **UI/C++ bridge**: WebView2 WebMessage API (JSON messages)
 
-PDFエンジンにはMuPDF（AGPL/商用デュアルライセンス）ではなく、MITライセンスでのEXE配布と両立する**PDFium**（BSD-3）を採用しました。比較の詳細は `plans/2026-08-19_PDFエンジン選定_v1.0.md` を参照。`third_party/pdfium/` に展開したビルド済み `pdfium.dll` を各実行ファイルの隣にコピーし、`LoadLibraryW` + `GetProcAddress` による動的ロードで呼び出します（MinGWビルドとMSVCビルドの両方から同じ `pdf_backend.cpp` を使うため、インポートライブラリの静的リンクではなく動的ロードを選択）。`PdfBackend::inspect` は `FPDF_LoadMemDocument64` でページ数を取得する実装です。読み込み・レンダリング・編集・保存は未実装。
+The WebView2 SDK is fetched from the NuGet package `Microsoft.Web.WebView2`. The SDK itself is not committed to the repository; it is extracted into `third_party/webview2/`, which is excluded via `.gitignore`.
 
-### 移行期間のPython版（比較基準）
+For the PDF engine, we chose **PDFium** (BSD-3) over MuPDF (AGPL/commercial dual license), since PDFium is compatible with distributing an MIT-licensed EXE. See `plans/2026-08-19_PDFエンジン選定_v1.0.md` for the comparison. The prebuilt `pdfium.dll` extracted into `third_party/pdfium/` is copied next to each executable and loaded dynamically via `LoadLibraryW` + `GetProcAddress` (rather than statically linking the import library) because the same `pdf_backend.cpp` is built by both the MinGW and MSVC toolchains. `PdfBackend::inspect` currently retrieves the page count via `FPDF_LoadMemDocument64`. Loading, rendering, editing, and saving are not implemented yet.
 
-- **言語**: Python 3.12 以上
-- **GUIフレームワーク**: PySide6 (Qt 6)
-- **PDF操作ライブラリ**: PyMuPDF (fitz)
-- **画像処理補助**: Pillow
-- **配布ツール**: PyInstaller（または Nuitka）
+### Python version during the transition (comparison baseline)
 
-## 主要ライブラリ一覧
+- **Language**: Python 3.12+
+- **GUI framework**: PySide6 (Qt 6)
+- **PDF library**: PyMuPDF (fitz)
+- **Image processing helper**: Pillow
+- **Packaging**: PyInstaller (or Nuitka)
 
-| ライブラリ     | 用途                     | バージョン目安 |
-|----------------|--------------------------|----------------|
-| PyMuPDF        | PDFの読み込み・編集・変換 | 1.24+         |
-| PySide6        | デスクトップGUI          | 6.7+          |
-| Pillow         | サムネイル生成・画像処理 | 10.0+         |
-| PyInstaller    | Windows向けexe化         | 6.0+          |
+## Key libraries
 
-## 選定理由
+| Library     | Purpose                          | Approx. version |
+|-------------|-----------------------------------|------------------|
+| PyMuPDF     | PDF loading, editing, conversion  | 1.24+            |
+| PySide6     | Desktop GUI                       | 6.7+             |
+| Pillow      | Thumbnail generation, image processing | 10.0+       |
+| PyInstaller | Windows EXE packaging             | 6.0+             |
 
-- PDF操作の機能性・速度・安定性で **PyMuPDF** が現時点で最も優れている
-- サムネイル一覧表示、ドラッグ＆ドロップによるページ並び替え、プレビュー表示など、複雑なUIを比較的作りやすい
-- Windowsで実用的なサイズの単一exeにしやすい
-- Pythonのため開発速度が速く、ライブラリのエコシステムが成熟している
-- 「シンプルなUI」を目指す上で、Qtは十分なコントロールが可能
+## Rationale (Python version)
 
-## Python版の開発環境セットアップ手順
+- **PyMuPDF** currently offers the best functionality, speed, and stability for PDF manipulation
+- Makes it relatively easy to build the more complex UI needed for a thumbnail list, drag-and-drop page reordering, and preview display
+- Easy to produce a single EXE of a practical size on Windows
+- Python enables fast development and has a mature library ecosystem
+- Qt provides enough control to achieve a "simple UI" goal
+
+## Python version setup
 
 ```bash
-# 1. Python仮想環境の作成
+# 1. Create the Python virtual environment
 python -m venv .venv
-.venv\Scripts\activate   # Windowsの場合
+.venv\Scripts\activate   # on Windows
 
-# 2. 主要ライブラリのインストール
+# 2. Install the main libraries
 pip install PyMuPDF PySide6 Pillow
 
-# 3. 開発時のみ必要（任意）
+# 3. Only needed for development (optional)
 pip install PyInstaller
 
-# 4. アプリ起動
+# 4. Launch the app
 python python/main.py
 ```
 
-## C++ WebView2版のセットアップ
+## C++ WebView2 version setup
 
-1. Visual Studio 2022 Build Toolsの「C++によるデスクトップ開発」とWindows 10/11 SDKを導入する。
-2. `powershell -ExecutionPolicy Bypass -File scripts/fetch_webview2_sdk.ps1` でWebView2 SDKを `third_party/webview2/` に展開する。
-3. `powershell -ExecutionPolicy Bypass -File scripts/fetch_pdfium.ps1` でPDFiumのビルド済みDLLを `third_party/pdfium/` に展開する。
-4. CMakeでx64のWebView2ホストをビルドする。
+1. Install the "Desktop development with C++" workload and the Windows 10/11 SDK from Visual Studio 2022 Build Tools.
+2. Run `powershell -ExecutionPolicy Bypass -File scripts/fetch_webview2_sdk.ps1` to extract the WebView2 SDK into `third_party/webview2/`.
+3. Run `powershell -ExecutionPolicy Bypass -File scripts/fetch_pdfium.ps1` to extract the prebuilt PDFium DLL into `third_party/pdfium/`.
+4. Build the x64 WebView2 host with CMake.
 
 ```powershell
 cmake -G "Visual Studio 17 2022" -A x64 -S core/webview2 -B core/webview2/build
 cmake --build core/webview2/build --config Release
 ```
 
-実行ファイルは `core/webview2/build/Release/QuickMarkPDF_webview.exe`。WebView2 RuntimeがインストールされたWindows 10/11環境で起動します。
+The resulting executable is `core/webview2/build/Release/QuickMarkPDF_webview.exe`. It runs on Windows 10/11 with the WebView2 Runtime installed.
 
-## プロジェクト構成
+## Project layout
 
 ```
 QuickMarkPDF/
 ├── core/
-│   ├── native/                    # PDFエンジン非依存のC++モデル
-│   └── webview2/                  # WebView2ホスト
-├── ui/                            # WebView2で表示するHTML/CSS/JavaScript
+│   ├── native/                    # PDF-engine-agnostic C++ model
+│   └── webview2/                  # WebView2 host
+├── ui/                            # HTML/CSS/JavaScript shown in WebView2
 ├── python/
-│   ├── main.py                    # エントリーポイント
-│   └── src/                       # Pythonソース
+│   ├── main.py                    # Entry point
+│   └── src/                       # Python sources
 ├── requirements.txt
 ├── document/
-│   ├── spec.md                    # 仕様書
-│   └── environment.md             # 本ファイル
+│   ├── spec.md                    # Specification
+│   └── environment.md             # This file
 ├── resources/
-│   └── icons/                     # ツールバー用PNGアイコン（Pillowで自動生成）
+│   └── icons/                     # Toolbar PNG icons (auto-generated with Pillow)
 │   └── src/pdf_editor/
 │       ├── pdf/
-│       │   └── pdf_manager.py     # PDF読み込み・編集・保存・キャッシュ
+│       │   └── pdf_manager.py     # PDF load/edit/save/cache
 │       └── ui/
-│           ├── main_window.py     # メインウィンドウ・ツールバー・プレビュー
-│           └── thumbnail_panel.py # サムネイルツリー（QTreeWidget）
+│           ├── main_window.py     # Main window, toolbar, preview
+│           └── thumbnail_panel.py # Thumbnail tree (QTreeWidget)
 └── tests/
 ```
 
-## UIアーキテクチャ概要
+## UI architecture overview (Python version)
 
-- **QMainWindow** → 上部ツールバー + 中央ウィジェット
-- **中央ウィジェット** → QSplitter（水平）で左右分割
-  - 左: `ThumbnailPanel`（QTreeWidget サブクラス）
-  - 右: QScrollArea + QLabel（プレビュー）
-- **ThumbnailPanel** のカスタム要素:
-  - `_ThumbnailDelegate`: ファイルヘッダーと各ページ行で異なる行高さを管理。ページ行は独自 `paint()` で描画（`iconSize()` に依存しない）
-  - サムネキャンバスは `(icon_w × 実際の画像高さ + TEXT_H)` の可変高さ。横長ページも余白なし
-  - `Qt.UserRole` = ページインデックス、`Qt.UserRole + 1` = キャンバス高さ（デリゲートが参照）
-  - パネル幅 = `icon_w + 2 × indent + scrollbar_margin`（Qt の rootIsDecorated=True により子アイテムは 2×indent ぶん右にオフセットされるため）
+- **QMainWindow** → top toolbar + central widget
+- **Central widget** → QSplitter (horizontal), split left/right
+  - Left: `ThumbnailPanel` (a QTreeWidget subclass)
+  - Right: QScrollArea + QLabel (preview)
+- **ThumbnailPanel** custom pieces:
+  - `_ThumbnailDelegate`: manages different row heights for the file header row versus page rows. Page rows are drawn with a custom `paint()` (independent of `iconSize()`)
+  - The thumbnail canvas has a variable height of `(icon_w × actual image height + TEXT_H)`, so wide pages have no extra padding
+  - `Qt.UserRole` = page index, `Qt.UserRole + 1` = canvas height (read by the delegate)
+  - Panel width = `icon_w + 2 × indent + scrollbar_margin` (because Qt's `rootIsDecorated=True` offsets child items by 2×indent to the right)
 
-## PDFManagerの主要な設計
+## PDFManager's main design (Python version)
 
-| メソッド | 役割 |
-|---------|------|
-| `load_pdfs` | 複数PDFを開き、`all_pages` / `page_infos` を構築 |
-| `reorder_pages` | ページ順序をリストで指定して並び替え |
-| `rotate_page` | 指定ページを回転（キャッシュ無効化付き） |
-| `get_thumbnail_pixmap` | サムネ生成（スケール1回・キャッシュ利用） |
-| `get_preview_pixmap` | プレビュー用高解像度レンダリング |
-| `save_as` | 全ページを新しいPDFとして出力 |
-| `save_selected_pages` | 選択ページのみを新しいPDFとして出力 |
+| Method | Role |
+|--------|------|
+| `load_pdfs` | Opens multiple PDFs and builds `all_pages` / `page_infos` |
+| `reorder_pages` | Reorders pages given a list of the new order |
+| `rotate_page` | Rotates a given page (with cache invalidation) |
+| `get_thumbnail_pixmap` | Generates a thumbnail (scales once, uses the cache) |
+| `get_preview_pixmap` | High-resolution rendering for the preview |
+| `save_as` | Writes all pages out as a new PDF |
+| `save_selected_pages` | Writes only the selected pages out as a new PDF |
 
-## サムネイルキャッシュ設計
+## Thumbnail cache design (Python version)
 
-- キー: `(id(page), max_size, page.rotation)`
-- 無効化タイミング: 回転・全ページ閉じ
-- 並び替えはページオブジェクトの参照を並び替えるだけなので `id()` が変わらずキャッシュはそのまま有効
+- Key: `(id(page), max_size, page.rotation)`
+- Invalidated on: rotation, closing all pages
+- Reordering only rearranges references to page objects, so `id()` doesn't change and the cache stays valid
 
-## 配布方法（予定）
+## Distribution plan
 
-- PyInstallerを使ってWindows向け単一exeファイルを作成
-- 必要に応じてNuitkaへの移行も検討
+- Build a single Windows EXE with PyInstaller
+- Consider migrating to Nuitka if needed
 
-## 備考
+## Notes
 
-- 現時点ではWindowsを最優先ターゲットとする
-- 将来的にmacOS/Linux対応が必要になった場合は、PySide6のクロスプラットフォーム性を活かして対応可能
+- Windows is the top-priority target for now
+- If macOS/Linux support becomes necessary later, PySide6's cross-platform nature makes that feasible
