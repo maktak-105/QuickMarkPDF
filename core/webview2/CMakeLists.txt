@@ -16,7 +16,7 @@ set(PDFIUM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../third_party/pdfium")
 set(PDFIUM_INCLUDE "${PDFIUM_ROOT}/include")
 set(PDFIUM_DLL "${PDFIUM_ROOT}/bin/pdfium.dll")
 
-add_executable(QuickMarkPDF_webview WIN32 host.cpp ../native/pdf_backend.cpp)
+add_executable(QuickMarkPDF_webview WIN32 host.cpp ../native/pdf_backend.cpp ../native/engine.cpp)
 target_include_directories(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_INCLUDE}" "${PDFIUM_INCLUDE}" "${CMAKE_CURRENT_LIST_DIR}/../native")
 target_link_libraries(QuickMarkPDF_webview PRIVATE "${WEBVIEW2_LIB}" ole32 user32 comctl32 comdlg32)
 target_compile_definitions(QuickMarkPDF_webview PRIVATE UNICODE _UNICODE NOMINMAX)

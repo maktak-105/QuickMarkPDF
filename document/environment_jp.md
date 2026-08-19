@@ -31,7 +31,7 @@ cmake --build core/webview2/build --config Release
 
 生成物は `core/webview2/build/Release/QuickMarkPDF_webview.exe` です。`pdfium.dll` は実行ファイルと同じフォルダへビルド時にコピーされ、`LoadLibraryW` で実行時に動的ロードされます。
 
-`PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。読み込み・レンダリング・編集・保存はまだ未実装です。
+`PdfBackend::inspect` は `FPDF_LoadMemDocument64` + `FPDF_GetPageCount` でページ数を取得します。`PdfBackend::save` は `WorkingDocument`(並べ替え・ファイル間移動・回転・削除)から `FPDF_ImportPagesByIndex` + `FPDFPage_SetRotation` + `FPDF_SaveAsCopy` で新規PDFを書き出します。パスワード付きソースで正しいパスワードがない場合は `PdfPasswordRequiredError` を送出します。WebView2向けのサムネイル・プレビューのレンダリングはまだ未実装です。
 
 ## 移行期間のPython版
 
