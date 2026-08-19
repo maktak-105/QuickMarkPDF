@@ -551,6 +551,7 @@ void handle_render_page(const std::wstring& message) {
 void handle_reorder_pages(const std::wstring& message) {
     try {
         g_manager.reorder_pages(extract_size_t_array(message, L"order"));
+        post_status(L"ページ順を更新しました");
         post_document_state(L"document_state");
     } catch (const std::exception&) {
         post_status(L"並べ替えに失敗しました");
@@ -559,8 +560,14 @@ void handle_reorder_pages(const std::wstring& message) {
 
 void handle_rotate_pages(const std::wstring& message) {
     const int degrees = extract_int(message, L"degrees", 0);
+    const auto indices = extract_size_t_array(message, L"indices");
     try {
-        g_manager.rotate_pages(extract_size_t_array(message, L"indices"), degrees);
+        g_manager.rotate_pages(indices, degrees);
+        if (indices.size() > 1) {
+            post_status(std::to_wstring(indices.size()) + L"ページを" + std::to_wstring(degrees) + L"度回転しました");
+        } else {
+            post_status(L"ページを" + std::to_wstring(degrees) + L"度回転しました");
+        }
         post_document_state(L"document_state");
     } catch (const std::exception&) {
         post_status(L"回転に失敗しました");
@@ -568,18 +575,30 @@ void handle_rotate_pages(const std::wstring& message) {
 }
 
 void handle_delete_pages(const std::wstring& message) {
-    g_manager.delete_pages(extract_size_t_array(message, L"indices"));
+    const auto indices = extract_size_t_array(message, L"indices");
+    g_manager.delete_pages(indices);
+    if (indices.size() > 1) {
+        post_status(std::to_wstring(indices.size()) + L"ページを削除しました");
+    } else {
+        post_status(L"ページを削除しました");
+    }
     post_document_state(L"document_state");
 }
 
 void handle_undo_edit() {
-    g_manager.undo();
+    if (g_manager.undo()) {
+        post_status(L"元に戻しました");
+    } else {
+        post_status(L"元に戻す操作がありません");
+    }
     post_document_state(L"document_state");
 }
 
 void handle_close_document(const std::wstring& message) {
     const auto path = extract_string(message, L"path");
+    const auto filename = std::filesystem::path(path).filename().wstring();
     if (g_manager.close_document(wide_to_utf8(path))) {
+        post_status(filename + L" を閉じました");
         post_document_state(L"document_state");
     }
 }

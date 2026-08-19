@@ -16,7 +16,14 @@
   const saveButton = document.querySelector('#save-button');
 
   let pages = [];
-  let selectedIndex = -1;
+  // Multi-select (Ctrl toggles one item, Shift selects a range from the
+  // last click) mirrors the Python baseline's thumbnail panel, since
+  // rotate/delete both operate on "every selected page" there.
+  // primaryIndex is whichever item last became selected -- that's the one
+  // the preview pane shows.
+  let selectedIndices = new Set();
+  let primaryIndex = -1;
+  let anchorIndex = -1;
   let dragFromIndex = -1;
 
   const hasBridge = () => Boolean(window.chrome?.webview);
@@ -33,8 +40,12 @@
     return parts[parts.length - 1] || path;
   }
 
+  function selectedIndicesSorted() {
+    return Array.from(selectedIndices).sort((a, b) => a - b);
+  }
+
   function updateToolbarEnabled() {
-    const hasSelection = selectedIndex >= 0 && selectedIndex < pages.length;
+    const hasSelection = selectedIndices.size > 0;
     rotateRightButton.disabled = !hasSelection;
     rotateLeftButton.disabled = !hasSelection;
     rotate180Button.disabled = !hasSelection;
@@ -43,14 +54,45 @@
     saveButton.disabled = pages.length === 0;
   }
 
-  function selectPage(index) {
-    selectedIndex = index;
+  function applySelectionToDom() {
     document.querySelectorAll('.page-item').forEach((el) => {
-      el.classList.toggle('selected', Number(el.dataset.pageIndex) === index);
+      el.classList.toggle('selected', selectedIndices.has(Number(el.dataset.pageIndex)));
     });
+  }
+
+  function selectPage(index, event) {
+    if (index < 0 || index >= pages.length) return;
+    const ctrl = Boolean(event && (event.ctrlKey || event.metaKey));
+    const shift = Boolean(event && event.shiftKey);
+
+    if (shift && anchorIndex >= 0) {
+      const lo = Math.min(anchorIndex, index);
+      const hi = Math.max(anchorIndex, index);
+      selectedIndices = new Set();
+      for (let i = lo; i <= hi; i += 1) selectedIndices.add(i);
+      primaryIndex = index;
+    } else if (ctrl) {
+      if (selectedIndices.has(index)) {
+        selectedIndices.delete(index);
+        if (primaryIndex === index) {
+          const remaining = selectedIndicesSorted();
+          primaryIndex = remaining.length > 0 ? remaining[remaining.length - 1] : -1;
+        }
+      } else {
+        selectedIndices.add(index);
+        primaryIndex = index;
+      }
+      anchorIndex = index;
+    } else {
+      selectedIndices = new Set([index]);
+      primaryIndex = index;
+      anchorIndex = index;
+    }
+
+    applySelectionToDom();
     updateToolbarEnabled();
-    if (index >= 0 && index < pages.length) {
-      post({ type: 'render_page', page_index: index, width: PREVIEW_WIDTH });
+    if (primaryIndex >= 0 && primaryIndex < pages.length) {
+      post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_WIDTH });
     }
   }
 
@@ -91,7 +133,7 @@
     number.textContent = `p.${index + 1}`;
     item.appendChild(number);
 
-    item.addEventListener('click', () => selectPage(index));
+    item.addEventListener('click', (event) => selectPage(index, event));
 
     item.addEventListener('dragstart', (event) => {
       dragFromIndex = index;
@@ -106,9 +148,13 @@
       event.preventDefault();
       item.classList.remove('drag-over');
       if (dragFromIndex < 0 || dragFromIndex === index) return;
+      // Dropping onto the item currently at `index` should land the moved
+      // page exactly there. If it was dragged from earlier in the list,
+      // removing it first shifts everything after it left by one, so the
+      // target's post-removal position is index - 1, not index.
       const order = Array.from({ length: pages.length }, (_, i) => i);
       const [moved] = order.splice(dragFromIndex, 1);
-      const insertAt = dragFromIndex < index ? index : index;
+      const insertAt = dragFromIndex < index ? index - 1 : index;
       order.splice(insertAt, 0, moved);
       post({ type: 'reorder_pages', order });
       dragFromIndex = -1;
@@ -125,7 +171,9 @@
       pageList.className = 'empty';
       pageList.replaceChildren();
       pageList.textContent = 'PDFを開くとページ一覧を表示します。';
-      selectedIndex = -1;
+      selectedIndices = new Set();
+      primaryIndex = -1;
+      anchorIndex = -1;
       previewEl.replaceChildren();
       const welcome = document.createElement('div');
       welcome.className = 'welcome';
@@ -142,12 +190,17 @@
       post({ type: 'render_page', page_index: index, width: THUMBNAIL_WIDTH });
     });
 
-    if (selectedIndex < 0 || selectedIndex >= pages.length) {
-      selectPage(0);
-    } else {
-      selectPage(selectedIndex);
+    // The page count/positions may have just changed (delete/reorder/undo);
+    // keep whatever selection still fits, defaulting to the first page if
+    // nothing survived.
+    selectedIndices = new Set(Array.from(selectedIndices).filter((i) => i < pages.length));
+    if (primaryIndex < 0 || primaryIndex >= pages.length) {
+      primaryIndex = selectedIndicesSorted()[0] ?? 0;
     }
+    if (selectedIndices.size === 0) selectedIndices.add(primaryIndex);
+    applySelectionToDom();
     updateToolbarEnabled();
+    post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_WIDTH });
   }
 
   openButton.addEventListener('click', () => {
@@ -160,20 +213,20 @@
   });
 
   rotateRightButton.addEventListener('click', () => {
-    if (selectedIndex < 0) return;
-    post({ type: 'rotate_pages', indices: [selectedIndex], degrees: 90 });
+    if (selectedIndices.size === 0) return;
+    post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees: 90 });
   });
   rotateLeftButton.addEventListener('click', () => {
-    if (selectedIndex < 0) return;
-    post({ type: 'rotate_pages', indices: [selectedIndex], degrees: -90 });
+    if (selectedIndices.size === 0) return;
+    post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees: -90 });
   });
   rotate180Button.addEventListener('click', () => {
-    if (selectedIndex < 0) return;
-    post({ type: 'rotate_pages', indices: [selectedIndex], degrees: 180 });
+    if (selectedIndices.size === 0) return;
+    post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees: 180 });
   });
   deleteButton.addEventListener('click', () => {
-    if (selectedIndex < 0) return;
-    post({ type: 'delete_pages', indices: [selectedIndex] });
+    if (selectedIndices.size === 0) return;
+    post({ type: 'delete_pages', indices: selectedIndicesSorted() });
   });
   undoButton.addEventListener('click', () => post({ type: 'undo_edit' }));
   exportButton.addEventListener('click', () => post({ type: 'export_images', indices: [], dpi: 150 }));
