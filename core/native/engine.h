@@ -151,15 +151,17 @@ public:
                               const std::unordered_map<std::string, std::string>& passwords = {});
 
     // Renders each page in `indices` (or every page, if `indices` is empty)
-    // to a PNG in `output_dir`, named "{prefix}_{0001-based index}.png".
-    // `clip`, if set, is a crop rectangle in PDF points (page-space, before
-    // DPI scaling) applied to every exported page. Only "png" is currently
-    // implemented; any other `fmt` is reported per-page in `errors` rather
+    // to an image in `output_dir`, named "{prefix}_{0001-based index}.{ext}".
+    // `fmt` is "png" or "jpg"/"jpeg" (`jpeg_quality`, 1-100, applies only to
+    // the latter); any other value is reported per-page in `errors` rather
     // than throwing, so a partial export still returns whatever succeeded
-    // (matching the Python baseline's per-page error accumulation).
+    // (matching the Python baseline's per-page error accumulation). `clip`,
+    // if set, is a crop rectangle in PDF points (page-space, before DPI
+    // scaling) applied to every exported page.
     ExportResult export_pages_to_images(const std::vector<std::size_t>& indices, const std::string& output_dir,
                                          const std::string& fmt, int dpi, const std::string& prefix,
-                                         const std::optional<std::array<double, 4>>& clip = std::nullopt);
+                                         const std::optional<std::array<double, 4>>& clip = std::nullopt,
+                                         int jpeg_quality = 90);
 
     // Removes every page whose source is `path` (compared via
     // std::filesystem::absolute, matching load_pdfs's dedup comparison), as

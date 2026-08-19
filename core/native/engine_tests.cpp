@@ -718,6 +718,38 @@ void test_manager_export_images_with_clip() {
     std::remove(p1.c_str());
 }
 
+void test_manager_export_images_as_jpeg() {
+    // No hand-rolled JPEG decoder is available to check exact pixel
+    // dimensions here (unlike the PNG test, which reads IHDR directly), so
+    // this checks what's practical without one: the file exists, is a
+    // plausible size, and starts/ends with the JPEG SOI/EOI markers --
+    // enough to catch "WIC silently wrote garbage or nothing."
+    const auto p1 = std::string("quickmarkpdf_test_mgr_export_jpeg.pdf");
+    write_min_pdf(p1, 1, 200, 300);
+    const auto out_dir = std::string("quickmarkpdf_test_mgr_export_jpeg_out");
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1});
+
+    const auto result = mgr.export_pages_to_images({0}, out_dir, "jpg", /*dpi=*/72, "photo", std::nullopt,
+                                                     /*jpeg_quality=*/85);
+    assert(result.success == 1);
+    assert(result.attempted == 1);
+    assert(result.errors.empty());
+
+    const auto out_file = out_dir + "/photo_0001.jpg";
+    std::ifstream in(out_file, std::ios::binary);
+    const std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    assert(bytes.size() > 100);
+    assert(bytes[0] == 0xFF && bytes[1] == 0xD8);  // SOI
+    assert(bytes[bytes.size() - 2] == 0xFF && bytes[bytes.size() - 1] == 0xD9);  // EOI
+
+    std::remove(out_file.c_str());
+    std::filesystem::remove(out_dir);
+    std::remove(p1.c_str());
+}
+
 void test_manager_password_flow() {
     const auto path = std::string("quickmarkpdf_test_mgr_password.pdf");
     write_encrypted_fixture_pdf(path);
@@ -859,6 +891,7 @@ int main() {
     test_manager_save_selected_pages_cuts_out_a_new_pdf();
     test_manager_save_selected_pages_rejects_empty_selection();
     test_manager_export_images_with_clip();
+    test_manager_export_images_as_jpeg();
     test_manager_password_flow();
     test_manager_undo_reorder_and_rotate_and_delete();
     test_manager_close_document_removes_only_its_pages_and_is_undoable();

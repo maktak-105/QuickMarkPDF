@@ -669,12 +669,23 @@ void handle_export_images(const std::wstring& message) {
     auto indices = extract_size_t_array(message, L"indices");
     const int dpi = extract_int(message, L"dpi", 150);
 
+    // No format-picker dialog exists yet (Python's ExportDialog also covers
+    // scope/crop/output-dir, none of which this port has a UI for either),
+    // so this is a minimal stand-in: a single yes/no choice between the two
+    // formats PdfManager actually supports.
+    force_foreground_window();
+    const int choice = MessageBoxW(g_window, L"JPEG形式で書き出しますか？\n「いいえ」でPNG形式になります。",
+                                    L"画像出力", MB_YESNOCANCEL | MB_ICONQUESTION);
+    if (choice == IDCANCEL) return;
+    const std::string fmt = (choice == IDYES) ? "jpg" : "png";
+
     const auto folder = prompt_pick_folder();
     if (!folder) return;
 
-    const auto result = g_manager.export_pages_to_images(indices, folder->u8string(), "png", dpi, "page");
+    const auto result =
+        g_manager.export_pages_to_images(indices, folder->u8string(), fmt, dpi, "page", std::nullopt, 90);
     post_status(std::to_wstring(result.success) + L"/" + std::to_wstring(result.attempted) +
-                L" 件の画像を書き出しました");
+                L" 件の画像を書き出しました（" + (fmt == "jpg" ? L"JPEG" : L"PNG") + L"）");
 }
 
 // =====================

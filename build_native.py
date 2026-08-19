@@ -135,7 +135,7 @@ def build():
         os.path.join(native_dir, "image_io.cpp"),
         os.path.join(native_dir, "main_cli.cpp"),
         "-o", out_cli_exe,
-        "-lkernel32",
+        "-lkernel32", "-lole32", "-loleaut32", "-lwindowscodecs",
     ]
     if not run(cmd_cli, label="2/3 CLI (dist/binary/QuickMarkPDF_cli.exe)"):
         return False
@@ -175,6 +175,7 @@ def build_tests():
         os.path.join(native_dir, "image_io.cpp"),
         os.path.join(native_dir, "engine_tests.cpp"),
         "-o", out_exe,
+        "-lole32", "-loleaut32", "-lwindowscodecs",
     ]
     if not run(cmd, label="test 1/2 ビルド"):
         return False

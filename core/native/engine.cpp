@@ -330,8 +330,12 @@ bool PdfManager::save_selected_pages(const std::vector<std::size_t>& indices, co
 
 PdfManager::ExportResult PdfManager::export_pages_to_images(
     const std::vector<std::size_t>& indices, const std::string& output_dir, const std::string& fmt, int dpi,
-    const std::string& prefix, const std::optional<std::array<double, 4>>& clip) {
+    const std::string& prefix, const std::optional<std::array<double, 4>>& clip, int jpeg_quality) {
     ExportResult result;
+
+    const bool is_png = (fmt == "png");
+    const bool is_jpeg = (fmt == "jpg" || fmt == "jpeg");
+    const std::string extension = is_jpeg ? ".jpg" : ".png";
 
     std::vector<std::size_t> targets = indices;
     if (targets.empty()) {
@@ -355,8 +359,8 @@ PdfManager::ExportResult PdfManager::export_pages_to_images(
             result.errors.push_back("page index out of range: " + std::to_string(index));
             continue;
         }
-        if (fmt != "png") {
-            result.errors.push_back("unsupported export format (only png is implemented): " + fmt);
+        if (!is_png && !is_jpeg) {
+            result.errors.push_back("unsupported export format (expected png or jpg): " + fmt);
             continue;
         }
 
@@ -372,8 +376,12 @@ PdfManager::ExportResult PdfManager::export_pages_to_images(
 
             char suffix[16];
             std::snprintf(suffix, sizeof(suffix), "_%04d", counter);
-            const fs::path out_file = fs::u8path(output_dir) / fs::u8path(prefix + suffix + ".png");
-            write_png_rgb(out_file.u8string(), rendered.width, rendered.height, rendered.rgba);
+            const fs::path out_file = fs::u8path(output_dir) / fs::u8path(prefix + suffix + extension);
+            if (is_jpeg) {
+                write_jpeg_rgb(out_file.u8string(), rendered.width, rendered.height, rendered.rgba, jpeg_quality);
+            } else {
+                write_png_rgb(out_file.u8string(), rendered.width, rendered.height, rendered.rgba);
+            }
             result.success += 1;
         } catch (const std::exception& e) {
             result.errors.push_back("page " + std::to_string(index) + ": " + e.what());
