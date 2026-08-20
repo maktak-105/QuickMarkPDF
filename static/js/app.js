@@ -85,9 +85,9 @@
 
   // Compact Markdown -> HTML converter. Covers headings, paragraphs,
   // bold/italic, inline code, fenced code blocks, blockquotes (recursive),
-  // simple (non-nested) bullet/numbered lists, links, images, and
-  // horizontal rules -- deliberately not a full CommonMark implementation.
-  // Mermaid/MathJax rendering and tables are not implemented; see
+  // simple (non-nested) bullet/numbered lists, links, images, GFM tables,
+  // and horizontal rules -- deliberately not a full CommonMark
+  // implementation. Mermaid/MathJax rendering are not implemented; see
   // plans/2026-08-20_*.md for what's deferred. Escapes HTML in the source
   // first, so raw HTML embedded in a Markdown file renders as literal text
   // rather than executing -- a safe simplification, not a Python-parity
@@ -106,6 +106,22 @@
     out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
     return out;
+  }
+
+  // GFM table row splitting: strips one optional leading/trailing pipe,
+  // then splits on '|'. A cell containing an escaped pipe ('\|') is not
+  // supported (matches this converter's general "compact, not full
+  // CommonMark" scope).
+  function splitTableRow(line) {
+    let trimmed = line.trim();
+    if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+    if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
+    return trimmed.split('|').map((c) => c.trim());
+  }
+  function isTableSeparatorRow(line) {
+    if (!/\|/.test(line) && !/^:?-+:?$/.test(line.trim())) return false;
+    const cells = splitTableRow(line);
+    return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
   }
 
   function markdownToHtml(source) {
@@ -161,6 +177,35 @@
         flushList();
         html.push('<hr>');
         i += 1;
+        continue;
+      }
+
+      if (/\|/.test(line) && i + 1 < lines.length && isTableSeparatorRow(lines[i + 1])) {
+        flushParagraph();
+        flushList();
+        const headerCells = splitTableRow(line);
+        const aligns = splitTableRow(lines[i + 1]).map((c) => {
+          const left = c.startsWith(':');
+          const right = c.endsWith(':');
+          if (left && right) return 'center';
+          if (right) return 'right';
+          if (left) return 'left';
+          return '';
+        });
+        i += 2;
+        const bodyRows = [];
+        while (i < lines.length && lines[i].trim() !== '' && /\|/.test(lines[i])) {
+          bodyRows.push(splitTableRow(lines[i]));
+          i += 1;
+        }
+        const alignAttr = (idx) => (aligns[idx] ? ` style="text-align:${aligns[idx]}"` : '');
+        const theadHtml = '<thead><tr>' +
+          headerCells.map((c, idx) => `<th${alignAttr(idx)}>${renderInline(c)}</th>`).join('') +
+          '</tr></thead>';
+        const tbodyHtml = '<tbody>' + bodyRows.map((row) => '<tr>' +
+          headerCells.map((_, idx) => `<td${alignAttr(idx)}>${renderInline(row[idx] || '')}</td>`).join('') +
+          '</tr>').join('') + '</tbody>';
+        html.push('<table>' + theadHtml + tbodyHtml + '</table>');
         continue;
       }
 
