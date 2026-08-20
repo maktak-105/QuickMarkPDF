@@ -153,6 +153,17 @@ def build():
         else:
             print(f"[警告] DLLが見つかりませんでした: {dll}")
 
+    # 4. Mermaid/MathJax 同梱資産(Markdown内のダイアグラム/数式描画用。
+    # index.html は file:// でNavigateされるので相対パスで解決できるよう
+    # dist/binary/vendor/ 配下にそのままコピーする)
+    vendor_src = os.path.join(base_dir, "resources", "vendor")
+    vendor_dst = os.path.join(binary_dir, "vendor")
+    if os.path.isdir(vendor_src):
+        shutil.copytree(vendor_src, vendor_dst, dirs_exist_ok=True)
+        print(f"[成功] vendor資産をコピーしました: {vendor_dst}")
+    else:
+        print(f"[警告] vendor資産が見つかりませんでした: {vendor_src}")
+
     print(f"\n[完成] 配布用バイナリを dist/binary フォルダに生成完了: {binary_dir}")
     return True
 

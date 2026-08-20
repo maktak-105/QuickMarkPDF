@@ -84,15 +84,74 @@
   };
 
   // Compact Markdown -> HTML converter. Covers headings, paragraphs,
-  // bold/italic, inline code, fenced code blocks, blockquotes (recursive),
-  // simple (non-nested) bullet/numbered lists, links, images, GFM tables,
-  // and horizontal rules -- deliberately not a full CommonMark
-  // implementation. Mermaid/MathJax rendering are not implemented; see
-  // plans/2026-08-20_*.md for what's deferred. Escapes HTML in the source
-  // first, so raw HTML embedded in a Markdown file renders as literal text
-  // rather than executing -- a safe simplification, not a Python-parity
-  // feature (the Python baseline's `Markdown` package allows raw HTML
-  // passthrough).
+  // bold/italic, inline code, fenced code blocks (incl. ```mermaid blocks),
+  // blockquotes (recursive), simple (non-nested) bullet/numbered lists,
+  // links, images, GFM tables, inline/display math ($..$/$$..$$), and
+  // horizontal rules -- deliberately not a full CommonMark implementation.
+  // Escapes HTML in the source first, so raw HTML embedded in a Markdown
+  // file renders as literal text rather than executing -- a safe
+  // simplification, not a Python-parity feature (the Python baseline's
+  // `Markdown` package allows raw HTML passthrough).
+
+  // Math protection: replaces $$..$$ (display) and $..$ (inline) segments
+  // with opaque tokens before markdownToHtml runs, so bold/italic/code
+  // regexes and HTML-escaping never touch the LaTeX source, then restores
+  // the raw math text after conversion (mirrors markdown_manager.py's
+  // _protect_math/_restore_math_tokens token-swap approach). Skips fenced
+  // code blocks entirely, same as the Python version. MathJax's tex-svg.js
+  // itself scans the final DOM text for the $/$$ delimiters at render time.
+  let mathTokenCounter = 0;
+  function protectMath(source) {
+    const tokens = new Map();
+    const makeToken = (kind, content) => {
+      const token = `@@QMPDFMATH${mathTokenCounter}@@`;
+      mathTokenCounter += 1;
+      tokens.set(token, { kind, content });
+      return token;
+    };
+    const replaceMath = (segment) => segment
+      .replace(/(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$/g, (m, inner) => makeToken('display', `$$${inner}$$`))
+      .replace(/(?<!\\)\$(?!\$)([^$\n]+?)(?<!\\)\$/g, (m, inner) => makeToken('inline', `$${inner}$`));
+    const parts = source.split(/(^```[\w-]*\s*$[\s\S]*?^```\s*$)/m);
+    return { text: parts.map((part, idx) => (idx % 2 === 0 ? replaceMath(part) : part)).join(''), tokens };
+  }
+  function restoreMathTokens(html, tokens) {
+    let restored = html;
+    tokens.forEach((value, token) => {
+      if (value.kind === 'display') {
+        restored = restored.split(`<p>${token}</p>`).join(`<div class="math">${value.content}</div>`);
+      }
+      restored = restored.split(token).join(value.content);
+    });
+    return restored;
+  }
+  function renderMarkdownDocument(source) {
+    const { text, tokens } = protectMath(source);
+    return restoreMathTokens(markdownToHtml(text), tokens);
+  }
+
+  // Mermaid initialization mirrors markdown_manager.py's inline <script>
+  // (startOnLoad: false, securityLevel: 'loose', theme: 'default', run
+  // against every .mermaid element) and MathJax's typesetPromise() call.
+  // Both libraries load as `defer` <script src> tags (see bundle_html.py),
+  // so by the time this runs (only ever triggered by a markdown_opened
+  // message, always after the page's own initial load) window.mermaid/
+  // window.MathJax are already defined -- guarded with `if` anyway in case
+  // vendor/ assets are missing from a given build (matches Python's own
+  // asset_urls.exists() fallback to plain, unenhanced Markdown).
+  async function enhanceMarkdownRender() {
+    try {
+      if (window.mermaid) {
+        window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'default' });
+        await window.mermaid.run({ querySelector: '.markdown-content .mermaid' });
+      }
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        await window.MathJax.typesetPromise();
+      }
+    } catch (err) {
+      console.warn('Markdown enhancement render failed:', err);
+    }
+  }
   function escapeHtml(text) {
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -151,6 +210,8 @@
       if (/^```/.test(line)) {
         flushParagraph();
         flushList();
+        const langMatch = line.match(/^```([\w-]*)/);
+        const lang = langMatch ? langMatch[1].toLowerCase() : '';
         const codeLines = [];
         i += 1;
         while (i < lines.length && !/^```/.test(lines[i])) {
@@ -158,7 +219,11 @@
           i += 1;
         }
         i += 1;
-        html.push('<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>');
+        if (lang === 'mermaid') {
+          html.push('<pre class="mermaid">' + escapeHtml(codeLines.join('\n')) + '</pre>');
+        } else {
+          html.push('<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>');
+        }
         continue;
       }
 
@@ -1080,8 +1145,9 @@
       }
 
       if (data.type === 'markdown_opened') {
-        markdownContent.innerHTML = markdownToHtml(data.content || '');
+        markdownContent.innerHTML = renderMarkdownDocument(data.content || '');
         setMode('markdown');
+        enhanceMarkdownRender();
       }
 
       if (data.type === 'export_defaults') {

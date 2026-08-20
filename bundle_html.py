@@ -27,6 +27,17 @@ def bundle(output_dir=None):
   <style>
 {css}
   </style>
+  <script>
+    window.MathJax = {{
+      tex: {{
+        inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+        displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
+      }},
+      svg: {{ fontCache: 'global' }}
+    }};
+  </script>
+  <script defer src="vendor/mathjax/tex-svg.js"></script>
+  <script defer src="vendor/mermaid/mermaid.min.js"></script>
 </head>
 <body>
 """
