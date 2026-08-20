@@ -26,6 +26,8 @@ logging.basicConfig(level=logging.DEBUG, stream=sys.stderr, format="  [app-log] 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "python"))
+sys.path.insert(0, str(REPO_ROOT / "qa"))
+import db  # noqa: E402
 
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication, QFileDialog, QMessageBox, QInputDialog, QDialog,
@@ -529,7 +531,8 @@ def main():
     out = {"source": "python", "total": len(results), "passed": passed, "results": results}
     out_path = REPO_ROOT / "qa" / "behaviors.json"
     out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n[SUMMARY] {passed}/{len(results)} passed -> {out_path}", flush=True)
+    print(f"\n[集計] {passed}/{len(results)} 件PASS -> {out_path}", flush=True)
+    db.record_behaviors_run("python", results)
 
 
 if __name__ == "__main__":

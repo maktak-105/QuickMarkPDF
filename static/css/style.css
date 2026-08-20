@@ -63,7 +63,21 @@ button.tool:disabled { opacity: .38; cursor: default; }
 .size-btn:disabled { opacity: .38; cursor: default; }
 
 :root { --thumb-w: 120px; --thumb-max-h: 127px; --panel-w: 172px; }
-.workspace { flex: 1 1 auto; display: grid; grid-template-columns: var(--panel-w) 1fr; min-height: 0; }
+/* margin は main_window.py:209 の outer_layout.setContentsMargins(4, 4, 4, 4) に
+   合わせたもの(4方向とも4px)。ただしPython側はこの余白をツールバー群を含む
+   central widget全体からの相対値として持つのに対し、C++側はヘッダー(メニュー+
+   ツールバー2段)の実高さが既にPython版のQSplitter開始位置(117px)と一致しているため、
+   上だけ0にしないと二重に余白が付いてしまう(extract_cpp.py実測で発覚: margin:4px
+   だと上端が117pxではなく121pxになった)。 */
+.workspace { flex: 1 1 auto; display: grid; grid-template-columns: var(--panel-w) 4px 1fr; min-height: 0; margin: 0 4px 4px 4px; }
+
+/* QSplitter相当。Python版(QSplitter, ハンドル幅4px)に合わせて
+   サムネイル欄とプレビュー欄の境界をドラッグでリサイズできるようにする。 */
+.panel-splitter {
+  cursor: col-resize;
+  background: #f3f3f3;
+}
+.panel-splitter:hover, .panel-splitter.dragging { background: #cfe4fa; }
 /* [hidden] and .workspace/.markdown-workspace's `display` both have (0,1,0)
    specificity, so without this, whichever rule is declared later in the
    cascade wins regardless of the `hidden` attribute -- author styles come

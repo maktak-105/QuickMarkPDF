@@ -30,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "qa"))
 from selenium_client import connect, disconnect  # noqa: E402
 from color_utils import representative_hsv  # noqa: E402
+import db  # noqa: E402
 
 EXE_PATH = REPO_ROOT / "dist" / "binary" / "QuickMarkPDF.exe"
 
@@ -134,7 +135,8 @@ def main():
         }
         out_path = REPO_ROOT / "qa" / "baseline_cpp.json"
         out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[OK] {len(parts)} parts, {len(actions)} actions -> {out_path}")
+        print(f"[完了] パーツ{len(parts)}件、アクション{len(actions)}件を計測 -> {out_path}")
+        db.record_baseline_run("cpp", parts, actions)
         return out
     finally:
         disconnect(proc, driver)

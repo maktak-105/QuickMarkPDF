@@ -477,12 +477,56 @@
   thumbSizeButtons.large.addEventListener('click', () => setThumbSize('large'));
   setThumbSize('medium');  // apply the CSS custom properties for the default size
 
+  // ── サムネイル欄・プレビュー欄の境界(QSplitter相当) ──
+  // Python版はQSplitterでこの境界をドラッグ幅変更できる。setThumbSize()が
+  // 設定する --panel-w はあくまで初期値/既定値で、ここでのドラッグはそれを
+  // 独立して上書きする(Python版もサムネイルサイズとスプリッタ位置は別々の状態)。
+  const panelSplitter = document.querySelector('#panel-splitter');
+  let splitterDragging = false;
+  let splitterStartX = 0;
+  let splitterStartWidth = 0;
+  panelSplitter.addEventListener('mousedown', (event) => {
+    splitterDragging = true;
+    splitterStartX = event.clientX;
+    splitterStartWidth = document.querySelector('.thumbnail-panel').getBoundingClientRect().width;
+    panelSplitter.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    event.preventDefault();
+  });
+  window.addEventListener('mousemove', (event) => {
+    if (!splitterDragging) return;
+    const dx = event.clientX - splitterStartX;
+    const minWidth = NUM_GUTTER_W + THUMB_SIZES.small.w;
+    const maxWidth = pdfWorkspace.clientWidth - 200;  // プレビュー側に最低200pxは残す
+    const newWidth = Math.max(minWidth, Math.min(splitterStartWidth + dx, maxWidth));
+    document.documentElement.style.setProperty('--panel-w', `${newWidth}px`);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!splitterDragging) return;
+    splitterDragging = false;
+    panelSplitter.classList.remove('dragging');
+    document.body.style.cursor = '';
+  });
+
   // ── プレビュー ズーム / パン（PreviewLabel + eventFilter 相当） ──
   function applyPreviewZoom() {
     const img = previewEl.querySelector('img');
     if (!img || !previewNaturalWidth) return;
-    img.style.width = `${previewNaturalWidth * currentZoom}px`;
-    img.style.height = `${previewNaturalHeight * currentZoom}px`;
+    const w = previewNaturalWidth * currentZoom;
+    const h = previewNaturalHeight * currentZoom;
+    img.style.width = `${w}px`;
+    img.style.height = `${h}px`;
+    // .preview centers its content via flex align-items/justify-content, but
+    // centering an element LARGER than its overflow:auto container gives it
+    // a negative offset that the default scroll position (0,0) lands in the
+    // middle of -- for a tall page with content only near the top, this
+    // showed as a blank preview (confirmed via qa/_diag_preview.py: img
+    // top was -280px at scrollTop 0). Qt's QScrollArea doesn't have this
+    // problem -- it only centers content that fits; oversized content just
+    // starts at (0,0) -- so switch to flex-start on whichever axis actually
+    // overflows to match that behavior instead of CSS's default centering.
+    previewEl.style.alignItems = h > previewEl.clientHeight ? 'flex-start' : 'center';
+    previewEl.style.justifyContent = w > previewEl.clientWidth ? 'flex-start' : 'center';
   }
 
   function fitPreviewToWidth() {
@@ -686,6 +730,10 @@
           previewNaturalWidth = data.width;
           previewNaturalHeight = data.height;
           fitPreviewToWidth();
+          // A fresh page should always open showing its top, not wherever
+          // the previous page happened to be scrolled to.
+          previewEl.scrollTop = 0;
+          previewEl.scrollLeft = 0;
         } else {
           const canvas = pageList.querySelector(`canvas[data-page-index="${data.page_index}"]`) ||
             pageList.querySelector(`.page-item[data-page-index="${data.page_index}"] canvas`);

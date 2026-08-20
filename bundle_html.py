@@ -69,7 +69,7 @@ def bundle(output_dir=None):
     with open(dist_index, "w", encoding="utf-8") as f:
         f.write(bundled)
 
-    print(f"[OK] Generated self-contained bundle at {dist_index} ({len(bundled)} bytes)")
+    print(f"[完了] 自己完結HTMLを生成しました: {dist_index} ({len(bundled)} bytes)")
 
 
 if __name__ == "__main__":

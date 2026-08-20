@@ -668,28 +668,49 @@ void open_markdown_path(const std::filesystem::path& path) {
     post_status(L"Markdownを読み込みました: " + path.filename().wstring());
 }
 
+enum class DocumentOpenOutcome { Cancelled, RejectedMixed, OpenedMarkdown, OpenedPdf };
+
 // Shared by the dialog-driven open (handle_open_documents) and the CLI-args
-// startup path (see wWinMain) -- mirrors main.py calling
-// MainWindow.open_documents(files) directly to skip the dialog entirely,
-// per CPP_PORT_POSTMORTEM.md's explicit recommendation not to rely on
-// automating the native file dialog for verification. A Markdown path
-// among `paths` takes priority (matching the Python baseline's "pick one,
-// not both" rule) -- only the first one is opened; the Python baseline
-// also has an explicit mixed-type error message this port skips for now.
-void open_document_paths(const std::vector<std::filesystem::path>& paths) {
+// startup path (see wWinMain) -- mirrors main.py's MainWindow.open_documents
+// calling open_pdfs/_load_markdown_document directly to skip the dialog
+// entirely, per CPP_PORT_POSTMORTEM.md's explicit recommendation not to
+// rely on automating the native file dialog for verification. Matches the
+// Python baseline's "PDF and Markdown together is rejected outright, not
+// silently resolved" rule: main_window.py's open_documents() shows an
+// info dialog and returns without touching pdf_manager/current_mode when
+// both extensions are present in the same selection -- mirrored here via
+// post_status (no native dialog) plus the early return that leaves
+// g_manager and the frontend's markdown state both untouched.
+DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>& paths) {
     if (paths.empty()) {
         post_status(L"ファイル選択をキャンセルしました");
-        return;
+        return DocumentOpenOutcome::Cancelled;
     }
 
+    bool has_markdown = false;
+    bool has_pdf = false;
+    std::filesystem::path first_markdown;
     for (const auto& path : paths) {
         if (is_markdown_path(path)) {
-            open_markdown_path(path);
-            return;
+            has_markdown = true;
+            if (first_markdown.empty()) first_markdown = path;
+        } else {
+            has_pdf = true;
         }
     }
 
+    if (has_markdown && has_pdf) {
+        post_status(L"Markdown と PDF の同時読み込みは未対応です。どちらか一方を選んでください。");
+        return DocumentOpenOutcome::RejectedMixed;
+    }
+
+    if (has_markdown) {
+        open_markdown_path(first_markdown);
+        return DocumentOpenOutcome::OpenedMarkdown;
+    }
+
     open_pdf_paths(paths);
+    return DocumentOpenOutcome::OpenedPdf;
 }
 
 void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
@@ -991,6 +1012,20 @@ std::wstring dispatch_test_command(const std::wstring& message) {
             const bool ok = g_manager.save_selected_pages(extract_size_t_array(message, L"indices"),
                                                             wide_to_utf8(extract_string(message, L"output_path")));
             return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L"}";
+        } else if (type == L"load_documents") {
+            const auto paths_w = extract_string_array(message, L"paths");
+            std::vector<std::filesystem::path> paths;
+            paths.reserve(paths_w.size());
+            for (const auto& p : paths_w) paths.push_back(std::filesystem::path(p));
+            const auto outcome = open_document_paths(paths);
+            const wchar_t* outcome_name = L"cancelled";
+            switch (outcome) {
+                case DocumentOpenOutcome::RejectedMixed: outcome_name = L"rejected_mixed"; break;
+                case DocumentOpenOutcome::OpenedMarkdown: outcome_name = L"opened_markdown"; break;
+                case DocumentOpenOutcome::OpenedPdf: outcome_name = L"opened_pdf"; break;
+                case DocumentOpenOutcome::Cancelled: outcome_name = L"cancelled"; break;
+            }
+            return L"{\"outcome\":\"" + std::wstring(outcome_name) + L"\",\"state\":" + get_test_state_json() + L"}";
         } else if (type == L"export_pages_to_images") {
             const auto result = g_manager.export_pages_to_images(
                 extract_size_t_array(message, L"indices"), wide_to_utf8(extract_string(message, L"output_dir")),

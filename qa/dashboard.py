@@ -8,6 +8,8 @@ from pathlib import Path
 
 import yaml
 
+import db
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -382,6 +384,26 @@ def build(
 </table>
 """
 
+    kind_labels = {"baseline": "見た目・座標計測", "behaviors": "機能・操作チェック"}
+    source_labels = {"python": "Python", "cpp": "C++"}
+    history_rows = []
+    for run in db.recent_runs(30):
+        kind_label = kind_labels.get(run["kind"], run["kind"])
+        source_label = source_labels.get(run["source"], run["source"])
+        passed_cell = "-" if run["passed"] is None else f"{run['passed']}/{run['total']}"
+        history_rows.append(
+            f"<tr><td>{html.escape(run['timestamp'])}</td><td>{kind_label}</td>"
+            f"<td>{source_label}</td><td>{run['total']}</td><td>{passed_cell}</td></tr>"
+        )
+    history_html = f"""
+<h2>実行履歴(qa/qa_history.db。実行のたびに追記され、過去分は消えない)</h2>
+<div class="behavior-summary">直近{len(history_rows)}件(新しい順)。全履歴は qa/qa_history.db をSQLiteで直接参照。</div>
+<table>
+<tr><th>日時(UTC)</th><th>種別</th><th>対象</th><th>件数</th><th>PASS</th></tr>
+{''.join(history_rows) if history_rows else '<tr><td colspan="5">まだ記録がありません(各qa/*.pyスクリプトを実行すると自動的に記録されます)</td></tr>'}
+</table>
+"""
+
     total_python_checks = behaviors["total"] + len(parts) + actions_checkable if behaviors else len(parts) + actions_checkable
     total_cpp_pass = behaviors_cpp_passed + parts_cpp_matched + actions_verified_cpp
     overall_pct = round(100 * total_cpp_pass / total_python_checks, 1) if total_python_checks else 0.0
@@ -454,10 +476,11 @@ td.cpp-missing {{ background:#f0f0f0; color:#999; font-style:italic; }}
 {''.join(rows_actions)}
 </table>
 {extra_cpp_section}
+{history_html}
 </body></html>
 """
     out_html.write_text(html_out, encoding="utf-8")
-    print(f"[OK] {out_html}")
+    print(f"[完了] {out_html}")
 
 
 if __name__ == "__main__":

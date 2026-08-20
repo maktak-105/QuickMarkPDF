@@ -31,7 +31,8 @@ sys.path.insert(0, str(REPO_ROOT / "qa"))
 from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 from PySide6.QtGui import QAction, QImage  # noqa: E402
 from PIL import Image  # noqa: E402
-from color_utils import representative_hsv  # noqa: E402
+from color_utils import representative_hsv
+import db  # noqa: E402
 
 
 def qimage_to_pil(qimage: QImage):
@@ -144,7 +145,8 @@ def main():
     out_path = REPO_ROOT / "qa" / "baseline.json"
     out_path.parent.mkdir(exist_ok=True)
     out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[OK] {len(parts)} parts, {len(actions)} actions -> {out_path}")
+    print(f"[完了] パーツ{len(parts)}件、アクション{len(actions)}件を計測 -> {out_path}")
+    db.record_baseline_run("python", parts, actions)
     window.close()
     return out
 

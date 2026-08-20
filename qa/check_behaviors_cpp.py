@@ -13,8 +13,7 @@ attempts through WebView2's own postMessage bridge (raw CDP, then Selenium)
 both hit the same non-deterministic message-delivery timing issue.
 
 Checks with no C++ implementation yet (the feature simply hasn't been
-built: thumbnail-size switching, preview zoom/pan/crop, Markdown mode,
-duplicate/mixed-type warnings, unsaved-changes confirmation) are recorded
+built: thumbnail-size switching, preview zoom/pan/crop) are recorded
 as an explicit, visible FAIL naming what's missing. Per the QA requirements
 memory: a checker that silently skips a gap is worse than one that reports
 it honestly, so nothing here is omitted -- everything not yet automated
@@ -33,6 +32,7 @@ from PIL import Image  # only for reading exported PNG dimensions (export_images
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "qa"))
 from test_api_client import connect, disconnect  # noqa: E402
+import db  # noqa: E402
 
 EXE_PATH = REPO_ROOT / "dist" / "binary" / "QuickMarkPDF.exe"
 
@@ -81,6 +81,8 @@ def main():
     make_test_pdf(pdf2_path, pages=2)
     enc_path = tmp_dir / "encrypted.pdf"
     make_test_pdf(enc_path, pages=1, password="s3cret")
+    md_path = tmp_dir / "behavior_test.md"
+    md_path.write_text("# Test\n\nbody text\n", encoding="utf-8")
 
     proc, client = connect(EXE_PATH)
     try:
@@ -264,7 +266,16 @@ def main():
             )
         check("export_images_with_crop", _export_crop)
 
-        not_implemented("mixed_pdf_markdown_open_rejected", "PDF+Markdown混在時の警告が未実装(webview_main.cppのコメントで明記、UI層の判定でありPdfManager単体では検証不可)")
+        def _mixed_reject():
+            before = client.send({"type": "get_state"})["page_count"]
+            r = client.send({"type": "load_documents", "paths": [str(pdf_path), str(md_path)]})
+            after = r["state"]["page_count"]
+            ok = r["outcome"] == "rejected_mixed" and after == before
+            return f"page_count={before}", f"outcome={r['outcome']},page_count={after}", ok, (
+                f"PDFとMarkdownを同時に指定してload_documentsを送ったところ、outcome=\"{r['outcome']}\"で"
+                f"実際に拒否され、ページ数は{before}のまま変化しなかった"
+            )
+        check("mixed_pdf_markdown_open_rejected", _mixed_reject)
 
         def _unsaved_confirm():
             client.send({"type": "close_all", "confirm": True})
@@ -298,7 +309,8 @@ def main():
     out = {"source": "cpp", "total": len(results), "passed": passed, "results": results}
     out_path = REPO_ROOT / "qa" / "behaviors_cpp.json"
     out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n[SUMMARY] {passed}/{len(results)} passed -> {out_path}", flush=True)
+    print(f"\n[集計] {passed}/{len(results)} 件PASS -> {out_path}", flush=True)
+    db.record_behaviors_run("cpp", results)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,28 @@ mappings:
   "MainWindow/QToolBar/QToolButton:180°": "html/body/header/rotate-180-button"
   "MainWindow/QToolBar/QToolButton:保存": "html/body/header/save-button"
 
+  # サムネイルサイズ切替ツールバー(2行目) -- 2026-08-20、thumb-size-*ボタン実装に伴い追加。
+  # サムネ(ラベルのみ、クリック不可)はC++側で<span>(id無し)なため対応するpathを一意に
+  # 特定できず、意図的に対応表から外している(更新ルールの「先回りで埋めない」に従う)。
+  "MainWindow/QToolBar/QToolButton:小": "html/body/header/thumb-size-small"
+  "MainWindow/QToolBar/QToolButton:中": "html/body/header/thumb-size-medium"
+  "MainWindow/QToolBar/QToolButton:大": "html/body/header/thumb-size-large"
+
+  # サムネイルパネル・プレビュー領域 -- 2026-08-20追加。qt_scrollarea_viewportは
+  # Qt内部のスクロール実装用ラッパーで、DOM側の直接の対応物ではないため、意味的に
+  # 一番近い「実際にスクロールする要素」に対応させている(厳密な構造一致ではなく、
+  # 領域としての対応)。
+  "MainWindow/QWidget/QSplitter/ThumbnailPanel": "html/body/pdf-workspace/aside"
+  "MainWindow/QWidget/QSplitter/ThumbnailPanel/qt_scrollarea_viewport": "html/body/pdf-workspace/aside/page-list"
+  "MainWindow/QWidget/QSplitter/QStackedWidget/QScrollArea": "html/body/pdf-workspace/preview"
+  # 2026-08-20: リサイズ可能な境界(#panel-splitter)を実装したのに伴い追加。
+  "MainWindow/QWidget/QSplitter/qt_splithandle_": "html/body/pdf-workspace/panel-splitter"
+
+  # 設定メニュー -- Python版はウィンドウ幅いっぱいのQMenuBar、C++版は左上の「設定」ボタン
+  # 1個のみで、外見上の対応は弱い(意図的に対応表に含め、サイズ不一致をFAILとして
+  # 正直に表示させる。隠さない)。
+  "MainWindow/QMenuBar": "html/body/header/settings-menu"
+
   # ウィンドウ全体・大枠のレイアウト(意味的に一番近いコンテナ同士)
   "MainWindow": "html/body"
   "MainWindow/QStatusBar": "html/body/footer"
@@ -30,22 +52,21 @@ mappings:
 # C++側にのみ存在し、Python版に対応するUI要素が無いもの。
 # 「余分に存在すること自体」が不一致であり、対応がつけられないから消すのではなく、
 # 明示的に記録しておく。
-extra_in_cpp:
-  - path: "html/body/header/delete-button"
-    note: >-
-      Python版は削除操作をDelキー専用にし、意図的にツールバーへボタンを置いていない
-      (CPP_PORT_POSTMORTEM.md が指摘する、破棄された1回目のC++移植と同じ誤り)。
-      ツールバーに存在すること自体が仕様との不一致。
-  - path: "html/body/header/undo-button"
-    note: >-
-      同上。Python版はCtrl+Zキー専用で、ツールバーにボタンを置かない設計。
+#
+# 2026-08-20時点: 空。以前ここには削除/元に戻すツールバーボタン
+# (html/body/header/delete-button, undo-button) が記録されていたが、これは
+# commit b265084 のUI全面書き直し(qa/baseline.jsonの実測値に基づく再実装)より前の
+# 古いC++ビルドを指しており、現在の templates/index.html には該当ボタンは存在しない
+# (削除はDelキー、元に戻すはCtrl+Zのみ、Python版と同じ設計)。ここに古い記録を
+# 残したままだと、実際には解消済みの不一致を毎回FAILとして報告し続けてしまうため削除した。
+extra_in_cpp: []
 
 # Python版に存在しC++版にまだ実装されていない主な機能領域(個々のウィジェット単位では
 # なく領域単位のメモ)。実装が進み次第、上の mappings に個別のpathを追加していく。
+#
+# 2026-08-20時点で残っているのはクロップ範囲選択のみ。他の項目(サムネイルサイズ切替・
+# 設定メニュー/環境設定ダイアログ・プレビューのズーム/パン・パスワード再試行・
+# 重複ファイル検出・混在PDF+Markdown警告・サムネイルパネルの実データ描画)は
+# qa/check_behaviors_cpp.py で実装確認済み(18/26 PASS、2026-08-20時点)のため削除した。
 not_yet_implemented_in_cpp:
-  - サムネイルサイズ切替(小/中/大ボタン、set_thumbnail_size)
-  - 設定メニュー・環境設定ダイアログ(ホイールモード切替)
-  - プレビューのズーム/パン/クロップ範囲選択
-  - パスワード保護PDFの再試行ダイアログ
-  - 重複ファイル検出・混在PDF+Markdown警告
-  - サムネイルパネルの実データ描画(ページ番号ガター・ファイル名タグ・p.N表記)
+  - プレビューのクロップ範囲選択(左ドラッグでのラバーバンド選択 → export_pages_to_imagesのcropに反映)
