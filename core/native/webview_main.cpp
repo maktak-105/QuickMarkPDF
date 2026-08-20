@@ -675,12 +675,11 @@ std::optional<std::vector<std::filesystem::path>> test_hook_open_documents() {
 // API (qa/check_behaviors_cpp.py) supply the answer directly instead of a
 // real MessageBoxW -- the same pattern load_pdfs' "password" field already
 // uses to bypass the password-prompt dialog.
-bool confirm_discard_dirty_state(std::optional<bool> forced_answer) {
+bool confirm_discard_dirty_state(std::optional<bool> forced_answer,
+                                  const wchar_t* question = L"保存されていない変更があります。破棄してもよろしいですか?") {
     if (!g_manager.is_dirty()) return true;
     if (forced_answer.has_value()) return *forced_answer;
-    const int result = MessageBoxW(g_window,
-        L"保存されていない変更があります。破棄してもよろしいですか?",
-        L"QuickMarkPDF", MB_YESNO | MB_ICONWARNING);
+    const int result = MessageBoxW(g_window, question, L"QuickMarkPDF", MB_YESNO | MB_ICONWARNING);
     return result == IDYES;
 }
 
@@ -903,6 +902,19 @@ DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>
     }
 
     if (has_markdown) {
+        // Mirrors main_window.py's _load_markdown_document: ask before
+        // discarding unsaved PDF edits, then actually discard the PDF
+        // session (pdf_manager.close_all()) on confirm. Previously this
+        // port left the PDF session untouched in memory when switching to
+        // Markdown -- an intentional-sounding divergence that was in fact
+        // just the confirmation gate never having been wired up here.
+        if (!confirm_discard_dirty_state(
+                is_test_mode() ? std::optional<bool>(true) : std::nullopt,
+                L"保存されていない変更があります。破棄してMarkdownを開きますか？")) {
+            return DocumentOpenOutcome::Cancelled;
+        }
+        g_manager.close_all();
+        post_document_state(L"document_state");
         open_markdown_path(first_markdown);
         return DocumentOpenOutcome::OpenedMarkdown;
     }

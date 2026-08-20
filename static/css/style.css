@@ -135,7 +135,13 @@ button.tool:disabled { opacity: .38; cursor: default; }
   padding: 0 1px; margin: 0; cursor: grab;
 }
 .page-item.selected { background: #3a6ea5; }
-.page-item.drag-over { outline: 2px solid #4a90d9; outline-offset: -2px; }
+/* Insertion-point indicator during drag: a line on the edge the page will
+   actually land on (above/below, per the cursor's position relative to the
+   hovered item's vertical center -- see computeDropRow() in app.js), not a
+   box around the whole hovered item, which gave no indication of which side
+   a drop would land on. */
+.page-item.drag-over-above { box-shadow: inset 0 2px 0 0 #4a90d9; }
+.page-item.drag-over-below { box-shadow: inset 0 -2px 0 0 #4a90d9; }
 .page-gutter {
   display: flex; align-items: center; justify-content: center;
   font-size: 8pt; color: #777777;

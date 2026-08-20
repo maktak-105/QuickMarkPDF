@@ -41,6 +41,14 @@
   let primaryIndex = -1;
   let anchorIndex = -1;
   let dragIndices = [];
+  // Row the dragged block will land at (thumbnail_panel.py's _insert_row):
+  // -1 = no valid drop target yet. Computed from cursor Y vs. the hovered
+  // item's vertical center in dragover, NOT simply "the hovered item's own
+  // index" -- always using the hovered index made every drop onto the
+  // adjacent next item a no-op (it reinserted the page at the exact
+  // position it started from), which is why reordering looked broken.
+  let pendingInsertRow = -1;
+  let dragOverEl = null;
   let canUndo = false;
   let currentMode = 'pdf';
   let currentThumbSize = 'medium';
@@ -429,24 +437,71 @@
       // currently selected"), otherwise just the one item under the cursor.
       dragIndices = (selectedIndices.has(index) && selectedIndices.size > 1)
         ? selectedIndicesSorted() : [index];
+      pendingInsertRow = -1;
       event.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragend', () => {
+      // Fires even when the drop landed outside any valid target (e.g. the
+      // drag was cancelled) -- without this, a stale insertion-line class
+      // could keep highlighting an item from an aborted drag.
+      if (dragOverEl) { dragOverEl.classList.remove('drag-over-above', 'drag-over-below'); dragOverEl = null; }
+      dragIndices = [];
+      pendingInsertRow = -1;
     });
     item.addEventListener('dragover', (event) => {
       event.preventDefault();
-      item.classList.add('drag-over');
+      // Mirrors thumbnail_panel.py's _get_insertion_row: below the hovered
+      // item's vertical center -> land after it (row+1), above -> before it
+      // (row). Without this split, dropping anywhere on an item could only
+      // ever mean "insert before", so dragging a page onto its own very
+      // next neighbor recomputed the exact same position it started at.
+      const rect = item.getBoundingClientRect();
+      const below = event.clientY > rect.top + rect.height / 2;
+      pendingInsertRow = below ? index + 1 : index;
+      if (dragOverEl && dragOverEl !== item) {
+        dragOverEl.classList.remove('drag-over-above', 'drag-over-below');
+      }
+      item.classList.toggle('drag-over-below', below);
+      item.classList.toggle('drag-over-above', !below);
+      dragOverEl = item;
     });
-    item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over-above', 'drag-over-below');
+      if (dragOverEl === item) dragOverEl = null;
+    });
     item.addEventListener('drop', (event) => {
       event.preventDefault();
-      item.classList.remove('drag-over');
-      if (dragIndices.length === 0 || dragIndices.includes(index)) { dragIndices = []; return; }
-      const order = computeReorderedOrder(pages.length, dragIndices, index);
+      item.classList.remove('drag-over-above', 'drag-over-below');
+      dragOverEl = null;
+      if (dragIndices.length === 0 || pendingInsertRow < 0) { dragIndices = []; pendingInsertRow = -1; return; }
+      const order = computeReorderedOrder(pages.length, dragIndices, pendingInsertRow);
       post({ type: 'reorder_pages', order });
       dragIndices = [];
+      pendingInsertRow = -1;
     });
 
     return item;
   }
+
+  // Dropping in the empty space below the last item (Python: itemAt(pos) is
+  // None -> insertion row = count()) -- only acts when the event target is
+  // the list container itself, since a drop over any item is already
+  // handled (and pendingInsertRow already set) by that item's own listener.
+  pageList.addEventListener('dragover', (event) => {
+    if (event.target !== pageList) return;
+    event.preventDefault();
+    pendingInsertRow = pages.length;
+    if (dragOverEl) { dragOverEl.classList.remove('drag-over-above', 'drag-over-below'); dragOverEl = null; }
+  });
+  pageList.addEventListener('drop', (event) => {
+    if (event.target !== pageList) return;
+    event.preventDefault();
+    if (dragIndices.length === 0 || pendingInsertRow < 0) { dragIndices = []; pendingInsertRow = -1; return; }
+    const order = computeReorderedOrder(pages.length, dragIndices, pendingInsertRow);
+    post({ type: 'reorder_pages', order });
+    dragIndices = [];
+    pendingInsertRow = -1;
+  });
 
   function renderPageList(data) {
     pages = data.pages || [];
