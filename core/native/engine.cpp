@@ -159,6 +159,7 @@ std::string to_absolute(const std::string& raw_path) {
 PdfManager::LoadResult PdfManager::load_pdfs(const std::vector<std::string>& paths,
                                               const std::unordered_map<std::string, std::string>& passwords) {
     LoadResult result;
+    const bool was_dirty_before_load = document_.is_dirty();
 
     std::unordered_set<std::string> already_open;
     for (std::size_t i = 0; i < document_.page_count(); ++i) {
@@ -197,6 +198,17 @@ PdfManager::LoadResult PdfManager::load_pdfs(const std::vector<std::string>& pat
             // duplicate -- just absent from the result).
         }
     }
+    // append_page() marks the document dirty -- WorkingDocument's generic,
+    // deliberately-tested "adding a page is an edit" contract (see
+    // engine_tests.cpp's WorkingDocument-level tests), which is correct for
+    // that layer but wrong here: opening/adding files is not a user edit
+    // relative to what's already on disk (main_window.py never calls
+    // self._mark_dirty() anywhere near opening a document -- only real page
+    // edits like rotate/delete/reorder/undo do). Only clear the flag this
+    // call may have just set, never a pre-existing one from a real edit made
+    // earlier in the same session (e.g. rotate a page, then open another
+    // file to append) -- that dirty state must survive.
+    if (!was_dirty_before_load) document_.mark_saved();
     return result;
 }
 
