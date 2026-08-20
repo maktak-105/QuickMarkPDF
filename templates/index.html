@@ -7,18 +7,31 @@
   <link rel="stylesheet" href="../static/css/style.css">
 </head>
 <body>
+  <header class="menubar">
+    <div class="menu" id="settings-menu">
+      <button type="button" class="menu-label">設定</button>
+      <div class="menu-dropdown" id="settings-dropdown" hidden>
+        <button type="button" id="preferences-item">環境設定...</button>
+      </div>
+    </div>
+  </header>
   <header class="toolbar">
-    <button id="open-button" class="tool">開く</button>
-    <button id="split-button" class="tool" disabled>PDF切り出し</button>
+    <button id="open-button" class="tool" title="PDF または Markdown ファイルを開く"><img src="../resources/icons/open.png" alt=""><span>開く</span></button>
     <span class="sep"></span>
-    <button id="rotate-right-button" class="tool" disabled>右90°</button>
-    <button id="rotate-left-button" class="tool" disabled>左90°</button>
-    <button id="rotate-180-button" class="tool" disabled>180°</button>
-    <button id="delete-button" class="tool" disabled>削除</button>
-    <button id="undo-button" class="tool" disabled>元に戻す</button>
+    <button id="split-button" class="tool" disabled title="選択ページを新しいPDFとして保存（切り出し）"><img src="../resources/icons/split.png" alt=""><span>PDF切り出し</span></button>
+    <button id="export-button" class="tool" disabled title="ページをPNG/JPG画像としてエクスポート"><img src="../resources/icons/image_export.png" alt=""><span>画像出力</span></button>
     <span class="sep"></span>
-    <button id="export-button" class="tool" disabled>画像出力</button>
-    <button id="save-button" class="tool" disabled>保存</button>
+    <button id="rotate-right-button" class="tool" disabled title="選択ページを右に90度回転"><img src="../resources/icons/rotate_right.png" alt=""><span>右90°</span></button>
+    <button id="rotate-left-button" class="tool" disabled title="選択ページを左に90度回転"><img src="../resources/icons/rotate_left.png" alt=""><span>左90°</span></button>
+    <button id="rotate-180-button" class="tool" disabled title="選択ページを180度回転"><img src="../resources/icons/rotate_180.png" alt=""><span>180°</span></button>
+    <span class="sep"></span>
+    <button id="save-button" class="tool" disabled title="PDF を保存"><img src="../resources/icons/save.png" alt=""><span>保存</span></button>
+  </header>
+  <header class="toolbar size-toolbar">
+    <span class="size-label">サムネ</span>
+    <button type="button" id="thumb-size-small" class="size-btn" disabled>小</button>
+    <button type="button" id="thumb-size-medium" class="size-btn checked" disabled>中</button>
+    <button type="button" id="thumb-size-large" class="size-btn" disabled>大</button>
   </header>
   <main class="workspace" id="pdf-workspace">
     <aside class="thumbnail-panel">
@@ -34,6 +47,20 @@
   <main class="markdown-workspace" id="markdown-workspace" hidden>
     <article id="markdown-content" class="markdown-content"></article>
   </main>
+  <div class="modal-overlay" id="preferences-overlay" hidden>
+    <div class="modal preferences-modal">
+      <h2>環境設定</h2>
+      <fieldset class="modal-group">
+        <legend>プレビューでのマウスホイール操作</legend>
+        <label class="radio-row"><input type="radio" name="wheel-mode" value="zoom" checked>拡大・縮小（既定）　※右ドラッグでパン</label>
+        <label class="radio-row"><input type="radio" name="wheel-mode" value="scroll">縦スクロール　※右ドラッグで拡大・縮小（下=拡大／上=縮小）</label>
+      </fieldset>
+      <div class="modal-buttons">
+        <button type="button" id="preferences-cancel">キャンセル</button>
+        <button type="button" id="preferences-ok" class="primary">OK</button>
+      </div>
+    </div>
+  </div>
   <footer class="statusbar">
     <span id="status">準備完了</span>
   </footer>

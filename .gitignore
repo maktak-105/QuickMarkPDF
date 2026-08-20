@@ -79,3 +79,15 @@ tests/reports/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# qa/: downloaded WebDriver binary and per-run temp artifacts are not tracked.
+# qa/baseline.json is the exception -- it's a reference fixture (Python-side
+# measurement other work reads from), not a disposable run report.
+qa/tools/
+qa/_tmp/
+qa/_tmp_cpp/
+qa/__pycache__/
+qa/dashboard.html
+qa/behaviors.json
+qa/behaviors_cpp.json
+qa/baseline_cpp.json

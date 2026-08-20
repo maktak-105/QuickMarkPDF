@@ -106,6 +106,7 @@ def build():
     gui_libs = [
         "-lkernel32", "-luser32", "-lgdi32", "-lole32", "-loleaut32", "-luuid",
         "-lcomctl32", "-lcomdlg32", "-lshell32", "-lcrypt32", "-lcredui", "-lwindowscodecs",
+        "-lws2_32",  # test_api_server.cpp: loopback-only TCP test control server
     ]
 
     # 1. GUI本体 (WebView2ホスト)
@@ -116,6 +117,7 @@ def build():
         os.path.join(native_dir, "pdf_backend.cpp"),
         os.path.join(native_dir, "image_io.cpp"),
         os.path.join(native_dir, "webview_main.cpp"),
+        os.path.join(native_dir, "test_api_server.cpp"),
         resource_obj,
         "-o", out_gui_exe,
         *gui_libs,

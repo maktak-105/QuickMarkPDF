@@ -1,6 +1,15 @@
 (() => {
-  const THUMBNAIL_WIDTH = 160;
-  const PREVIEW_WIDTH = 900;
+  // Mirrors thumbnail_panel.py's per-size (w, h) body dimensions -- see
+  // _apply_size(). NUM_GUTTER_W/TAG_H/TEXT_H match its module constants.
+  const NUM_GUTTER_W = 28;
+  const TAG_H = 14;
+  const TEXT_H = 14;
+  const THUMB_SIZES = {
+    small: { w: 80, h: 105 },
+    medium: { w: 120, h: 155 },
+    large: { w: 200, h: 260 },
+  };
+  const PREVIEW_RENDER_WIDTH = 900;  // base render resolution; on-screen size is scaled via currentZoom
 
   const statusEl = document.querySelector('#status');
   const pageList = document.querySelector('#page-list');
@@ -14,10 +23,13 @@
   const rotateRightButton = document.querySelector('#rotate-right-button');
   const rotateLeftButton = document.querySelector('#rotate-left-button');
   const rotate180Button = document.querySelector('#rotate-180-button');
-  const deleteButton = document.querySelector('#delete-button');
-  const undoButton = document.querySelector('#undo-button');
   const exportButton = document.querySelector('#export-button');
   const saveButton = document.querySelector('#save-button');
+  const thumbSizeButtons = {
+    small: document.querySelector('#thumb-size-small'),
+    medium: document.querySelector('#thumb-size-medium'),
+    large: document.querySelector('#thumb-size-large'),
+  };
 
   let pages = [];
   // Multi-select (Ctrl toggles one item, Shift selects a range from the
@@ -31,6 +43,21 @@
   let dragFromIndex = -1;
   let canUndo = false;
   let currentMode = 'pdf';
+  let currentThumbSize = 'medium';
+
+  // Preview zoom/pan state -- mirrors MainWindow's current_zoom / _wheel_mode /
+  // eventFilter() panning. wheelMode: 'zoom' (default; wheel=zoom, right-drag=pan)
+  // or 'scroll' (wheel=native vertical scroll, right-drag=zoom).
+  let wheelMode = 'zoom';
+  let currentZoom = 1.0;
+  let previewNaturalWidth = 0;
+  let previewNaturalHeight = 0;
+  let panning = false;
+  let panStartX = 0;
+  let panStartY = 0;
+  let hScrollStart = 0;
+  let vScrollStart = 0;
+  let zoomDragStart = 1.0;
 
   const hasBridge = () => Boolean(window.chrome?.webview);
   const post = (payload) => {
@@ -183,20 +210,22 @@
   }
 
   function updateToolbarEnabled() {
-    // Rotate/delete/cut-out/export/undo are PDF-only -- in Markdown mode
-    // there is no page selection at all, so these are simply unusable
-    // (matches the Python baseline hiding/disabling the same controls
-    // outside PDF mode).
+    // Rotate/split/export/save are PDF-only -- in Markdown mode there is no
+    // page selection at all, so these are simply unusable (matches the
+    // Python baseline hiding/disabling the same controls outside PDF mode).
+    // Delete/Undo are keyboard-only in the Python baseline (no toolbar
+    // button at all -- see main_window.py's _create_toolbar, which adds
+    // delete_page_action/undo_action via addAction(), not toolbar.addAction()),
+    // so there is no button state to manage for them here.
     const isPdfMode = currentMode === 'pdf';
     const hasSelection = isPdfMode && selectedIndices.size > 0;
     rotateRightButton.disabled = !hasSelection;
     rotateLeftButton.disabled = !hasSelection;
     rotate180Button.disabled = !hasSelection;
-    deleteButton.disabled = !hasSelection;
     splitButton.disabled = !hasSelection;
     exportButton.disabled = !isPdfMode || pages.length === 0;
-    undoButton.disabled = !isPdfMode || !canUndo;
     saveButton.disabled = !isPdfMode || pages.length === 0;
+    for (const btn of Object.values(thumbSizeButtons)) btn.disabled = !isPdfMode;
   }
 
   function setMode(mode) {
@@ -245,7 +274,7 @@
     applySelectionToDom();
     updateToolbarEnabled();
     if (primaryIndex >= 0 && primaryIndex < pages.length) {
-      post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_WIDTH });
+      post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_RENDER_WIDTH });
     }
   }
 
@@ -267,7 +296,8 @@
   }
 
   // Right-click context menu (open/close-file, rotate, cut out, export,
-  // delete) -- mirrors the Python baseline's thumbnail right-click menu.
+  // delete) -- mirrors the Python baseline's thumbnail right-click menu
+  // (ThumbnailPanel._show_context_menu).
   let contextMenuEl = null;
   function closeContextMenu() {
     if (contextMenuEl) {
@@ -286,8 +316,8 @@
       ['右90°回転', () => doRotate(90)],
       ['左90°回転', () => doRotate(-90)],
       ['180°回転', () => doRotate(180)],
-      ['PDF切り出し', doSplit],
-      ['画像を切り出し', () => doExport(selectedIndicesSorted())],
+      ['PDF切り出し...', doSplit],
+      ['画像を切り出し (PNG/JPG)...', () => doExport(selectedIndicesSorted())],
       ['ページを削除', doDelete],
       ['このファイルを閉じる', () => post({ type: 'close_document', path: sourcePath })],
     ];
@@ -308,25 +338,39 @@
   document.addEventListener('click', closeContextMenu);
   document.addEventListener('scroll', closeContextMenu, true);
 
-  function buildPageItem(page, index) {
+  // Mirrors ThumbnailPanel._get_qpixmap_from_page's canvas layout: a
+  // NUM_GUTTER_W-wide left gutter showing the page's position in the whole
+  // document, beside a body column of [filename tag / page image / "p.N"
+  // original-page-index label].
+  function buildPageItem(page, index, docPageNo) {
     const item = document.createElement('div');
     item.className = 'page-item';
     item.dataset.pageIndex = String(index);
     item.draggable = true;
 
+    const gutter = document.createElement('div');
+    gutter.className = 'page-gutter';
+    gutter.textContent = String(docPageNo);
+    item.appendChild(gutter);
+
+    const body = document.createElement('div');
+    body.className = 'page-body';
+
     const tag = document.createElement('div');
     tag.className = 'page-tag';
     tag.textContent = sourceFileName(page.path);
-    item.appendChild(tag);
+    body.appendChild(tag);
 
     const canvas = document.createElement('canvas');
     canvas.className = 'page-thumbnail';
-    item.appendChild(canvas);
+    body.appendChild(canvas);
 
     const number = document.createElement('div');
     number.className = 'page-number';
     number.textContent = `p.${index + 1}`;
-    item.appendChild(number);
+    body.appendChild(number);
+
+    item.appendChild(body);
 
     item.addEventListener('click', (event) => selectPage(index, event));
     item.addEventListener('contextmenu', (event) => {
@@ -386,9 +430,10 @@
 
     pageList.className = '';
     pageList.replaceChildren();
+    const thumbWidth = THUMB_SIZES[currentThumbSize].w;
     pages.forEach((page, index) => {
-      pageList.appendChild(buildPageItem(page, index));
-      post({ type: 'render_page', page_index: index, width: THUMBNAIL_WIDTH });
+      pageList.appendChild(buildPageItem(page, index, index + 1));
+      post({ type: 'render_page', page_index: index, width: NUM_GUTTER_W + thumbWidth });
     });
 
     // The page count/positions may have just changed (delete/reorder/undo);
@@ -401,8 +446,126 @@
     if (selectedIndices.size === 0) selectedIndices.add(primaryIndex);
     applySelectionToDom();
     updateToolbarEnabled();
-    post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_WIDTH });
+    post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_RENDER_WIDTH });
   }
+
+  // ── サムネイルサイズ切替（ツールバー2段目） ──
+  function setThumbSize(size) {
+    if (!THUMB_SIZES[size] || size === currentThumbSize) return;
+    currentThumbSize = size;
+    for (const [name, btn] of Object.entries(thumbSizeButtons)) {
+      btn.classList.toggle('checked', name === size);
+    }
+    const { w, h } = THUMB_SIZES[size];
+    document.documentElement.style.setProperty('--thumb-w', `${w}px`);
+    document.documentElement.style.setProperty('--thumb-max-h', `${h - TAG_H - TEXT_H}px`);
+    // Mirrors ThumbnailPanel._apply_size: panel width = gutter + body + scrollbar/border allowance.
+    document.documentElement.style.setProperty('--panel-w', `${NUM_GUTTER_W + w + 24}px`);
+    if (pages.length > 0) {
+      // Re-render every thumbnail at the new width; renderPageList() already
+      // does this same walk on open/delete/reorder/undo.
+      const thumbWidth = THUMB_SIZES[size].w;
+      pages.forEach((_page, index) => {
+        post({ type: 'render_page', page_index: index, width: NUM_GUTTER_W + thumbWidth });
+      });
+    }
+    const sizeName = { small: '小', medium: '中', large: '大' }[size];
+    setStatus(`サムネイルサイズを「${sizeName}」に変更しました`);
+  }
+  thumbSizeButtons.small.addEventListener('click', () => setThumbSize('small'));
+  thumbSizeButtons.medium.addEventListener('click', () => setThumbSize('medium'));
+  thumbSizeButtons.large.addEventListener('click', () => setThumbSize('large'));
+  setThumbSize('medium');  // apply the CSS custom properties for the default size
+
+  // ── プレビュー ズーム / パン（PreviewLabel + eventFilter 相当） ──
+  function applyPreviewZoom() {
+    const img = previewEl.querySelector('img');
+    if (!img || !previewNaturalWidth) return;
+    img.style.width = `${previewNaturalWidth * currentZoom}px`;
+    img.style.height = `${previewNaturalHeight * currentZoom}px`;
+  }
+
+  function fitPreviewToWidth() {
+    if (!previewNaturalWidth) return;
+    const viewportWidth = previewEl.clientWidth - 30;  // margin for scrollbar, matches _fit_to_width
+    if (viewportWidth > 0) {
+      currentZoom = Math.max(0.05, Math.min(viewportWidth / previewNaturalWidth, 8.0));
+    } else {
+      currentZoom = 1.0;
+    }
+    applyPreviewZoom();
+  }
+
+  previewEl.addEventListener('wheel', (event) => {
+    if (currentMode !== 'pdf' || !previewNaturalWidth) return;
+    if (wheelMode === 'zoom') {
+      const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+      currentZoom = Math.max(0.1, Math.min(currentZoom * factor, 8.0));
+      applyPreviewZoom();
+      event.preventDefault();
+    }
+    // "scroll" mode: let the browser's native scroll happen.
+  }, { passive: false });
+
+  previewEl.addEventListener('mousedown', (event) => {
+    if (event.button !== 2 || currentMode !== 'pdf') return;  // right button only
+    panning = true;
+    panStartX = event.clientX;
+    panStartY = event.clientY;
+    if (wheelMode === 'zoom') {
+      hScrollStart = previewEl.scrollLeft;
+      vScrollStart = previewEl.scrollTop;
+    } else {
+      zoomDragStart = currentZoom;
+    }
+    previewEl.style.cursor = 'grabbing';
+    event.preventDefault();
+  });
+  window.addEventListener('mousemove', (event) => {
+    if (!panning) return;
+    const dx = event.clientX - panStartX;
+    const dy = event.clientY - panStartY;
+    if (wheelMode === 'zoom') {
+      previewEl.scrollLeft = hScrollStart - dx;
+      previewEl.scrollTop = vScrollStart - dy;
+    } else if (previewNaturalWidth) {
+      const factor = Math.pow(1.005, dy);  // drag down (+y) = zoom in
+      currentZoom = Math.max(0.1, Math.min(zoomDragStart * factor, 8.0));
+      applyPreviewZoom();
+    }
+  });
+  window.addEventListener('mouseup', (event) => {
+    if (event.button !== 2 || !panning) return;
+    panning = false;
+    previewEl.style.cursor = '';
+  });
+  previewEl.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  // ── 「設定」メニュー & 環境設定モーダル ──
+  const settingsMenu = document.querySelector('#settings-menu');
+  const settingsDropdown = document.querySelector('#settings-dropdown');
+  const menuLabel = settingsMenu.querySelector('.menu-label');
+  menuLabel.addEventListener('click', (event) => {
+    event.stopPropagation();
+    settingsDropdown.hidden = !settingsDropdown.hidden;
+  });
+  document.addEventListener('click', () => { settingsDropdown.hidden = true; });
+
+  const preferencesOverlay = document.querySelector('#preferences-overlay');
+  const preferencesItem = document.querySelector('#preferences-item');
+  preferencesItem.addEventListener('click', () => {
+    settingsDropdown.hidden = true;
+    document.querySelector(`input[name="wheel-mode"][value="${wheelMode}"]`).checked = true;
+    preferencesOverlay.hidden = false;
+  });
+  document.querySelector('#preferences-cancel').addEventListener('click', () => {
+    preferencesOverlay.hidden = true;
+  });
+  document.querySelector('#preferences-ok').addEventListener('click', () => {
+    const checked = document.querySelector('input[name="wheel-mode"]:checked');
+    if (checked) wheelMode = checked.value;
+    preferencesOverlay.hidden = true;
+  });
 
   function doOpen() {
     if (!hasBridge()) {
@@ -440,16 +603,17 @@
   rotateRightButton.addEventListener('click', () => doRotate(90));
   rotateLeftButton.addEventListener('click', () => doRotate(-90));
   rotate180Button.addEventListener('click', () => doRotate(180));
-  deleteButton.addEventListener('click', doDelete);
   splitButton.addEventListener('click', doSplit);
-  undoButton.addEventListener('click', doUndo);
   exportButton.addEventListener('click', () => doExport());
   saveButton.addEventListener('click', doSave);
 
   // Keyboard shortcuts, matching the Python baseline: Delete removes the
-  // selection, Ctrl+Z undoes, Ctrl+S saves, Ctrl+O opens. Ignored while
-  // focus is in a text field (none exist in this UI today, but this is
-  // cheap insurance against a future one swallowing Delete/typed text).
+  // selection, Ctrl+Z undoes, Ctrl+S saves, Ctrl+O opens. Delete/Undo are
+  // keyboard-only in the Python baseline (main_window.py adds them via
+  // self.addAction(), never toolbar.addAction()) -- there is deliberately
+  // no toolbar button for either. Ignored while focus is in a text field
+  // (none exist in this UI today, but this is cheap insurance against a
+  // future one swallowing Delete/typed text).
   document.addEventListener('keydown', (event) => {
     const target = event.target;
     const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
@@ -511,7 +675,7 @@
       }
 
       if (data.type === 'page_rendered') {
-        if (data.width === PREVIEW_WIDTH) {
+        if (data.width === PREVIEW_RENDER_WIDTH) {
           let img = previewEl.querySelector('img');
           if (!img) {
             previewEl.replaceChildren();
@@ -519,6 +683,9 @@
             previewEl.appendChild(img);
           }
           paintImage(img, data);
+          previewNaturalWidth = data.width;
+          previewNaturalHeight = data.height;
+          fitPreviewToWidth();
         } else {
           const canvas = pageList.querySelector(`canvas[data-page-index="${data.page_index}"]`) ||
             pageList.querySelector(`.page-item[data-page-index="${data.page_index}"] canvas`);

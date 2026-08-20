@@ -1,0 +1,51 @@
+# Python widget path <-> C++ DOM path 対応表(plans/2026-08-20_C++版Python完全一致化_v1.3.md
+# 「変更内容」節で「人手で作成する唯一の対応表」と定義されているもの)。
+#
+# ここに値(サイズ・色・合否)は一切書かない。識別のための対応関係のみを書く。
+# 実際の測定値の比較は qa/dashboard.py が qa/baseline.json (Python) と
+# qa/baseline_cpp.json (C++) をこの対応表経由で突き合わせて行う。
+#
+# 更新ルール:
+# - C++側に対応するUI要素が実装されたら、この対応表に1行足す(実装が対応表を追いかける、
+#   対応表を先回りで埋めない — 存在しないC++要素を書くと「対応あり」の体で「未計測」と
+#   誤表示されてしまうため)
+# - Python側に無くC++側にのみ存在する要素(=C++が誤って追加したもの)は
+#   extra_in_cpp に列挙し、その理由を note に書く。dashboard側で「Python版に無い要素」
+#   として明示するための情報であり、削除して隠すためのものではない。
+
+mappings:
+  # ツールバー(1行目・機能ボタン) -- python/src/pdf_editor/ui/main_window.py:_create_toolbar()
+  "MainWindow/QToolBar/QToolButton:開く": "html/body/header/open-button"
+  "MainWindow/QToolBar/QToolButton:PDF切り出し": "html/body/header/split-button"
+  "MainWindow/QToolBar/QToolButton:画像出力": "html/body/header/export-button"
+  "MainWindow/QToolBar/QToolButton:右90°": "html/body/header/rotate-right-button"
+  "MainWindow/QToolBar/QToolButton:左90°": "html/body/header/rotate-left-button"
+  "MainWindow/QToolBar/QToolButton:180°": "html/body/header/rotate-180-button"
+  "MainWindow/QToolBar/QToolButton:保存": "html/body/header/save-button"
+
+  # ウィンドウ全体・大枠のレイアウト(意味的に一番近いコンテナ同士)
+  "MainWindow": "html/body"
+  "MainWindow/QStatusBar": "html/body/footer"
+
+# C++側にのみ存在し、Python版に対応するUI要素が無いもの。
+# 「余分に存在すること自体」が不一致であり、対応がつけられないから消すのではなく、
+# 明示的に記録しておく。
+extra_in_cpp:
+  - path: "html/body/header/delete-button"
+    note: >-
+      Python版は削除操作をDelキー専用にし、意図的にツールバーへボタンを置いていない
+      (CPP_PORT_POSTMORTEM.md が指摘する、破棄された1回目のC++移植と同じ誤り)。
+      ツールバーに存在すること自体が仕様との不一致。
+  - path: "html/body/header/undo-button"
+    note: >-
+      同上。Python版はCtrl+Zキー専用で、ツールバーにボタンを置かない設計。
+
+# Python版に存在しC++版にまだ実装されていない主な機能領域(個々のウィジェット単位では
+# なく領域単位のメモ)。実装が進み次第、上の mappings に個別のpathを追加していく。
+not_yet_implemented_in_cpp:
+  - サムネイルサイズ切替(小/中/大ボタン、set_thumbnail_size)
+  - 設定メニュー・環境設定ダイアログ(ホイールモード切替)
+  - プレビューのズーム/パン/クロップ範囲選択
+  - パスワード保護PDFの再試行ダイアログ
+  - 重複ファイル検出・混在PDF+Markdown警告
+  - サムネイルパネルの実データ描画(ページ番号ガター・ファイル名タグ・p.N表記)

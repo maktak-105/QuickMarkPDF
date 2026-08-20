@@ -1,0 +1,814 @@
+{
+  "source": "python",
+  "window_size": {
+    "w": 1280,
+    "h": 820
+  },
+  "screenshot_size": {
+    "w": 1280,
+    "h": 820
+  },
+  "screenshot_png_base64": "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GAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCC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3weuv/mh6qZ7/Na1t57x4RWXvG3T3+SrE3jENZMGPXCqb8cjP7jhCz+ol9x9m7/xw6qYbzhpxRUXL0+2fOeaL5VGfb936+a3XnLqG1577MKmc049ftbzTz94594XJMlkBHA6Avzcc6M6h29y4pv/aPh3oM4q0FOygNSgg4DTY4Df/GT1Eb1DDuhdfNZZJ2ztuuqb96S75J7v3HDSqR9+67y585LEHGiAsRHAADA+82t6qm/Hvdf/3XWVExQd0O7dzw2/CvT2/umtc85+5/nzd931nbsGPW7ftu997eZXfvitV1z4s+rlqJ7+6fqvP/WCEZ618sDDm73sPRcun7Utv75qNHfO8ouvWDH/iZvay/WbNMx9yYtn700yb/ntlz52763XfuXf7605lfDE690xutQbOojb8KKzL/vQu4+9Lfed2ZddPmfdJ7+RHkldNOfXFzY89Vj1ctMVp7zr//nvL/vxNV/43s+HXHXMq3/n4//tFx1/M7SY07W6xnMQcO/D2w50RO/RR89Kqq4vfoVyyimnJLeNYlAagCoCGAAO7jRISZI88/jmn/28evXeEc2dNy9JHn+8dFafkVaBbjjlrecvSR76zi111pzqT+BLVm2++mubyq26+7H7fvxYcjDmLL/oojNmb7vpmlur+q5h9uyjdtx93TXFCdezfv3Md6x6+9knz0n6kidvbv9Mfug87hPO/cPVb3z8ujXr7h9YV7qOUd7s4I6bff/73zJ/67c/13HHU31zbnnkE81vu+2B4qD5nNMu+tBly3bd+KUv/NuQyG1YctZrXrzz9p8Ord8kSfb89EcbL/j99557V7oQ96gtefeHXv/Ud//ptofGN0Te88ADfe99S3Pjls7CjpnHn/m2c+aXR8aTSTrkGGC6EsAAcLCnQRqThtPOWD472f7QQwce0pxz7IxnHr6t8wf1Q6tv2/euv+01LededNGmB786+qHnEbZs7hkXf+SS5cmWddfVHlvc99Qd//D5O0qjqZf+0YWnJj+75cuf2vTyKz68vO4Rr/NOX7545kMbCgfI2lHerNZJ2f/54VfefeAZy7N+/VW/dcG7zz3lBftmbb+1646n0pez647vfu+cP77snYU1dy363ct/6+g7v/TZeqtON5x0fvOZyR1fuWWYp+h74MYbt3ziwstWbBn9IdgLTmk8+fTj5j1/W/kpXnTGu1ZlX3Pyi2Y3pA/Y15ckO171xpc/fOeDT9f/FmX3nWu/NP/yy6/4xLnFLdhx98aeM5bvfmoMBQ5AkQAGgEOo4aTzm14zu++Bfx7NwcI7Nn37C5tGuL7voc7rbju95dwLL7yn5yATuGFuY9Pv/ff0TLzfueZLt9dPv4ZTmq+46NRnbu7I5bc+nyx4+XCPtejkRcnjGw/YhqO8Wa101PPxJ4av31nHv/ysN731Da/PvHh34dZ/uvr/HPOOq6sO+3385muuW/jRP/zU65+649qrb7i33uznhpPOX3X+vE3XXTPCmZ523fG165Z89OLLVz3x+a+N6m1fdOaZ8/se2NBdesg5Z//+Ry980T1dX/323Y8/kxx9wqJz3nHZm16y7F1/tPwdv7jnX741eEXu8nNu6Wz/2L+8cN4LZ+3b88yzL3nnlWf03vPLSZ11DjAtje1kdwDAuDXMbWxuaV1x0u6N133tjgkYse1P4O1zll98ydlzxrtVsxe+qvmKP/uzK85b8PiGaz7ff5RvHaWVmP4xrd+RH3FmQ7J37wEHdkd5s5LidN+yE37thGFvt++FizMLH/uPr1z9iU9/+ab7h46n7tp43TXf2bL7+MwrFs1pGLpJJ61oa1sxb9MNNxyga3dtvOGGTQ1nXHzFuxbPOeCJsOaccf7rT9h1123ldbxPfMM5S7bf+n+/tqH75729vb1PPrj54R1JsrXzrz+7dmNyWvMf/vlHLzx97tBt6z94uHfn8/PPf9fr522/e9BJqgAYBSPAADBZfu3lr31t+r+0xy1csnDhgtN+4yUvnJXOJv67G+6dmPztT+ANJ79l+4N7x3jHOS9ddtarzzz91Utffvysvh2P3LH2i/981y9GTNvalZiGO2dQkjz00ENJ8znnLfrJyKk8ypuVFsBaMLOUhN33b+57X1PLhxb+8M4Hnqp6yc9tu/e+x3an88JvvvZ/D32IhtnHLXjZa894w+mvnHPfl//u7z+7rfnyy//szx667dvfvXlg+a7jXnXx5Svmbfra5+utZbZg/oIkqRp53rXxq59NPvDRC9+YuXlL+eZPPPFE8qpFi2Ynj1cd6Ntw0rmXvntZ38av3tg/pJyGf822LVmSSXZvfOK/fvHA2s9uvrP58svP+72PzF/3939fZyC+YfbCM95z2UVnHP/ETe1do5hDAMAgAhgAJsvJb3r/yaWf+nbv3P7YPTfddsut94wcmePQ91Bn7h/Gcbfjl7/59QufuvfWr//wR/cMd+xpjZ5Nm3Z/4N2tF867+e57t24fHNzPP9tbXgas9wc33HRW24q2T535YPd/3vvTx3bW3rC/VUd5syTZ/dzu5MUnvrjYn+nBsHPemT37tLe857Wzqm69Lf+Z8q1TDbOPO2Hhy04+4cULX39y8uJXtH3mLc9vf3Tz3T/5j2+3/+znzyZJsqWz/RM/OvMdq969+tPv3/ngPbd+91u3b927856vXv2xWc8/X3krZqUzjpPk2FcseXG98zDt2njdp+9LBm7+5E/ufOht72r+veZ9+Tt6tu9Njl1wxtm/9eazT37Btnyuqqkf37x5+4q3/O4lO9bedO/25IQz3rnqrNm77ti4pfSYWzo7Pvfkpe+d92D16lYNc08+7fRTX/ma173q5ekZp+654fNf/8EvzH8GGIcZO3fW/O/Nnj17Tjhh+IlFTF/bt28/5phjBl143nnnPfmkBSYBKGl40ennr1xx9stfdOxxxeWbKp5/tveutVUnsk2ne5+7csXZSxaeMOiWSd8T32v/63/ZNpabLf/A5y5+4bf+6pr/GHR23GHNPuv3//wdcx/eXCg88NDDj/zs0SeHXaE7PWb4dfMfuuWH9SZ+n3Be25XNi9KX9/Rda/927SgO902XyL7o/Fe/9MQ0nIvfevz0luuHjKw3zD296QPNryvd6vlnf75x3bXX311cp2s4C9764ZY3z3ps890/HO23FQAkxQNoNmzYUP1WCGDKBDAAADC9A9giWAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAIAhgAAIAQBDAAAAAhCGAAAABCEMAAAACEIIABAAAIQQADAAAQggAGAAAgBAEMAABACAIYAACAEAQwAAAAIQhgAAAAQhDAAAAAhCCAAQAACEEAAwAAEIIABgAAIAQBDAAAQAgCGAAAgBAEMAAAACEIYAAAAEIQwAAAAIQggAEAAAhBAAMAABCCAAYAACAEAQwAAEAI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",
+  "parts": [
+    {
+      "path": "MainWindow",
+      "class": "MainWindow",
+      "object_name": "",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 820
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 11.8,
+        "rgb": [
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget",
+      "class": "QWidget",
+      "object_name": "",
+      "rect": {
+        "x": 0,
+        "y": 117,
+        "w": 1280,
+        "h": 682
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 11.8,
+        "rgb": [
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter",
+      "class": "QSplitter",
+      "object_name": "",
+      "rect": {
+        "x": 4,
+        "y": 121,
+        "w": 1272,
+        "h": 674
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 11.8,
+        "rgb": [
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter/QStackedWidget",
+      "class": "QStackedWidget",
+      "object_name": "",
+      "rect": {
+        "x": 180,
+        "y": 121,
+        "w": 1096,
+        "h": 674
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 11.8,
+        "rgb": [
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter/QStackedWidget/QScrollArea",
+      "class": "QScrollArea",
+      "object_name": "",
+      "rect": {
+        "x": 180,
+        "y": 121,
+        "w": 1096,
+        "h": 674
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 11.8,
+        "rgb": [
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter/QStackedWidget/QScrollArea/qt_scrollarea_viewport",
+      "class": "QWidget",
+      "object_name": "qt_scrollarea_viewport",
+      "rect": {
+        "x": 181,
+        "y": 122,
+        "w": 1094,
+        "h": 672
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 11.8,
+        "rgb": [
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter/QStackedWidget/QScrollArea/qt_scrollarea_viewport/PreviewLabel",
+      "class": "PreviewLabel",
+      "object_name": "",
+      "rect": {
+        "x": 181,
+        "y": 122,
+        "w": 1094,
+        "h": 672
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 11.8,
+        "rgb": [
+          30,
+          30,
+          30
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter/ThumbnailPanel",
+      "class": "ThumbnailPanel",
+      "object_name": "",
+      "rect": {
+        "x": 4,
+        "y": 121,
+        "w": 172,
+        "h": 674
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 99.6,
+        "rgb": [
+          254,
+          254,
+          254
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter/ThumbnailPanel/qt_scrollarea_viewport",
+      "class": "QWidget",
+      "object_name": "qt_scrollarea_viewport",
+      "rect": {
+        "x": 6,
+        "y": 123,
+        "w": 168,
+        "h": 670
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 99.6,
+        "rgb": [
+          254,
+          254,
+          254
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QWidget/QSplitter/qt_splithandle_",
+      "class": "QSplitterHandle",
+      "object_name": "qt_splithandle_",
+      "rect": {
+        "x": 176,
+        "y": 121,
+        "w": 4,
+        "h": 674
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QMenuBar",
+      "class": "QMenuBar",
+      "object_name": "",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 33
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar",
+      "class": "QToolBar",
+      "object_name": "",
+      "rect": {
+        "x": 0,
+        "y": 33,
+        "w": 1280,
+        "h": 58
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:開く",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 2,
+        "y": 35,
+        "w": 61,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QWidget",
+      "class": "QWidget",
+      "object_name": "",
+      "rect": {
+        "x": 63,
+        "y": 35,
+        "w": 6,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:PDF切り出し",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 69,
+        "y": 35,
+        "w": 75,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:画像出力",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 144,
+        "y": 35,
+        "w": 61,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QWidget",
+      "class": "QWidget",
+      "object_name": "",
+      "rect": {
+        "x": 205,
+        "y": 35,
+        "w": 6,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:右90°",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 211,
+        "y": 35,
+        "w": 43,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:左90°",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 254,
+        "y": 35,
+        "w": 43,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:180°",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 297,
+        "y": 35,
+        "w": 37,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QWidget",
+      "class": "QWidget",
+      "object_name": "",
+      "rect": {
+        "x": 334,
+        "y": 35,
+        "w": 6,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:保存",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 340,
+        "y": 35,
+        "w": 61,
+        "h": 54
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar",
+      "class": "QToolBar",
+      "object_name": "",
+      "rect": {
+        "x": 0,
+        "y": 91,
+        "w": 1280,
+        "h": 26
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:サムネ",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 2,
+        "y": 93,
+        "w": 42,
+        "h": 22
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:小",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 44,
+        "y": 93,
+        "w": 25,
+        "h": 22
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:中",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 69,
+        "y": 93,
+        "w": 25,
+        "h": 22
+      },
+      "hsv": {
+        "h": 207.8,
+        "s": 100.0,
+        "v": 75.3,
+        "rgb": [
+          0,
+          103,
+          192
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QToolBar/QToolButton:大",
+      "class": "QToolButton",
+      "object_name": "",
+      "rect": {
+        "x": 94,
+        "y": 93,
+        "w": 25,
+        "h": 22
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QStatusBar",
+      "class": "QStatusBar",
+      "object_name": "",
+      "rect": {
+        "x": 0,
+        "y": 799,
+        "w": 1280,
+        "h": 21
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    },
+    {
+      "path": "MainWindow/QStatusBar/QSizeGrip",
+      "class": "QSizeGrip",
+      "object_name": "",
+      "rect": {
+        "x": 1267,
+        "y": 807,
+        "w": 13,
+        "h": 13
+      },
+      "hsv": {
+        "h": 0.0,
+        "s": 0.0,
+        "v": 95.3,
+        "rgb": [
+          243,
+          243,
+          243
+        ]
+      }
+    }
+  ],
+  "actions": [
+    {
+      "path": "MainWindow/QMenuBar/QMenu/action:設定",
+      "text": "設定",
+      "tooltip": "設定",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/QMenuBar/QMenu/action:",
+      "text": "",
+      "tooltip": "",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:環境設定...",
+      "text": "環境設定...",
+      "tooltip": "環境設定",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/QToolBar/action:Main Toolbar",
+      "text": "Main Toolbar",
+      "tooltip": "Main Toolbar",
+      "shortcut": "",
+      "checkable": true,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/QToolBar/action:",
+      "text": "",
+      "tooltip": "",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": true
+    },
+    {
+      "path": "MainWindow/QToolBar/action:",
+      "text": "",
+      "tooltip": "",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": true
+    },
+    {
+      "path": "MainWindow/QToolBar/action:",
+      "text": "",
+      "tooltip": "",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": true
+    },
+    {
+      "path": "MainWindow/action:開く",
+      "text": "開く",
+      "tooltip": "PDF または Markdown ファイルを開く",
+      "shortcut": "Ctrl+O",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:PDF切り出し",
+      "text": "PDF切り出し",
+      "tooltip": "選択ページを新しいPDFとして保存（切り出し）",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:画像出力",
+      "text": "画像出力",
+      "tooltip": "ページをPNG/JPG画像としてエクスポート（右クリックメニューからも可）",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:右90°",
+      "text": "右90°",
+      "tooltip": "選択ページを右に90度回転",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:左90°",
+      "text": "左90°",
+      "tooltip": "選択ページを左に90度回転",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:180°",
+      "text": "180°",
+      "tooltip": "選択ページを180度回転",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:保存",
+      "text": "保存",
+      "tooltip": "PDF または Markdown を PDF として保存",
+      "shortcut": "Ctrl+S",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/QToolBar/action:Thumbnail Size Toolbar",
+      "text": "Thumbnail Size Toolbar",
+      "tooltip": "Thumbnail Size Toolbar",
+      "shortcut": "",
+      "checkable": true,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:サムネ",
+      "text": "サムネ",
+      "tooltip": "サムネ",
+      "shortcut": "",
+      "checkable": false,
+      "enabled": false,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:小",
+      "text": "小",
+      "tooltip": "サムネイルを小さく",
+      "shortcut": "",
+      "checkable": true,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:中",
+      "text": "中",
+      "tooltip": "標準サイズ",
+      "shortcut": "",
+      "checkable": true,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:大",
+      "text": "大",
+      "tooltip": "サムネイルを大きく",
+      "shortcut": "",
+      "checkable": true,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:",
+      "text": "",
+      "tooltip": "",
+      "shortcut": "Del",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    },
+    {
+      "path": "MainWindow/action:",
+      "text": "",
+      "tooltip": "",
+      "shortcut": "Ctrl+Z",
+      "checkable": false,
+      "enabled": true,
+      "separator": false
+    }
+  ]
+}

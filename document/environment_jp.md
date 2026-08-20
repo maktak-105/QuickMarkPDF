@@ -2,10 +2,29 @@
 
 [English environment.md](environment.md)
 
-`python/`（PySide6版）が本アプリの仕様の正です。C++/WebView2移植をなぜ中止したかは
-[`../CPP_PORT_POSTMORTEM.md`](../CPP_PORT_POSTMORTEM.md) を参照してください。本文書は
-Python版のソースからの実行・Windows実行ファイルのビルド、そして本題である
-自動テストプログラムの実行方法をまとめたものです。
+## 現状(まずここを読む)
+
+`python/`（PySide6版）は**仕様の正**です。移植が満たすべき正しい挙動・UI・機能一覧を定義するもので、
+それ自体がユーザーに配布するものではありません。
+
+`core/native/`（C++17 + WebView2）が**現在ビルド・配布する対象**です。C++/WebView2への移植は
+一度目は完全に失敗して破棄されています(理由は
+[`../CPP_PORT_POSTMORTEM.md`](../CPP_PORT_POSTMORTEM.md) を参照 — 「ビルドが通り
+テストが通れば完了」という基準で進め、実機で確認せず、Python版の仕様から乖離した)。
+二度目の移植(commit `3cb33f1` 以降、2026-08-19開始)はこのpostmortemの教訓に従い、
+ビルド・テストPASSだけでなく実機でのUI操作確認と独立したファイルレベル検証(PyMuPDF/Pillow)を
+行っており、ツールバー機能の大部分でPython版と同等の水準に達しています。
+詳細な機能別の検証記録・残課題(Mermaid/MathJax、GFMテーブル、ExportDialog相当など)は
+`plans/2026-08-20_*` を参照してください。
+
+**要点**: Python版とC++版の挙動が食い違う場合、Python版が正しく、C++版側のバグです。
+単に「ビルドして」と言われた場合はC++版をビルドします(後述) — ユーザーが実際に使うのはこちらです。
+
+---
+
+本文書は、まずPython版のソースからの実行・Windows実行ファイルのビルド、そして本題である
+自動テストプログラムの実行方法をまとめたものです。C++版のビルド方法は後半の
+「C++/WebView2版のビルド」を参照してください。
 
 ## 実行環境
 
@@ -147,6 +166,104 @@ $env:QUICKMARKPDF_REAL_SCREEN = "1"
 .venv\Scripts\python.exe -m pytest tests/test_pdf_manager.py -v
 .venv\Scripts\python.exe run_tests.py -- tests/test_pdf_manager.py -v
 ```
+
+## QAダッシュボード(Python版/C++版のパリティ測定)
+
+上記pytestスイートとは別に、`qa/`配下はC++移植が実際にPython仕様と一致しているか
+(サイズ・HSV色・実際の挙動)を**数値で**測定します。計画書の自己申告「見た目は合ってる」
+に頼りません。詳細設計は `plans/2026-08-20_C++版Python完全一致化_v1.3.md` を参照。概要:
+
+```powershell
+.venv\Scripts\python.exe qa\extract_python.py          # -> qa/baseline.json
+.venv\Scripts\python.exe qa\check_behaviors_python.py  # -> qa/behaviors.json
+.venv\Scripts\python.exe qa\dashboard.py                # -> qa/dashboard.html
+```
+
+- `extract_python.py` は実際の`MainWindow`を実Windowsデスクトップ上で構築します
+  (意図的に`QT_QPA_PLATFORM=offscreen`を使いません — この環境のoffscreenプラットフォームには
+  日本語フォントが無く、日本語テキストが豆腐になりスクリーンショットが無意味になるためです)。
+  `findChildren`で全ウィジェットを走査し、ウィンドウ全体のスクリーンショットを1枚取得して、
+  各ウィジェットの矩形と代表色(HSV)をそこから測定します。全`QAction`はテキスト・ショートカット・
+  有効状態・`isSeparator()`まで含めて列挙します。
+- `check_behaviors_python.py` はアプリの実際のメソッドと実際のQtイベント(ドラッグ並べ替えは
+  下流ハンドラを直接叩くのではなく、実際の`QDragEnterEvent`/`QDropEvent`を発行)を実行します。
+  OSレベルのマウス自動化は一切使わず、ダイアログは値を直接注入して応答します
+  (`unittest.mock.patch`、クリック操作ではない)。現状26/26件PASS。サムネイルサイズの
+  チェックは内部のサイズ名文字列ではなく、パネルが実際に設定する`iconSize()`のピクセル値
+  そのものを測定します(小→108×105、中→148×155、大→228×260)。
+- `dashboard.py` は両方の結果を`qa/dashboard.html`にまとめます。人が直接読むための成果物で、
+  各チェックに観察内容をプロースで記述し(「3枚目のサムネイルをドラッグして先頭にドロップした
+  ところ、ページ順が実際に[...]に入れ替わった」)、単なる✓/✗では済ませません。全テーブルに
+  Python列とC++列を横並びで持ち、`qa/baseline_cpp.json`・`qa/behaviors_cpp.json`があれば
+  読み込み(無ければ灰色で「未計測」)、`qa/part_mapping.yaml`経由でPython側パーツと対応付けます。
+
+C++側の測定は、測定対象が違うため意図的に2つの独立したツールに分かれており、
+同じ通信経路を共有していません。
+
+- `qa/check_behaviors_cpp.py` → `qa/behaviors_cpp.json`。`PdfManager`を
+  ループバック限定のTCP制御チャネル(`core/native/test_api_server.{h,cpp}`、
+  `QUICKMARKPDF_TEST_PORT`環境変数で有効化。未設定時はno-opなので通常のユーザー起動には
+  影響しない)経由で直接操作します。WebView2/JS層を完全にバイパスし、TCPスレッドが
+  `WM_APP_TEST_COMMAND`をメインUIスレッドへpostして`condition_variable`で結果を待つため、
+  各コマンドは実UIスレッド上で実`PdfManager`に対して直列実行されます。現状**15/26件PASS**。
+  残りはUI層のみの挙動で`PdfManager`からは観測できないもの(プレビューのズーム/パン、
+  サムネイルサイズボタン、環境設定ダイアログ)か、C++側が実際に未実装の機能(クロップ書き出し、
+  PDF/Markdown混在時の警告、未保存変更の確認)です。各チェックの理由は`qa/behaviors_cpp.json`参照。
+- `qa/extract_cpp.py` → `qa/baseline_cpp.json`。`extract_python.py`がQtウィジェットを
+  測定するのと同様に、実際にレンダリングされたDOMの座標・色を測定するため、TCP APIでは
+  ピクセルレイアウトの概念自体が無く、WebView2の実Chromiumレンダラーを経由せざるを得ません。
+  実行中のWebView2インスタンスへMicrosoft Edge WebDriver(`msedgedriver.exe`、インストール
+  済みWebView2 Runtimeのバージョンと一致必須、Git管理外なので別途取得)を
+  `EdgeOptions.use_webview`/`debugger_address`で
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`にアタッチし、
+  `execute_script`でDOMを走査します。**既知の不安定要因**: `execute_script`/`Runtime.evaluate`を
+  1秒に1回より高頻度でポーリングするとWebView2レンダラーのメインスレッドが飢餓状態になり、
+  C++↔JSの`postMessage`ブリッジが完全に応答しなくなります — `qa/selenium_client.py`はポーリング
+  ループの代わりに単発の固定`time.sleep()`で回避していますが、`connect()`のWebDriverアタッチ自体は
+  依然として断続的に`SessionNotCreatedException`を投げ、根本原因は未特定です。新しい
+  `qa/baseline_cpp.json`・見た目の一致率数値は、この問題が直るまで**安定再現できないもの**として
+  扱ってください。
+
+`check_behaviors_cpp.py`・`extract_cpp.py`ともexeを`QUICKMARKPDF_OFFSCREEN=1`付きで起動します。
+これにより`webview_main.cpp`はメインウィンドウを`WS_EX_LAYERED`+
+`SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA)`で完全透明化して作成します(画面外座標への
+移動ではありません — 以前試した画面外座標配置はWebView2メッセージバスを不安定にしました。
+可視デスクトップ外に置かれたウィンドウに対してDWMが合成・描画最適化を止める可能性があります)。
+**QA目的でexeを起動する際、このフラグを外して画面に表示させてはいけません。**
+
+## C++/WebView2版のビルド
+
+こちらが現在の配布対象です(上記「現状」参照)。ソースは `core/native/`、`templates/`、`static/`。
+
+```powershell
+# 初回のみ: third_party/ へSDKを取得(gitignore対象、コミット不要)
+powershell -File scripts\fetch_webview2_sdk.ps1
+powershell -File scripts\fetch_pdfium.ps1
+
+# ビルド
+python build_native.py            # core/native/engine_tests.cpp の実行も含む
+python build_native.py --skip-tests
+```
+
+MinGW-w64の `g++`/`clang++` がPATH上(または `build_native.py` が探索するフォールバックパス、
+WinGetでインストールしたWinLibs UCRTツールチェイン含む)に必要です。C++17。配布物は
+コンパイラのランタイムDLLをユーザー環境に要求しないよう `-static` でリンクしていますが、
+単体ビルドの `engine_tests.cpp` だけは `-static` を付けていないため、実行時に
+`libgcc_s_seh-1.dll`/`libstdc++-6.dll` が同じフォルダかPATH上に必要です。
+
+成果物: `dist/binary/QuickMarkPDF.exe`(+ `pdfium.dll`、`WebView2Loader.dll`、
+バンドル済み `index.html`)がユーザーに渡す本体です。`QuickMarkPDF_cli.exe` はGUIを持たない
+軽量な検証用デモバイナリで、配布対象には含みません。
+
+**既知の環境上の癖**: CrowdStrike Falcon Sensorが動いている環境(この開発機で確認済み。
+「悪意のある振る舞いが検知されたため、プロセスはブロックされました」の通知が1回のビルドで
+13件以上発生)では、ビルド直後の未署名exeが書き込み・実行直後にブロックされることがあります。
+実例として、ビルド成功直後に `QuickMarkPDF_cli.exe` が `dist/binary/` から消滅し、
+`engine_tests.exe` の初回実行が `STATUS_ENTRYPOINT_NOT_FOUND`(終了コード `3221225785`)で
+失敗した後、クリーンな再実行では成功しました。ビルド直後のテストがこの終了コードで失敗した場合、
+実回帰と決めつける前に再実行し、まずバイナリ自体が残っているか確認してください。
+`QuickMarkPDF.exe` 本体はこの時は無事でしたが、もし配布用GUI本体までブロックされるように
+なった場合は、コードの問題ではなくIT部門にビルド出力先の除外設定を依頼する話になります。
 
 ## トラブルシューティング
 

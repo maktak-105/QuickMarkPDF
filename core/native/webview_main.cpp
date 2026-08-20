@@ -7,11 +7,13 @@
 #include <WebView2.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -19,6 +21,7 @@
 
 #include "engine.h"
 #include "pdf_backend.h"
+#include "test_api_server.h"
 
 namespace {
 
@@ -262,14 +265,39 @@ int extract_int(const std::wstring& message, const wchar_t* key, int fallback) {
     return negative ? -value : value;
 }
 
+// Pre-existing bug fixed here: this used to return the raw substring
+// between quotes with no backslash-escape handling. Harmless for the
+// short ASCII values (statuses, "path" on POSIX-style separators) every
+// existing caller happened to pass, but any Windows path with backslashes
+// (e.g. "path":"C:\\Users\\...") came back with the JSON escaping still
+// literally in it (C:\\Users\\...), which silently broke every
+// std::filesystem::path comparison against it -- discovered via the test
+// API's close_document command comparing against PdfManager's
+// std::filesystem::absolute()-normalized paths and never matching.
+// extract_string_array() (added alongside the test API) already did this
+// correctly; this brings the older, more-used function in line with it.
 std::wstring extract_string(const std::wstring& message, const wchar_t* key, const wchar_t* fallback = L"") {
     const std::wstring needle = std::wstring(L"\"") + key + L"\":\"";
     const auto pos = message.find(needle);
     if (pos == std::wstring::npos) return fallback;
-    const auto start = pos + needle.size();
-    const auto end = message.find(L'\"', start);
-    if (end == std::wstring::npos) return fallback;
-    return message.substr(start, end - start);
+    auto cursor = pos + needle.size();
+    std::wstring value;
+    while (cursor < message.size() && message[cursor] != L'\"') {
+        if (message[cursor] == L'\\' && cursor + 1 < message.size()) {
+            ++cursor;
+            switch (message[cursor]) {
+                case L'n': value += L'\n'; break;
+                case L't': value += L'\t'; break;
+                case L'r': value += L'\r'; break;
+                default: value += message[cursor]; break;  // \\ -> \, \" -> ", etc.
+            }
+        } else {
+            value += message[cursor];
+        }
+        ++cursor;
+    }
+    if (cursor >= message.size()) return fallback;  // unterminated string
+    return value;
 }
 
 std::vector<std::size_t> extract_size_t_array(const std::wstring& message, const wchar_t* key) {
@@ -291,6 +319,37 @@ std::vector<std::size_t> extract_size_t_array(const std::wstring& message, const
         if (any_digit) result.push_back(value);
         while (cursor < message.size() && message[cursor] == L' ') ++cursor;
         if (cursor < message.size() && message[cursor] == L',') ++cursor;
+    }
+    return result;
+}
+
+std::vector<std::wstring> extract_string_array(const std::wstring& message, const wchar_t* key) {
+    std::vector<std::wstring> result;
+    const std::wstring needle = std::wstring(L"\"") + key + L"\":[";
+    const auto pos = message.find(needle);
+    if (pos == std::wstring::npos) return result;
+    auto cursor = pos + needle.size();
+    while (cursor < message.size() && message[cursor] != L']') {
+        while (cursor < message.size() && (message[cursor] == L' ' || message[cursor] == L',')) ++cursor;
+        if (cursor >= message.size() || message[cursor] != L'\"') break;
+        ++cursor;  // opening quote
+        std::wstring value;
+        while (cursor < message.size() && message[cursor] != L'\"') {
+            if (message[cursor] == L'\\' && cursor + 1 < message.size()) {
+                ++cursor;
+                switch (message[cursor]) {
+                    case L'n': value += L'\n'; break;
+                    case L't': value += L'\t'; break;
+                    case L'r': value += L'\r'; break;
+                    default: value += message[cursor]; break;
+                }
+            } else {
+                value += message[cursor];
+            }
+            ++cursor;
+        }
+        result.push_back(value);
+        if (cursor < message.size() && message[cursor] == L'\"') ++cursor;  // closing quote
     }
     return result;
 }
@@ -394,7 +453,34 @@ std::vector<std::filesystem::path> parse_multiselect_buffer(const wchar_t* buffe
     return result;
 }
 
+// Test hook for the "開く" button's file-picker step ONLY -- fires when the
+// user (or a test) triggers open_pdf, never at startup. When
+// QUICKMARKPDF_TEST_OPEN_PATHS is set (semicolon-separated absolute paths),
+// returns those paths directly instead of showing GetOpenFileNameW. This is
+// the C++ analog of Python's unittest.mock.patch(QFileDialog,
+// "getOpenFileNames", ...) -- direct value injection into the same code
+// path a real click takes, not dialog automation and not a
+// startup/CLI-args auto-open (see g_startup_paths / open_pdf_paths for
+// that separate, unrelated mechanism).
+std::optional<std::vector<std::filesystem::path>> test_hook_open_documents() {
+    wchar_t buffer[32768]{};
+    const DWORD len = GetEnvironmentVariableW(L"QUICKMARKPDF_TEST_OPEN_PATHS", buffer, 32768);
+    if (len == 0 || len >= 32768) return std::nullopt;
+    std::vector<std::filesystem::path> result;
+    std::wstring s(buffer, len);
+    std::size_t pos = 0;
+    while (pos < s.size()) {
+        std::size_t next = s.find(L';', pos);
+        if (next == std::wstring::npos) next = s.size();
+        if (next > pos) result.emplace_back(s.substr(pos, next - pos));
+        pos = next + 1;
+    }
+    return result;
+}
+
 std::vector<std::filesystem::path> prompt_open_documents() {
+    if (auto injected = test_hook_open_documents()) return *injected;
+
     std::vector<wchar_t> buffer(65536, L'\0');
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
@@ -770,6 +856,127 @@ void handle_export_images(const std::wstring& message) {
 }
 
 // =====================
+// Test API command dispatcher (see test_api_server.h)
+// =====================
+//
+// Calls g_manager's methods directly -- the same PdfManager instance and
+// methods handle_*() above call -- rather than going through app.js/the
+// WebMessage bridge. Only reachable when QUICKMARKPDF_TEST_PORT is set (see
+// maybe_start_test_api_server's call site in wWinMain); a normal user run
+// never has this code path invoked.
+
+std::wstring get_test_state_json() {
+    return L"{\"page_count\":" + std::to_wstring(g_manager.get_page_count()) + L",\"can_undo\":" +
+           (g_manager.can_undo() ? L"true" : L"false") + L",\"can_overwrite\":" +
+           (g_manager.can_overwrite_source() ? L"true" : L"false") + L",\"pages\":" + pages_json() + L"}";
+}
+
+std::wstring json_string_array(const std::vector<std::string>& values) {
+    std::wstring out = L"[";
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i) out += L",";
+        out += json_string(utf8_to_wide(values[i]));
+    }
+    out += L"]";
+    return out;
+}
+
+// Runs on the main thread (invoked via WM_APP_TEST_COMMAND, see
+// run_test_command_on_main_thread) so every g_manager call below shares the
+// exact same single-threaded-access contract handle_*() above already
+// relies on -- no new locking around g_manager itself is needed.
+std::wstring dispatch_test_command(const std::wstring& message) {
+    const auto type = extract_type(message);
+    try {
+        if (type == L"get_state") {
+            return get_test_state_json();
+        } else if (type == L"load_pdfs") {
+            const auto paths_w = extract_string_array(message, L"paths");
+            std::vector<std::string> paths;
+            paths.reserve(paths_w.size());
+            for (const auto& p : paths_w) paths.push_back(wide_to_utf8(p));
+            std::unordered_map<std::string, std::string> passwords;
+            const auto password = extract_string(message, L"password");
+            if (!password.empty()) {
+                for (const auto& p : paths) passwords[p] = wide_to_utf8(password);
+            }
+            const auto result = g_manager.load_pdfs(paths, passwords);
+            return L"{\"loaded_count\":" + std::to_wstring(result.loaded_count) +
+                   L",\"duplicate_files\":" + json_string_array(result.duplicate_files) +
+                   L",\"password_required\":" + json_string_array(result.password_required) +
+                   L",\"state\":" + get_test_state_json() + L"}";
+        } else if (type == L"rotate_pages") {
+            g_manager.rotate_pages(extract_size_t_array(message, L"indices"), extract_int(message, L"degrees", 0));
+            return get_test_state_json();
+        } else if (type == L"delete_pages") {
+            g_manager.delete_pages(extract_size_t_array(message, L"indices"));
+            return get_test_state_json();
+        } else if (type == L"reorder_pages") {
+            g_manager.reorder_pages(extract_size_t_array(message, L"order"));
+            return get_test_state_json();
+        } else if (type == L"undo") {
+            const bool ok = g_manager.undo();
+            return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L",\"state\":" + get_test_state_json() + L"}";
+        } else if (type == L"close_document") {
+            const bool ok = g_manager.close_document(wide_to_utf8(extract_string(message, L"path")));
+            return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L",\"state\":" + get_test_state_json() + L"}";
+        } else if (type == L"close_all") {
+            g_manager.close_all();
+            return get_test_state_json();
+        } else if (type == L"overwrite_source") {
+            const bool ok = g_manager.overwrite_source();
+            return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L"}";
+        } else if (type == L"save_as") {
+            const bool ok = g_manager.save_as(wide_to_utf8(extract_string(message, L"output_path")));
+            return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L"}";
+        } else if (type == L"save_selected_pages") {
+            const bool ok = g_manager.save_selected_pages(extract_size_t_array(message, L"indices"),
+                                                            wide_to_utf8(extract_string(message, L"output_path")));
+            return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L"}";
+        } else if (type == L"export_pages_to_images") {
+            const auto result = g_manager.export_pages_to_images(
+                extract_size_t_array(message, L"indices"), wide_to_utf8(extract_string(message, L"output_dir")),
+                wide_to_utf8(extract_string(message, L"fmt", L"png")), extract_int(message, L"dpi", 150),
+                wide_to_utf8(extract_string(message, L"prefix", L"page")), std::nullopt,
+                extract_int(message, L"jpeg_quality", 90));
+            return L"{\"success\":" + std::to_wstring(result.success) + L",\"attempted\":" +
+                   std::to_wstring(result.attempted) + L",\"errors\":" + json_string_array(result.errors) + L"}";
+        }
+        return L"{\"error\":\"unknown command\"}";
+    } catch (const std::exception& ex) {
+        return L"{\"error\":" + json_string(utf8_to_wide(ex.what())) + L"}";
+    }
+}
+
+std::mutex g_test_mutex;
+std::condition_variable g_test_cv;
+std::wstring g_test_request;
+std::wstring g_test_response;
+bool g_test_response_ready = false;
+
+constexpr UINT WM_APP_TEST_COMMAND = WM_APP + 1;
+
+// Called from the TCP server thread (test_api_server.cpp, a different
+// thread than the app's main/UI thread). Hands the command to the main
+// thread via a plain window message and blocks until window_proc's
+// WM_APP_TEST_COMMAND case has run dispatch_test_command() and posted the
+// result back -- g_manager is otherwise only ever touched from the main
+// thread (same as every handle_*() function above), and this preserves
+// that invariant instead of adding locking around g_manager itself.
+std::wstring run_test_command_on_main_thread(const std::wstring& command) {
+    std::unique_lock<std::mutex> lock(g_test_mutex);
+    g_test_request = command;
+    g_test_response_ready = false;
+    lock.unlock();
+
+    PostMessageW(g_window, WM_APP_TEST_COMMAND, 0, 0);
+
+    lock.lock();
+    g_test_cv.wait(lock, [] { return g_test_response_ready; });
+    return g_test_response;
+}
+
+// =====================
 // WebView2 host plumbing
 // =====================
 
@@ -791,6 +998,13 @@ void dispatch_message(const std::wstring& message) {
     const auto type = extract_type(message);
     if (type == L"open_pdf") {
         handle_open_documents();
+    } else if (type == L"get_state") {
+        // Read-only: re-sends the current document_state. Exists for
+        // qa/check_behaviors_cpp.py, which attaches its CDP listener after
+        // the process has already started (and CLI-args auto-open may have
+        // already fired and been missed) -- lets it query current state on
+        // demand instead of racing the initial NavigationCompleted handler.
+        post_document_state(L"document_state");
     } else if (type == L"render_page") {
         handle_render_page(message);
     } else if (type == L"reorder_pages") {
@@ -943,6 +1157,21 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         }
         PostQuitMessage(0);
         return 0;
+    case WM_APP_TEST_COMMAND: {
+        std::wstring cmd;
+        {
+            std::lock_guard<std::mutex> lock(g_test_mutex);
+            cmd = g_test_request;
+        }
+        const std::wstring response = dispatch_test_command(cmd);
+        {
+            std::lock_guard<std::mutex> lock(g_test_mutex);
+            g_test_response = response;
+            g_test_response_ready = true;
+        }
+        g_test_cv.notify_all();
+        return 0;
+    }
     default:
         return DefWindowProcW(window, message, wparam, lparam);
     }
@@ -987,13 +1216,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     window_class.lpszClassName = L"QuickMarkPDFWebViewHost";
     RegisterClassW(&window_class);
 
+    // QA/test runs (extract_cpp.py's Selenium attach, check_behaviors_cpp.py's
+    // TCP API) set this so the window never becomes visible on a real
+    // monitor. Placing the window off-screen (large negative coordinates)
+    // was tried first and made WebView2's own message bus intermittently
+    // stop responding -- DWM likely treats a fully off-monitor window as
+    // non-composited and throttles/skips work for it, which broke exactly
+    // the postMessage delivery qa/*.py depends on. A WS_EX_LAYERED window
+    // at alpha=0 stays in its normal on-screen position and fully
+    // composited (so WebView2/DWM behave normally) while being genuinely
+    // invisible and non-interactive to the user.
+    const bool offscreen = GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
+
     g_window = CreateWindowExW(
-        0, window_class.lpszClassName, L"QuickMarkPDF",
+        offscreen ? WS_EX_LAYERED : 0, window_class.lpszClassName, L"QuickMarkPDF",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1280, 860,
         nullptr, nullptr, instance, nullptr);
     if (!g_window) return 1;
 
-    ShowWindow(g_window, show_command);
+    if (offscreen) SetLayeredWindowAttributes(g_window, 0, 0, LWA_ALPHA);  // alpha=0: fully invisible
+
+    ShowWindow(g_window, offscreen ? SW_SHOWNOACTIVATE : show_command);
     UpdateWindow(g_window);
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 1;
     // GetOpenFileNameW/GetSaveFileNameW's modern Explorer-style dialog is
@@ -1002,6 +1245,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     // GetOpenFileNameW simply returning FALSE and no dialog ever shown.
     OleInitialize(nullptr);
     if (!load_ui(executable_dir, ui_path)) return 1;
+
+    // No-ops unless QUICKMARKPDF_TEST_PORT is set -- see test_api_server.h.
+    quickmarkpdf::maybe_start_test_api_server(run_test_command_on_main_thread);
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {

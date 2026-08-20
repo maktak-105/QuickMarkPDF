@@ -1,0 +1,6 @@
+# Dependencies for qa/ (the Python-vs-C++ parity dashboard), on top of
+# requirements.txt (the app itself, which qa/extract_python.py and
+# qa/check_behaviors_python.py import and drive directly).
+#   pip install -r requirements.txt -r qa/requirements-qa.txt
+websocket-client>=1.9  # qa/extract_cpp.py, qa/check_behaviors_cpp.py: raw CDP client
+PyYAML>=6.0             # qa/part_mapping.yaml: Python-widget-path <-> C++-DOM-path table

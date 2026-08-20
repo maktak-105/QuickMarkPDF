@@ -2,11 +2,35 @@
 
 [日本語版 environment_jp.md](environment_jp.md)
 
-`python/` (PySide6) is the spec of record for this app — see
-[`../CPP_PORT_POSTMORTEM.md`](../CPP_PORT_POSTMORTEM.md) for why a prior
-C++/WebView2 port was abandoned. This document covers running the Python
-version from source, building the Windows executable, and — the bulk of it —
-running the automated test program.
+## Status (read this first)
+
+`python/` (PySide6) is the **spec of record**: it defines the correct
+behavior, UI, and feature set that any port must match. It is not itself
+what ships.
+
+`core/native/` (C++17 + WebView2) is the **current version being built and
+shipped**. A first C++/WebView2 port was attempted and fully discarded — see
+[`../CPP_PORT_POSTMORTEM.md`](../CPP_PORT_POSTMORTEM.md) for why (it treated
+"build passes, tests pass" as done without ever driving the real app, and
+drifted from the Python spec). A second port (commits `3cb33f1` onward,
+starting 2026-08-19) followed that postmortem's rules — real UI verification
+plus independent file-level checks (PyMuPDF/Pillow) rather than build/test
+alone — and has reached feature parity with the Python spec for most of the
+toolbar; see `plans/2026-08-20_*` for the per-feature verification record and
+its own listed gaps (Mermaid/MathJax, GFM tables, an `ExportDialog`
+equivalent, etc.).
+
+**In short:** when the Python and C++ versions disagree on behavior, the
+Python version is right and the C++ version has a bug. When asked to "build
+the app" without qualification, build the C++ version (see below) — that's
+what a user runs.
+
+---
+
+This document covers running the Python version from source, building its
+Windows executable, and — the bulk of it — running its automated test
+program. For the C++ version's build, see "Building the C++/WebView2
+version" below.
 
 ## Runtime requirements
 
@@ -157,6 +181,127 @@ that the app actually looks and behaves right when someone looks at it.
 .venv\Scripts\python.exe -m pytest tests/test_pdf_manager.py -v
 .venv\Scripts\python.exe run_tests.py -- tests/test_pdf_manager.py -v
 ```
+
+## QA parity dashboard (Python vs. C++)
+
+Separate from the pytest suite above, `qa/` numerically measures whether the
+C++ port actually matches the Python spec — pixel sizes, HSV colors, and
+observed behavior — instead of relying on a plan doc's self-reported "looks
+right." See `plans/2026-08-20_C++版Python完全一致化_v1.3.md` for the full
+design; summary:
+
+```powershell
+.venv\Scripts\python.exe qa\extract_python.py          # -> qa/baseline.json
+.venv\Scripts\python.exe qa\check_behaviors_python.py  # -> qa/behaviors.json
+.venv\Scripts\python.exe qa\dashboard.py                # -> qa/dashboard.html
+```
+
+- `extract_python.py` builds the real `MainWindow` on the real Windows
+  desktop (deliberately **not** `QT_QPA_PLATFORM=offscreen` — this
+  environment's offscreen platform has no CJK font, so Japanese text would
+  render as tofu and the screenshot would be useless), walks every widget via
+  `findChildren`, grabs one window screenshot, and samples each widget's
+  rect + representative HSV from it. Every `QAction` is listed with its
+  text/shortcut/enabled state/`isSeparator()`.
+- `check_behaviors_python.py` drives the app's real methods and real Qt
+  events (including a real `QDragEnterEvent`/`QDropEvent` for drag-reorder,
+  not a shortcut through the downstream handler) — never OS-level mouse
+  automation, and dialogs are answered by injecting values directly
+  (`unittest.mock.patch`) rather than clicking. Currently 26/26 checks pass;
+  the thumbnail-size checks measure the actual `iconSize()` pixel value the
+  panel sets (`small`→108×105, `medium`→148×155, `large`→228×260), not just
+  the internal size-name string.
+- `dashboard.py` renders both into `qa/dashboard.html` — the artifact meant
+  to be read directly, with a prose sentence per check ("dragged thumbnail 3
+  to the front, page order actually became [...]"), not a bare ✓/✗. Every
+  table has Python and **C++** columns side by side, read from
+  `qa/baseline_cpp.json` / `qa/behaviors_cpp.json` when present (gray
+  "未計測" otherwise), and matched to their Python counterparts via
+  `qa/part_mapping.yaml`.
+
+C++-side measurement is split into two independent tools that do **not**
+share a transport, because they measure different things:
+
+- `qa/check_behaviors_cpp.py` → `qa/behaviors_cpp.json`. Drives
+  `PdfManager` directly over a loopback-only TCP control channel
+  (`core/native/test_api_server.{h,cpp}`, gated behind the
+  `QUICKMARKPDF_TEST_PORT` env var — a no-op if unset, so it's inert in a
+  normal user run). This bypasses WebView2/JS entirely: the TCP thread posts
+  a `WM_APP_TEST_COMMAND` to the main UI thread and blocks on a
+  `condition_variable` for the result, so commands run serialized on the
+  real UI thread against the real `PdfManager`. Currently **15/26 pass**;
+  the rest are UI-layer-only behaviors `PdfManager` can't observe (preview
+  zoom/pan, thumbnail-size buttons, the preferences dialog) or genuinely
+  unimplemented C++ features (crop export, the mixed PDF/Markdown warning,
+  unsaved-changes confirmation) — see `qa/behaviors_cpp.json` for the
+  per-check reason.
+- `qa/extract_cpp.py` → `qa/baseline_cpp.json`. Measures the actual
+  rendered DOM (coordinates, colors) the way `extract_python.py` measures
+  Qt widgets, so it has to go through WebView2's real Chromium renderer —
+  the TCP API has no concept of pixel layout. It attaches Microsoft Edge
+  WebDriver (`msedgedriver.exe`, must match the installed WebView2 Runtime
+  version — not committed, fetch it separately) to the running WebView2
+  instance via `EdgeOptions.use_webview` / `debugger_address` pointed at
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`, then
+  walks the DOM with `execute_script`. **Known-unstable**: polling
+  `execute_script`/`Runtime.evaluate` faster than about once/second starves
+  the WebView2 renderer's main thread and the C++↔JS `postMessage` bridge
+  stops answering entirely — `qa/selenium_client.py` works around this with
+  a single fixed `time.sleep()` instead of a poll loop, but `connect()`
+  attaching WebDriver still intermittently raises
+  `SessionNotCreatedException`, root cause not yet isolated. Treat a fresh
+  `qa/baseline_cpp.json` / visual parity number as **not yet reliably
+  reproducible** until that's fixed.
+
+Both `check_behaviors_cpp.py` and `extract_cpp.py` launch the exe with
+`QUICKMARKPDF_OFFSCREEN=1` set, which makes `webview_main.cpp` create the
+main window `WS_EX_LAYERED` with `SetLayeredWindowAttributes(hwnd, 0, 0,
+LWA_ALPHA)` (fully transparent, not moved off-screen — an earlier
+off-screen-coordinates approach made the WebView2 message bus flaky, likely
+because DWM stops compositing/optimizing rendering for a window parked
+outside the visible desktop). **Never launch the exe for QA purposes
+without this flag** — the app must not become visible on screen during
+automated measurement.
+
+## Building the C++/WebView2 version
+
+This is the current shippable build (see "Status" above). Source lives in
+`core/native/`, `templates/`, `static/`.
+
+```powershell
+# One-time: fetch SDKs into third_party/ (gitignored, not committed)
+powershell -File scripts\fetch_webview2_sdk.ps1
+powershell -File scripts\fetch_pdfium.ps1
+
+# Build
+python build_native.py            # also runs core/native/engine_tests.cpp
+python build_native.py --skip-tests
+```
+
+Needs a MinGW-w64 `g++`/`clang++` on PATH (or under one of the fallback
+paths `build_native.py` checks, including a WinGet-installed WinLibs UCRT
+toolchain). Requires C++17, `-static` linking for the shipped binaries so
+they don't need the compiler's runtime DLLs at the user's machine — note the
+standalone `engine_tests.cpp` build is **not** `-static`, so it does need
+`libgcc_s_seh-1.dll`/`libstdc++-6.dll` next to it or on PATH.
+
+Output: `dist/binary/QuickMarkPDF.exe` (+ `pdfium.dll`, `WebView2Loader.dll`,
+bundled `index.html`) is the app to hand to a user. `QuickMarkPDF_cli.exe` is
+a lightweight non-GUI demo/verification binary, not part of the shipped app.
+
+**Known environment quirk:** on machines running CrowdStrike Falcon Sensor
+(confirmed on this dev machine, "悪意のある振る舞いが検知されたため、プロセスは
+ブロックされました" — 13+ notifications from one build), a freshly-built,
+unsigned `.exe` can get flagged and blocked moments after being
+written/executed. Observed: `QuickMarkPDF_cli.exe` vanishing from
+`dist/binary/` right after a successful build, and `engine_tests.exe`'s
+first run failing with `STATUS_ENTRYPOINT_NOT_FOUND` (exit code
+`3221225785`) before succeeding on a clean re-run. If a fresh build's tests
+fail with that exact exit code, re-run before assuming a real regression —
+check whether the binary still exists first. `QuickMarkPDF.exe` itself
+survived in the one incident observed so far, but if Falcon starts blocking
+the shipped GUI binary too, the fix is an IT-side exclusion for the build
+output path, not a code change.
 
 ## Troubleshooting
 
