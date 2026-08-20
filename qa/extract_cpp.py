@@ -66,6 +66,24 @@ document.querySelectorAll('*').forEach(el => {
     disabled: !!el.disabled,
   });
 });
+// A handful of elements are worth measuring as a whole but have no id of
+// their own to hang a stable path on (the two toolbar <header> rows) --
+// giving them one would change EVERY descendant's widgetPath() too (id is
+// used at every ancestor level, not just the leaf), silently breaking every
+// existing mapping keyed to the old id-less path. Measured here instead,
+// by direct selector, under a synthetic path that can't collide with
+// anything widgetPath() itself would ever produce.
+[
+  ['html/body/header[toolbar-1]', 'header.toolbar:not(.size-toolbar)'],
+  ['html/body/header[toolbar-2]', 'header.toolbar.size-toolbar'],
+].forEach(([path, selector]) => {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return;
+  out.push({ path, tag: el.tagName.toLowerCase(), id: el.id || '', cls: el.className || '',
+             rect: {x: r.x, y: r.y, w: r.width, h: r.height}, text: '', disabled: false });
+});
 return {
   elements: out,
   innerWidth: window.innerWidth,

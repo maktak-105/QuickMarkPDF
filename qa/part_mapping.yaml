@@ -23,6 +23,10 @@ mappings:
   "MainWindow/QToolBar/QToolButton:180°": "html/body/header/rotate-180-button"
   "MainWindow/QToolBar/QToolButton:保存": "html/body/header/save-button"
   "MainWindow/QToolBar/QToolButton:サムネ": "html/body/header/size-label"
+  # ツールバー本体2行(帯そのもの)。extract_cpp.pyがidに頼らず直接セレクタで測定した
+  # 合成pathを使う(id付けで測ろうとして既存対応を全部壊した経緯はgit history参照)。
+  "MainWindow/QToolBar[1]": "html/body/header[toolbar-1]"
+  "MainWindow/QToolBar[2]": "html/body/header[toolbar-2]"
 
   # ツールバーのセパレータ(3本)。Python側はいずれも無ラベルの"QWidget"で、
   # widgetPath()だけでは3本とも区別できないため、位置(x座標)の並び順で対応させる:
