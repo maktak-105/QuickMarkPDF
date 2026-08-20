@@ -63,12 +63,11 @@ mappings:
   # 2026-08-20: リサイズ可能な境界(#panel-splitter)を実装したのに伴い追加。
   "MainWindow/QWidget/QSplitter/qt_splithandle_": "html/body/pdf-workspace/panel-splitter"
 
-  # 設定メニュー -- Python版はウィンドウ幅いっぱいのQMenuBar、C++版は左上の「設定」ボタン
-  # 1個のみで、外見上の対応は弱い(意図的に対応表に含め、サイズ不一致をFAILとして
-  # 正直に表示させる。隠さない)。2026-08-20、ユーザー判断: 修正コストに見合う実害が
-  # 無い(メニューの右側は元々空白で、帯を全幅にしても見た目上ほぼ変化しない)ため、
-  # 「見た目・座標」計測で唯一残る不一致として現状維持する。
-  "MainWindow/QMenuBar": "html/body/header/settings-menu"
+  # 設定メニュー -- <header class="menubar">自体は元々ウィンドウ幅いっぱい(bodyの
+  # フレックス子要素としてデフォルトでstretch)だったが、対応表が中の「設定」ボタン
+  # divを指していたため見かけ上不一致になっていた。ヘッダー自体を直接測定する
+  # (toolbar-1/2と同じ手法)よう対応先を差し替え。
+  "MainWindow/QMenuBar": "html/body/header[menubar]"
 
   # 中央ウィジェット(setCentralWidget)。#pdf-workspace自身のmargin適用前の外側の範囲。
   "MainWindow/QWidget": "html/body[central-widget]"
@@ -76,6 +75,7 @@ mappings:
   # ウィンドウ全体・大枠のレイアウト(意味的に一番近いコンテナ同士)
   "MainWindow": "html/body"
   "MainWindow/QStatusBar": "html/body/footer"
+  "MainWindow/QStatusBar/QSizeGrip": "html/body/footer/size-grip"
 
 # C++側にのみ存在し、Python版に対応するUI要素が無いもの。
 # 「余分に存在すること自体」が不一致であり、対応がつけられないから消すのではなく、

@@ -74,6 +74,7 @@ document.querySelectorAll('*').forEach(el => {
 // by direct selector, under a synthetic path that can't collide with
 // anything widgetPath() itself would ever produce.
 [
+  ['html/body/header[menubar]', 'header.menubar'],
   ['html/body/header[toolbar-1]', 'header.toolbar:not(.size-toolbar)'],
   ['html/body/header[toolbar-2]', 'header.toolbar.size-toolbar'],
 ].forEach(([path, selector]) => {
