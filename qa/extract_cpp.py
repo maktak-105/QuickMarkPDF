@@ -84,6 +84,22 @@ document.querySelectorAll('*').forEach(el => {
   out.push({ path, tag: el.tagName.toLowerCase(), id: el.id || '', cls: el.className || '',
              rect: {x: r.x, y: r.y, w: r.width, h: r.height}, text: '', disabled: false });
 });
+// Python's central QWidget (setCentralWidget) is #pdf-workspace's box BEFORE
+// its own CSS margin is applied -- reconstruct it from getComputedStyle
+// rather than adding a real wrapper element just to measure it.
+(() => {
+  const el = document.querySelector('#pdf-workspace');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  const mt = parseFloat(cs.marginTop) || 0, mr = parseFloat(cs.marginRight) || 0;
+  const mb = parseFloat(cs.marginBottom) || 0, ml = parseFloat(cs.marginLeft) || 0;
+  out.push({
+    path: 'html/body[central-widget]', tag: el.tagName.toLowerCase(), id: '', cls: '',
+    rect: {x: r.x - ml, y: r.y - mt, w: r.width + ml + mr, h: r.height + mt + mb},
+    text: '', disabled: false,
+  });
+})();
 return {
   elements: out,
   innerWidth: window.innerWidth,
