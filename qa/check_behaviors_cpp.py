@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 import fitz  # PyMuPDF, for building the same test fixtures as check_behaviors_python.py
+from PIL import Image  # only for reading exported PNG dimensions (export_images_with_crop)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "qa"))
@@ -237,9 +238,50 @@ def main():
             )
         check("export_images_png", _export_png)
 
-        not_implemented("export_images_with_crop", "TCP APIのexport_pages_to_imagesがクロップ範囲パラメータ未対応(次の実装課題)")
+        def _export_crop():
+            out_dir_full = tmp_dir / "png_full"
+            out_dir_crop = tmp_dir / "png_crop"
+            out_dir_full.mkdir(exist_ok=True)
+            out_dir_crop.mkdir(exist_ok=True)
+            client.send({
+                "type": "export_pages_to_images", "indices": [0], "output_dir": str(out_dir_full),
+                "fmt": "png", "dpi": 150, "prefix": "page",
+            })
+            # Test PDF pages are 400x560 PDF points (make_test_pdf); crop to
+            # an 80x80pt corner, well inside the page.
+            client.send({
+                "type": "export_pages_to_images", "indices": [0], "output_dir": str(out_dir_crop),
+                "fmt": "png", "dpi": 150, "prefix": "page", "crop": [10, 10, 90, 90],
+            })
+            full_files = list(out_dir_full.glob("*.png"))
+            crop_files = list(out_dir_crop.glob("*.png"))
+            full_size = Image.open(full_files[0]).size if full_files else None
+            crop_size = Image.open(crop_files[0]).size if crop_files else None
+            ok = bool(full_size and crop_size and crop_size[0] < full_size[0] and crop_size[1] < full_size[1])
+            return full_size, crop_size, ok, (
+                f"crop無し出力({full_size})とcrop=[10,10,90,90]指定出力({crop_size})を比較したところ、"
+                f"クロップ指定時の方が実際に小さい画像になった"
+            )
+        check("export_images_with_crop", _export_crop)
+
         not_implemented("mixed_pdf_markdown_open_rejected", "PDF+Markdown混在時の警告が未実装(webview_main.cppのコメントで明記、UI層の判定でありPdfManager単体では検証不可)")
-        not_implemented("unsaved_changes_confirmation", "未保存変更の破棄確認フローが未実装")
+
+        def _unsaved_confirm():
+            client.send({"type": "close_all", "confirm": True})
+            client.send({"type": "load_pdfs", "paths": [str(pdf_path)]})
+            client.send({"type": "rotate_pages", "indices": [0], "degrees": 90})
+            dirty_before = client.send({"type": "get_state"})["dirty"]
+            r_no = client.send({"type": "close_all", "confirm": False})
+            refused = (not r_no["ok"]) and r_no["state"]["page_count"] > 0 and r_no["state"]["dirty"]
+            r_yes = client.send({"type": "close_all", "confirm": True})
+            discarded = r_yes["ok"] and r_yes["state"]["page_count"] == 0
+            ok = dirty_before and refused and discarded
+            return f"dirty={dirty_before}", f"confirm=False→ok={r_no['ok']},pages={r_no['state']['page_count']} / confirm=True→ok={r_yes['ok']},pages={r_yes['state']['page_count']}", ok, (
+                "1ページ回転後(dirty=true)にclose_allをconfirm=falseで送ったところ実際に拒否され"
+                f"ページ数{r_no['state']['page_count']}のまま維持された。次にconfirm=trueで送ったところ"
+                f"実際に破棄されページ数が{r_yes['state']['page_count']}になった"
+            )
+        check("unsaved_changes_confirmation", _unsaved_confirm)
         not_implemented("preview_wheel_zoom_default_mode", "プレビューのホイールズームが未実装(<img>を置くだけ、UI層のみでPdfManager経由では検証不可)")
         not_implemented("preview_right_drag_pan_zoom_mode", "プレビューの右ドラッグパンが未実装(同上)")
         not_implemented("preview_wheel_mode_setting_switches_behavior", "環境設定ダイアログ・ホイールモード切替が未実装(同上)")

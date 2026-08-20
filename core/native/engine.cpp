@@ -407,4 +407,8 @@ void PdfManager::close_all() noexcept {
     known_passwords_.clear();
 }
 
+bool PdfManager::is_dirty() const noexcept {
+    return document_.is_dirty();
+}
+
 }  // namespace quickmarkpdf

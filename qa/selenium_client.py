@@ -36,6 +36,32 @@ def kill_exe_by_name(name="QuickMarkPDF.exe"):
     subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True)
 
 
+# msedgewebview2.exe is the shared WebView2 Runtime process used by MANY
+# unrelated apps on this machine (including Microsoft Teams) -- a blanket
+# `taskkill /IM msedgewebview2.exe` crashed Teams twice during this project's
+# QA debugging. NEVER kill it by name. QuickMarkPDF's own WebView2 instances
+# are uniquely identifiable by their user-data folder
+# (%TEMP%\QuickMarkPDF_WVData, set in webview_main.cpp), which appears in
+# their command line -- filter on that before killing anything.
+#
+# Root cause this works around: a leftover msedgewebview2.exe child process
+# from an earlier failed/killed run can keep holding that user-data folder
+# (and/or the CDP port) open, which makes the NEXT launch's C++<->JS message
+# bridge silently never come alive (get_state times out) even though the app
+# itself starts and CDP attaches fine. Confirmed by isolated testing: 3/3
+# get_state timeouts with orphans present, 3/3 success immediately after this
+# scoped cleanup.
+_KILL_ORPHAN_WEBVIEW2_PS = (
+    "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | "
+    "Where-Object { $_.CommandLine -match 'QuickMarkPDF_WVData' } | "
+    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+)
+
+
+def kill_orphan_webview2():
+    subprocess.run(["powershell", "-NoProfile", "-Command", _KILL_ORPHAN_WEBVIEW2_PS], capture_output=True)
+
+
 def launch_exe(exe_path, extra_args=None, port=CDP_PORT):
     """Kill any leftover instance (stale process can hold the CDP port or the
     WebView2 user-data dir), then launch fresh with remote debugging enabled.
@@ -47,6 +73,7 @@ def launch_exe(exe_path, extra_args=None, port=CDP_PORT):
     absolute paths and don't need a cwd override.
     """
     kill_exe_by_name(exe_path.name)
+    kill_orphan_webview2()
     time.sleep(0.5)
     env = os.environ.copy()
     # --remote-allow-origins=* is required since Chromium started rejecting
@@ -91,8 +118,18 @@ def post_message(driver, payload):
     """Send the exact message shape app.js's own button handlers post
     (e.g. {"type": "rotate_pages", "indices": [0], "degrees": 90}) --
     exercises the real C++ message handler without simulating a DOM click.
+
+    Must be compact JSON (no space after ':' or ','): webview_main.cpp's
+    extract_type()/extract_int() etc. are a hand-rolled substring parser,
+    not a real JSON parser -- they look for the literal `"type":"` with no
+    space, matching what JS's own JSON.stringify emits. Python's json.dumps
+    defaults to `": "`/`", "` separators, which silently fails to match
+    (extract_type returns "", dispatch_message no-ops on the unrecognized
+    type, no error surfaces anywhere) -- root-caused by A/B testing this
+    exact call against a hand-written JSON.stringify(...) call that worked.
     """
-    driver.execute_script(f"window.chrome.webview.postMessage({json.dumps(json.dumps(payload))});")
+    compact = json.dumps(payload, separators=(",", ":"))
+    driver.execute_script(f"window.chrome.webview.postMessage({json.dumps(compact)});")
 
 
 def history_len(driver):
@@ -206,6 +243,11 @@ def disconnect(proc, driver):
     # leaving it running was observed to make the NEXT connect() attempt
     # fail immediately with SessionNotCreatedException (it tries to reuse
     # the same debugger port). Not a blanket-kill risk the way
-    # msedgedriver.exe's name might suggest: nothing else in this project
-    # runs a process by that name.
+    # msedgedriver.exe's name might suggest: nothing else on this machine
+    # runs a process by that name (unlike msedgewebview2.exe below).
     subprocess.run(["taskkill", "/F", "/IM", "msedgedriver.exe"], capture_output=True)
+    # taskkill /T on proc.pid above does not always reap WebView2 child
+    # processes (they can detach from the parent's process tree) -- reap any
+    # QuickMarkPDF-owned stragglers here too, scoped by command line so
+    # unrelated apps' WebView2 instances (e.g. Teams) are never touched.
+    kill_orphan_webview2()

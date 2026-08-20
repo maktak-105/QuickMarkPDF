@@ -169,6 +169,12 @@ public:
     bool close_document(const std::string& path);
     void close_all() noexcept;
 
+    // Forwards WorkingDocument::is_dirty() -- whether to warn before an
+    // action that would discard the current session (window close, opening
+    // a document that replaces it). Matches the Python baseline's
+    // MainWindow._is_dirty.
+    bool is_dirty() const noexcept;
+
 private:
     WorkingDocument document_;
     // Absolute source path -> password last used to open it successfully,

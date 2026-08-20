@@ -265,6 +265,18 @@ int extract_int(const std::wstring& message, const wchar_t* key, int fallback) {
     return negative ? -value : value;
 }
 
+// nullopt means the key was absent (caller should fall back to a real
+// dialog); present-but-unparseable is treated the same as absent.
+std::optional<bool> extract_optional_bool(const std::wstring& message, const wchar_t* key) {
+    const std::wstring needle = std::wstring(L"\"") + key + L"\":";
+    const auto pos = message.find(needle);
+    if (pos == std::wstring::npos) return std::nullopt;
+    const auto cursor = pos + needle.size();
+    if (message.compare(cursor, 4, L"true") == 0) return true;
+    if (message.compare(cursor, 5, L"false") == 0) return false;
+    return std::nullopt;
+}
+
 // Pre-existing bug fixed here: this used to return the raw substring
 // between quotes with no backslash-escape handling. Harmless for the
 // short ASCII values (statuses, "path" on POSIX-style separators) every
@@ -319,6 +331,26 @@ std::vector<std::size_t> extract_size_t_array(const std::wstring& message, const
         if (any_digit) result.push_back(value);
         while (cursor < message.size() && message[cursor] == L' ') ++cursor;
         if (cursor < message.size() && message[cursor] == L',') ++cursor;
+    }
+    return result;
+}
+
+// For "key":[x0,y0,x1,y1] -- PdfManager::export_pages_to_images' clip
+// rectangle (PDF points, page-space). nullopt if the key is absent or
+// doesn't contain exactly 4 numbers, so a malformed/omitted crop falls back
+// to a full-page export rather than a wrong crop.
+std::optional<std::array<double, 4>> extract_optional_double_array4(const std::wstring& message, const wchar_t* key) {
+    const std::wstring needle = std::wstring(L"\"") + key + L"\":[";
+    const auto pos = message.find(needle);
+    if (pos == std::wstring::npos) return std::nullopt;
+    auto cursor = pos + needle.size();
+    std::array<double, 4> result{};
+    for (int i = 0; i < 4; ++i) {
+        while (cursor < message.size() && (message[cursor] == L' ' || message[cursor] == L',')) ++cursor;
+        wchar_t* end = nullptr;
+        result[i] = std::wcstod(message.c_str() + cursor, &end);
+        if (end == message.c_str() + cursor) return std::nullopt;  // no number consumed
+        cursor = static_cast<std::size_t>(end - message.c_str());
     }
     return result;
 }
@@ -476,6 +508,22 @@ std::optional<std::vector<std::filesystem::path>> test_hook_open_documents() {
         pos = next + 1;
     }
     return result;
+}
+
+// Gate for any action that would discard unsaved PDF edits (window close,
+// opening a document that replaces the current session). Mirrors the
+// Python spec's _confirm_discard_pdf_changes: returns true immediately if
+// there's nothing unsaved, otherwise asks. forced_answer lets the TCP test
+// API (qa/check_behaviors_cpp.py) supply the answer directly instead of a
+// real MessageBoxW -- the same pattern load_pdfs' "password" field already
+// uses to bypass the password-prompt dialog.
+bool confirm_discard_dirty_state(std::optional<bool> forced_answer) {
+    if (!g_manager.is_dirty()) return true;
+    if (forced_answer.has_value()) return *forced_answer;
+    const int result = MessageBoxW(g_window,
+        L"保存されていない変更があります。破棄してもよろしいですか?",
+        L"QuickMarkPDF", MB_YESNO | MB_ICONWARNING);
+    return result == IDYES;
 }
 
 std::vector<std::filesystem::path> prompt_open_documents() {
@@ -868,7 +916,8 @@ void handle_export_images(const std::wstring& message) {
 std::wstring get_test_state_json() {
     return L"{\"page_count\":" + std::to_wstring(g_manager.get_page_count()) + L",\"can_undo\":" +
            (g_manager.can_undo() ? L"true" : L"false") + L",\"can_overwrite\":" +
-           (g_manager.can_overwrite_source() ? L"true" : L"false") + L",\"pages\":" + pages_json() + L"}";
+           (g_manager.can_overwrite_source() ? L"true" : L"false") + L",\"dirty\":" +
+           (g_manager.is_dirty() ? L"true" : L"false") + L",\"pages\":" + pages_json() + L"}";
 }
 
 std::wstring json_string_array(const std::vector<std::string>& values) {
@@ -921,8 +970,17 @@ std::wstring dispatch_test_command(const std::wstring& message) {
             const bool ok = g_manager.close_document(wide_to_utf8(extract_string(message, L"path")));
             return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L",\"state\":" + get_test_state_json() + L"}";
         } else if (type == L"close_all") {
-            g_manager.close_all();
-            return get_test_state_json();
+            // "confirm" mirrors load_pdfs' "password" field: lets the test
+            // supply the discard-confirmation answer directly. Unlike
+            // confirm_discard_dirty_state (used by the real WM_CLOSE path),
+            // this NEVER falls through to a real MessageBoxW -- the TCP test
+            // API must never show a real dialog nothing will answer, so an
+            // omitted "confirm" defaults to proceeding (true), matching
+            // every pre-existing close_all call in qa/check_behaviors_cpp.py
+            // that predates this parameter and doesn't pass it.
+            const bool proceed = !g_manager.is_dirty() || extract_optional_bool(message, L"confirm").value_or(true);
+            if (proceed) g_manager.close_all();
+            return L"{\"ok\":" + std::wstring(proceed ? L"true" : L"false") + L",\"state\":" + get_test_state_json() + L"}";
         } else if (type == L"overwrite_source") {
             const bool ok = g_manager.overwrite_source();
             return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L"}";
@@ -937,7 +995,8 @@ std::wstring dispatch_test_command(const std::wstring& message) {
             const auto result = g_manager.export_pages_to_images(
                 extract_size_t_array(message, L"indices"), wide_to_utf8(extract_string(message, L"output_dir")),
                 wide_to_utf8(extract_string(message, L"fmt", L"png")), extract_int(message, L"dpi", 150),
-                wide_to_utf8(extract_string(message, L"prefix", L"page")), std::nullopt,
+                wide_to_utf8(extract_string(message, L"prefix", L"page")),
+                extract_optional_double_array4(message, L"crop"),
                 extract_int(message, L"jpeg_quality", 90));
             return L"{\"success\":" + std::to_wstring(result.success) + L",\"attempted\":" +
                    std::to_wstring(result.attempted) + L",\"errors\":" + json_string_array(result.errors) + L"}";
@@ -1145,6 +1204,14 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
     case WM_SIZE:
         resize_webview();
         return 0;
+    case WM_CLOSE:
+        // Never intercepted by qa/*.py's own cleanup (taskkill /F /T,
+        // not a graceful close), so this can't hang a headless QA run --
+        // only reachable via a real user closing the window.
+        if (confirm_discard_dirty_state(std::nullopt)) {
+            DestroyWindow(g_window);
+        }
+        return 0;
     case WM_DESTROY:
         if (g_webview) {
             g_webview->Release();
@@ -1228,9 +1295,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     // invisible and non-interactive to the user.
     const bool offscreen = GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
 
+    // CreateWindowExW's width/height are the OUTER window size, but the
+    // Python spec's MainWindow.resize(1280, 820) sets its CLIENT area (what
+    // extract_python.py measures via geometry()). Passing 1280x820 straight
+    // through under-sizes the WebView2 content area by the title
+    // bar/border chrome (measured 1264x821 instead of 1280x820).
+    // AdjustWindowRectEx inflates a desired client rect to the outer size
+    // needed for this window's style, so the client area actually ends up
+    // 1280x820 regardless of the current DPI/theme's border metrics.
+    const DWORD window_style = WS_OVERLAPPEDWINDOW;
+    const DWORD window_ex_style = offscreen ? WS_EX_LAYERED : 0;
+    RECT client_rect{0, 0, 1280, 820};
+    AdjustWindowRectEx(&client_rect, window_style, FALSE, window_ex_style);
+
     g_window = CreateWindowExW(
-        offscreen ? WS_EX_LAYERED : 0, window_class.lpszClassName, L"QuickMarkPDF",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1280, 860,
+        window_ex_style, window_class.lpszClassName, L"QuickMarkPDF",
+        window_style, CW_USEDEFAULT, CW_USEDEFAULT,
+        client_rect.right - client_rect.left, client_rect.bottom - client_rect.top,
         nullptr, nullptr, instance, nullptr);
     if (!g_window) return 1;
 
