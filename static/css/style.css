@@ -220,11 +220,6 @@ button.tool:disabled { opacity: .38; cursor: default; }
   flex: 0 0 auto; padding: 0 10px; height: 21px; display: flex; align-items: center;
   background: #f3f3f3; font-size: 12px; color: #444;
 }
-/* Python版のQSizeGrip相当。WebView2のウィンドウはOSネイティブの枠でリサイズされる
-   ため機能的には不要 -- qa/baseline.json実測(位置・サイズ・代表色)に合わせて存在
-   させているだけの見た目のみの要素で、クリック等には反応しない。 */
-#size-grip { position: fixed; right: 0; bottom: 0; width: 13px; height: 13px;
-             background: #f3f3f3; pointer-events: none; }
 
 /* ── 環境設定モーダル（Python版 QDialog 相当） ── */
 .modal-overlay {
@@ -242,6 +237,18 @@ button.tool:disabled { opacity: .38; cursor: default; }
 }
 .modal-group legend { font-size: 12px; padding: 0 4px; color: #333; }
 .radio-row { display: block; font-size: 12px; padding: 4px 0; cursor: pointer; }
+.export-modal { min-width: 480px; }
+.modal-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 4px 0; }
+.modal-row label { flex: 0 0 auto; min-width: 90px; }
+.modal-row input[type="text"], .modal-row input[type="number"] {
+  border: 1px solid #b8b8b8; border-radius: 3px; padding: 3px 6px; font-size: 12px;
+}
+.modal-row input[type="text"] { flex: 1 1 auto; }
+.modal-row select { border: 1px solid #b8b8b8; border-radius: 3px; padding: 3px 4px; font-size: 12px; }
+.modal-row input[type="range"] { flex: 1 1 auto; }
+.modal-row button { border: 1px solid #b8b8b8; border-radius: 3px; background: #fff; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.modal-row input:disabled, .modal-row select:disabled { opacity: .5; }
+.modal-example { color: #666; font-size: 11px; padding: 2px 0 0; }
 .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; }
 .modal-buttons button {
   border: 1px solid #b8b8b8; border-radius: 4px; background: #fff; padding: 6px 16px;
@@ -249,3 +256,18 @@ button.tool:disabled { opacity: .38; cursor: default; }
 }
 .modal-buttons button.primary { background: #0067c0; color: #fff; border-color: #0067c0; }
 .modal-buttons button:hover { filter: brightness(0.96); }
+
+/* Markdown -> PDF (ICoreWebView2_7::PrintToPdf) prints whatever the "print"
+   media type would render for the WHOLE page -- since this app is a single
+   page with the toolbar/menu/thumbnail-panel/statusbar always present in
+   the DOM, without this the exported PDF included the toolbar buttons and
+   status text around the actual Markdown content (caught via qa/_verify_md_pdf.py:
+   independently reopening the exported PDF with PyMuPDF showed
+   "開く\n保存\n...準備完了\n設定..." mixed into page 1's text). Python's
+   equivalent has no such problem because its Markdown viewer is a separate
+   QWebEngineView with no toolbar chrome inside it at all. */
+@media print {
+  .menubar, .toolbar, .thumbnail-panel, #panel-splitter, .statusbar,
+  .context-menu, .modal-overlay { display: none !important; }
+  .markdown-workspace { overflow: visible !important; }
+}

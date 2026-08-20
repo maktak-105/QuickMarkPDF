@@ -40,7 +40,7 @@
   let selectedIndices = new Set();
   let primaryIndex = -1;
   let anchorIndex = -1;
-  let dragFromIndex = -1;
+  let dragIndices = [];
   let canUndo = false;
   let currentMode = 'pdf';
   let currentThumbSize = 'medium';
@@ -235,7 +235,10 @@
     rotate180Button.disabled = !hasSelection;
     splitButton.disabled = !hasSelection;
     exportButton.disabled = !isPdfMode || pages.length === 0;
-    saveButton.disabled = !isPdfMode || pages.length === 0;
+    // 保存はPDF/Markdown両方で使える(Python版のsave_action同様、
+    // save_pdf()がcurrent_modeで分岐する) -- Markdownモードでは
+    // 常に有効(モードに遷移できた時点で文書が読み込まれている)。
+    saveButton.disabled = isPdfMode ? pages.length === 0 : false;
     for (const btn of Object.values(thumbSizeButtons)) btn.disabled = !isPdfMode;
   }
 
@@ -349,6 +352,29 @@
   document.addEventListener('click', closeContextMenu);
   document.addEventListener('scroll', closeContextMenu, true);
 
+  // Mirrors thumbnail_panel.py's _compute_new_order exactly: move
+  // draggedIndices (old flat indices) as a contiguous block to targetPos,
+  // preserving their original relative order -- generalizes the old
+  // single-item-only drag math to a multi-selection drag.
+  function computeReorderedOrder(pagesLength, draggedIndices, targetPos) {
+    const currentOrder = Array.from({ length: pagesLength }, (_, i) => i);
+    const draggedSet = new Set(draggedIndices);
+    targetPos = Math.min(targetPos, currentOrder.length);
+    const remaining = [];
+    let removedBeforeTarget = 0;
+    currentOrder.forEach((pageIdx, i) => {
+      if (draggedSet.has(pageIdx)) {
+        if (i < targetPos) removedBeforeTarget += 1;
+        return;
+      }
+      remaining.push(pageIdx);
+    });
+    let insertAt = targetPos - removedBeforeTarget;
+    insertAt = Math.max(0, Math.min(insertAt, remaining.length));
+    const draggedInOrder = currentOrder.filter((idx) => draggedSet.has(idx));
+    return [...remaining.slice(0, insertAt), ...draggedInOrder, ...remaining.slice(insertAt)];
+  }
+
   // Mirrors ThumbnailPanel._get_qpixmap_from_page's canvas layout: a
   // NUM_GUTTER_W-wide left gutter showing the page's position in the whole
   // document, beside a body column of [filename tag / page image / "p.N"
@@ -398,7 +424,11 @@
     });
 
     item.addEventListener('dragstart', (event) => {
-      dragFromIndex = index;
+      // Drag the whole multi-selection when the dragged item is part of it
+      // (matches thumbnail_panel.py's dragEnterEvent: "drag whatever is
+      // currently selected"), otherwise just the one item under the cursor.
+      dragIndices = (selectedIndices.has(index) && selectedIndices.size > 1)
+        ? selectedIndicesSorted() : [index];
       event.dataTransfer.effectAllowed = 'move';
     });
     item.addEventListener('dragover', (event) => {
@@ -409,17 +439,10 @@
     item.addEventListener('drop', (event) => {
       event.preventDefault();
       item.classList.remove('drag-over');
-      if (dragFromIndex < 0 || dragFromIndex === index) return;
-      // Dropping onto the item currently at `index` should land the moved
-      // page exactly there. If it was dragged from earlier in the list,
-      // removing it first shifts everything after it left by one, so the
-      // target's post-removal position is index - 1, not index.
-      const order = Array.from({ length: pages.length }, (_, i) => i);
-      const [moved] = order.splice(dragFromIndex, 1);
-      const insertAt = dragFromIndex < index ? index - 1 : index;
-      order.splice(insertAt, 0, moved);
+      if (dragIndices.length === 0 || dragIndices.includes(index)) { dragIndices = []; return; }
+      const order = computeReorderedOrder(pages.length, dragIndices, index);
       post({ type: 'reorder_pages', order });
-      dragFromIndex = -1;
+      dragIndices = [];
     });
 
     return item;
@@ -475,9 +498,15 @@
   }
 
   // ── サムネイルサイズ切替（ツールバー2段目） ──
-  function setThumbSize(size) {
+  // localStorage経由でセッションをまたいで永続化する(Python版のQSettings相当)。
+  // WebView2は固定のユーザーデータフォルダ(%TEMP%\QuickMarkPDF_WVData)を毎回
+  // 再利用するため、localStorageは通常の再起動間で維持される。
+  function setThumbSize(size, persist = true) {
     if (!THUMB_SIZES[size] || size === currentThumbSize) return;
     currentThumbSize = size;
+    if (persist) {
+      try { localStorage.setItem('quickmarkpdf.thumbSize', size); } catch (e) { /* ignore */ }
+    }
     for (const [name, btn] of Object.entries(thumbSizeButtons)) {
       btn.classList.toggle('checked', name === size);
     }
@@ -500,7 +529,12 @@
   thumbSizeButtons.small.addEventListener('click', () => setThumbSize('small'));
   thumbSizeButtons.medium.addEventListener('click', () => setThumbSize('medium'));
   thumbSizeButtons.large.addEventListener('click', () => setThumbSize('large'));
-  setThumbSize('medium');  // apply the CSS custom properties for the default size
+  {
+    let savedThumbSize = 'medium';
+    try { savedThumbSize = localStorage.getItem('quickmarkpdf.thumbSize') || 'medium'; } catch (e) { /* ignore */ }
+    currentThumbSize = null;  // force setThumbSize to actually apply, even if savedThumbSize === 'medium'
+    setThumbSize(savedThumbSize in THUMB_SIZES ? savedThumbSize : 'medium', false);
+  }
 
   // ── サムネイル欄・プレビュー欄の境界(QSplitter相当) ──
   // Python版はQSplitterでこの境界をドラッグ幅変更できる。setThumbSize()が
@@ -713,9 +747,16 @@
   });
   document.querySelector('#preferences-ok').addEventListener('click', () => {
     const checked = document.querySelector('input[name="wheel-mode"]:checked');
-    if (checked) wheelMode = checked.value;
+    if (checked) {
+      wheelMode = checked.value;
+      try { localStorage.setItem('quickmarkpdf.wheelMode', wheelMode); } catch (e) { /* ignore */ }
+    }
     preferencesOverlay.hidden = true;
   });
+  try {
+    const savedWheelMode = localStorage.getItem('quickmarkpdf.wheelMode');
+    if (savedWheelMode === 'zoom' || savedWheelMode === 'scroll') wheelMode = savedWheelMode;
+  } catch (e) { /* ignore */ }
 
   function doOpen() {
     if (!hasBridge()) {
@@ -740,23 +781,129 @@
   function doUndo() {
     post({ type: 'undo_edit' });
   }
-  function doExport(indices) {
-    if (pages.length === 0) return;
-    const payload = { type: 'export_images', indices: indices || [], dpi: 150 };
+  // ── 画像エクスポート ダイアログ(Python版 ExportDialog相当) ──
+  const exportOverlay = document.querySelector('#export-overlay');
+  const exportScopeAll = document.querySelector('#export-scope-all');
+  const exportScopeSelected = document.querySelector('#export-scope-selected');
+  const exportTotalCount = document.querySelector('#export-total-count');
+  const exportSelectedCount = document.querySelector('#export-selected-count');
+  const exportAreaAll = document.querySelector('#export-area-all');
+  const exportAreaCrop = document.querySelector('#export-area-crop');
+  const exportFormat = document.querySelector('#export-format');
+  const exportDpiPreset = document.querySelector('#export-dpi-preset');
+  const exportDpiCustom = document.querySelector('#export-dpi-custom');
+  const exportQualityRow = document.querySelector('#export-quality-row');
+  const exportQuality = document.querySelector('#export-quality');
+  const exportQualityLabel = document.querySelector('#export-quality-label');
+  const exportDir = document.querySelector('#export-dir');
+  const exportPrefix = document.querySelector('#export-prefix');
+  const exportExample = document.querySelector('#export-example');
+  let exportPendingIndices = [];
+  // Remembered across dialog opens within this session -- mirrors
+  // main_window.py's self._export_settings (format/dpi/jpeg_quality only;
+  // scope/area/dir/prefix stay contextual, recomputed per open).
+  const rememberedExportSettings = { format: 'png', dpi: 150, jpeg_quality: 90 };
+
+  function updateExportExample() {
+    const prefix = exportPrefix.value.trim() || 'page';
+    const fmt = exportFormat.value === 'jpg' ? 'jpg' : 'png';
+    exportExample.textContent = `出力例: ${prefix}_0001.${fmt}  ${prefix}_0002.${fmt}  ...`;
+  }
+  function onExportFormatChanged() {
+    const isJpg = exportFormat.value === 'jpg';
+    exportQuality.disabled = !isJpg;
+    exportQualityRow.style.opacity = isJpg ? '1' : '.5';
+    updateExportExample();
+  }
+  function onExportDpiPresetChanged() {
+    const isCustom = exportDpiPreset.value === '0';
+    exportDpiCustom.disabled = !isCustom;
+    if (isCustom) { exportDpiCustom.focus(); exportDpiCustom.select(); }
+  }
+  function currentExportDpi() {
+    return exportDpiPreset.value === '0' ? (parseInt(exportDpiCustom.value, 10) || 150) : parseInt(exportDpiPreset.value, 10);
+  }
+  exportFormat.addEventListener('change', onExportFormatChanged);
+  exportDpiPreset.addEventListener('change', onExportDpiPresetChanged);
+  exportQuality.addEventListener('input', () => { exportQualityLabel.textContent = exportQuality.value; });
+  exportPrefix.addEventListener('input', updateExportExample);
+  exportDir.addEventListener('input', updateExportExample);
+  document.querySelector('#export-browse').addEventListener('click', () => {
+    post({ type: 'browse_export_folder' });
+  });
+  document.querySelector('#export-cancel').addEventListener('click', () => { exportOverlay.hidden = true; });
+  document.querySelector('#export-run').addEventListener('click', () => {
+    const scope = (exportScopeSelected.checked && !exportScopeSelected.disabled) ? 'selected' : 'all';
+    const indices = scope === 'selected' ? exportPendingIndices : pages.map((_p, i) => i);
+    const fmt = exportFormat.value === 'jpg' ? 'jpg' : 'png';
+    const dpi = currentExportDpi();
+    const quality = parseInt(exportQuality.value, 10) || 90;
+    rememberedExportSettings.format = fmt;
+    rememberedExportSettings.dpi = dpi;
+    rememberedExportSettings.jpeg_quality = quality;
+    const payload = {
+      type: 'export_images', indices, dpi, fmt, jpeg_quality: quality,
+      output_dir: exportDir.value.trim(), prefix: exportPrefix.value.trim() || 'page',
+    };
+    const useCrop = exportAreaCrop.checked && !exportAreaCrop.disabled;
     // pageWidthPt/previewNaturalWidth converts the selection from rendered-
     // preview pixels to PDF points (page-space, pre-rotation-scale) --
     // matches PreviewLabel.get_pdf_clip_rect()'s 1.5px/pt conversion, just
     // with our own render width instead of Python's fixed 1.5x.
-    if (cropSelection && pageWidthPt > 0 && previewNaturalWidth > 0) {
+    if (useCrop && cropSelection && pageWidthPt > 0 && previewNaturalWidth > 0) {
       const ptPerPx = pageWidthPt / previewNaturalWidth;
       payload.crop = [
         cropSelection.x0 * ptPerPx, cropSelection.y0 * ptPerPx,
         cropSelection.x1 * ptPerPx, cropSelection.y1 * ptPerPx,
       ];
     }
+    exportOverlay.hidden = true;
     post(payload);
+  });
+
+  function doExport(indices) {
+    if (pages.length === 0) return;
+    const sel = indices && indices.length ? indices : selectedIndicesSorted();
+    exportPendingIndices = sel;
+
+    exportTotalCount.textContent = String(pages.length);
+    exportSelectedCount.textContent = String(sel.length);
+    exportScopeSelected.disabled = sel.length === 0;
+    if (sel.length > 0) { exportScopeSelected.checked = true; } else { exportScopeAll.checked = true; }
+
+    const hasCrop = Boolean(cropSelection);
+    exportAreaCrop.disabled = !hasCrop;
+    exportAreaCrop.checked = hasCrop;
+    exportAreaAll.checked = !hasCrop;
+
+    exportFormat.value = rememberedExportSettings.format;
+    const standardDpi = ['72', '150', '300'];
+    if (standardDpi.includes(String(rememberedExportSettings.dpi))) {
+      exportDpiPreset.value = String(rememberedExportSettings.dpi);
+      exportDpiCustom.disabled = true;
+    } else {
+      exportDpiPreset.value = '0';
+      exportDpiCustom.disabled = false;
+      exportDpiCustom.value = String(rememberedExportSettings.dpi);
+    }
+    exportQuality.value = String(rememberedExportSettings.jpeg_quality);
+    exportQualityLabel.textContent = String(rememberedExportSettings.jpeg_quality);
+    onExportFormatChanged();
+
+    exportDir.value = '';
+    exportPrefix.value = 'page';
+    updateExportExample();
+    exportOverlay.hidden = false;
+    // Backend fills in a sensible folder/prefix suggestion (source file's
+    // own directory, suggest_export_basename()) once it replies -- see the
+    // 'export_defaults' message handler below.
+    post({ type: 'get_export_defaults', indices: sel.length > 0 ? sel : pages.map((_p, i) => i) });
   }
   function doSave() {
+    if (currentMode === 'markdown') {
+      post({ type: 'save_markdown_pdf' });
+      return;
+    }
     if (pages.length === 0) return;
     post({ type: 'save_pdf' });
   }
@@ -835,6 +982,18 @@
       if (data.type === 'markdown_opened') {
         markdownContent.innerHTML = markdownToHtml(data.content || '');
         setMode('markdown');
+      }
+
+      if (data.type === 'export_defaults') {
+        if (!exportOverlay.hidden) {
+          exportDir.value = data.output_dir || '';
+          exportPrefix.value = data.prefix || 'page';
+          updateExportExample();
+        }
+      }
+
+      if (data.type === 'folder_picked') {
+        if (data.path) { exportDir.value = data.path; updateExportExample(); }
       }
 
       if (data.type === 'page_rendered') {

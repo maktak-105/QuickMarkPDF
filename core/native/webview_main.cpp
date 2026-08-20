@@ -3,9 +3,11 @@
 #include <wincred.h>
 #include <wincrypt.h>
 #include <shobjidl.h>
+#include <commctrl.h>
 #include <unknwn.h>
 #include <WebView2.h>
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cwctype>
@@ -145,6 +147,30 @@ public:
     }
 };
 
+class PrintToPdfCompletedHandler : public ICoreWebView2PrintToPdfCompletedHandler {
+    std::function<HRESULT(HRESULT, BOOL)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit PrintToPdfCompletedHandler(std::function<HRESULT(HRESULT, BOOL)> fn) : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2PrintToPdfCompletedHandler) {
+            *ppv = static_cast<ICoreWebView2PrintToPdfCompletedHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, BOOL result) override { return fn_(errorCode, result); }
+};
+
 // Minimal RAII for CoCreateInstance-created interfaces (IFileOpenDialog,
 // IShellItem) -- std::unique_ptr with a Release()-calling deleter, so early
 // returns can't leak a reference. Deliberately not Microsoft::WRL::ComPtr
@@ -171,6 +197,138 @@ quickmarkpdf::PdfManager g_manager;
 // CPP_PORT_POSTMORTEM.md). Opened once, right after the page finishes its
 // first navigation.
 std::vector<std::wstring> g_startup_paths;
+// The currently displayed Markdown document's path, if any (empty when in
+// PDF mode or nothing has been opened yet) -- used as the default filename
+// when exporting to PDF (see handle_save_markdown_pdf).
+std::filesystem::path g_current_markdown_path;
+// Last directory the user opened or saved a file in this session -- mirrors
+// main_window.py's self._last_used_dir, used as every subsequent dialog's
+// starting folder. Restored from the registry at startup and saved back
+// on every change (see save_settings_to_registry).
+std::filesystem::path g_last_used_dir;
+
+// =====================
+// Settings persistence (registry) -- mirrors main_window.py's QSettings
+// (window geometry, thumbnail size, wheel mode, last-used folder all
+// survive an app restart there; this port previously reset all of that on
+// every launch). Deliberately skipped entirely when QUICKMARKPDF_OFFSCREEN
+// is set: qa/extract_cpp.py's dashboard measurements depend on the window
+// always being exactly 1280x820 at a fixed position, and a QA run must
+// never read stray values from -- or write over -- a real user's saved
+// settings.
+// =====================
+
+constexpr wchar_t kSettingsRegistryPath[] = L"Software\\QuickMarkPDF\\Settings";
+
+void save_dword_setting(const wchar_t* name, DWORD value) {
+    HKEY key;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsRegistryPath, 0, nullptr, 0, KEY_WRITE, nullptr, &key,
+                         nullptr) != ERROR_SUCCESS) {
+        return;
+    }
+    RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&value), sizeof(value));
+    RegCloseKey(key);
+}
+
+std::optional<DWORD> load_dword_setting(const wchar_t* name) {
+    HKEY key;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kSettingsRegistryPath, 0, KEY_READ, &key) != ERROR_SUCCESS) {
+        return std::nullopt;
+    }
+    DWORD value = 0;
+    DWORD size = sizeof(value);
+    DWORD type = 0;
+    const LONG result = RegQueryValueExW(key, name, nullptr, &type, reinterpret_cast<BYTE*>(&value), &size);
+    RegCloseKey(key);
+    if (result != ERROR_SUCCESS || type != REG_DWORD) return std::nullopt;
+    return value;
+}
+
+void save_string_setting(const wchar_t* name, const std::wstring& value) {
+    HKEY key;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsRegistryPath, 0, nullptr, 0, KEY_WRITE, nullptr, &key,
+                         nullptr) != ERROR_SUCCESS) {
+        return;
+    }
+    RegSetValueExW(key, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()),
+                   static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+    RegCloseKey(key);
+}
+
+std::optional<std::wstring> load_string_setting(const wchar_t* name) {
+    HKEY key;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kSettingsRegistryPath, 0, KEY_READ, &key) != ERROR_SUCCESS) {
+        return std::nullopt;
+    }
+    DWORD size = 0;
+    DWORD type = 0;
+    if (RegQueryValueExW(key, name, nullptr, &type, nullptr, &size) != ERROR_SUCCESS || type != REG_SZ ||
+        size == 0) {
+        RegCloseKey(key);
+        return std::nullopt;
+    }
+    std::wstring value(size / sizeof(wchar_t), L'\0');
+    RegQueryValueExW(key, name, nullptr, nullptr, reinterpret_cast<BYTE*>(value.data()), &size);
+    RegCloseKey(key);
+    while (!value.empty() && value.back() == L'\0') value.pop_back();
+    return value;
+}
+
+bool is_offscreen_mode() {
+    return GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
+}
+
+// True when QUICKMARKPDF_TEST_PORT is set, i.e. the TCP test API
+// (qa/check_behaviors_cpp.py) is reachable. A real MessageBoxW triggered
+// from that path would block main-thread message processing forever with
+// nothing to click it (no human, no dialog-injection hook for it) -- new
+// notification dialogs added to real user-facing code paths must check
+// this and fall back to post_status instead when true, the same way
+// load_pdfs' password/close_all's confirm fields already let specific
+// dialogs be bypassed for testing.
+bool is_test_mode() {
+    wchar_t buffer[8]{};
+    return GetEnvironmentVariableW(L"QUICKMARKPDF_TEST_PORT", buffer, 8) > 0;
+}
+
+// Called once at startup, before the window is created -- window
+// position/size need to be known before CreateWindowExW.
+struct SavedWindowGeometry {
+    int x = CW_USEDEFAULT, y = CW_USEDEFAULT, width = 1280, height = 820;
+};
+
+SavedWindowGeometry load_window_geometry() {
+    SavedWindowGeometry geo;
+    if (is_offscreen_mode()) return geo;
+    if (auto v = load_dword_setting(L"WindowX")) geo.x = static_cast<int>(*v);
+    if (auto v = load_dword_setting(L"WindowY")) geo.y = static_cast<int>(*v);
+    if (auto v = load_dword_setting(L"WindowWidth")) geo.width = std::max(900, static_cast<int>(*v));
+    if (auto v = load_dword_setting(L"WindowHeight")) geo.height = std::max(600, static_cast<int>(*v));
+    return geo;
+}
+
+void save_window_geometry(HWND window) {
+    if (is_offscreen_mode() || !window) return;
+    RECT rect{};
+    if (!GetWindowRect(window, &rect)) return;
+    save_dword_setting(L"WindowX", static_cast<DWORD>(rect.left));
+    save_dword_setting(L"WindowY", static_cast<DWORD>(rect.top));
+    save_dword_setting(L"WindowWidth", static_cast<DWORD>(rect.right - rect.left));
+    save_dword_setting(L"WindowHeight", static_cast<DWORD>(rect.bottom - rect.top));
+}
+
+void load_last_used_dir_setting() {
+    if (is_offscreen_mode()) return;
+    if (auto v = load_string_setting(L"LastUsedDir")) {
+        std::error_code ec;
+        if (std::filesystem::exists(*v, ec)) g_last_used_dir = *v;
+    }
+}
+
+void save_last_used_dir_setting() {
+    if (is_offscreen_mode() || g_last_used_dir.empty()) return;
+    save_string_setting(L"LastUsedDir", g_last_used_dir.wstring());
+}
 
 // =====================
 // String / JSON helpers
@@ -539,6 +697,11 @@ std::vector<std::filesystem::path> prompt_open_documents() {
         L"All files (*.*)\0*.*\0";
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    std::wstring dir_buf;
+    if (!g_last_used_dir.empty() && std::filesystem::exists(g_last_used_dir)) {
+        dir_buf = g_last_used_dir.wstring();
+        dialog.lpstrInitialDir = dir_buf.c_str();
+    }
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER | OFN_ALLOWMULTISELECT;
     force_foreground_window();
     if (!GetOpenFileNameW(&dialog)) {
@@ -548,11 +711,22 @@ std::vector<std::filesystem::path> prompt_open_documents() {
         }
         return {};
     }
-    return parse_multiselect_buffer(buffer.data());
+    const auto picked = parse_multiselect_buffer(buffer.data());
+    if (!picked.empty()) g_last_used_dir = picked.front().parent_path();
+    return picked;
 }
 
-std::optional<std::filesystem::path> prompt_save_pdf() {
+// default_name/default_dir mirror main_window.py's _save_pdf_as_new_file
+// suggesting "edited.pdf" in the last-used directory, and
+// _save_markdown_as_pdf suggesting "<markdown filename>.pdf" -- both were
+// previously missing here (dialog always opened blank at the OS default
+// location).
+std::optional<std::filesystem::path> prompt_save_pdf(const std::wstring& default_name = L"",
+                                                       const std::filesystem::path& default_dir = {}) {
     wchar_t selected[MAX_PATH]{};
+    if (!default_name.empty()) {
+        wcsncpy_s(selected, MAX_PATH, default_name.c_str(), _TRUNCATE);
+    }
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.hwndOwner = g_window;
@@ -560,6 +734,11 @@ std::optional<std::filesystem::path> prompt_save_pdf() {
     dialog.lpstrFile = selected;
     dialog.nMaxFile = MAX_PATH;
     dialog.lpstrDefExt = L"pdf";
+    std::wstring dir_buf;
+    if (!default_dir.empty() && std::filesystem::exists(default_dir)) {
+        dir_buf = default_dir.wstring();
+        dialog.lpstrInitialDir = dir_buf.c_str();
+    }
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
     force_foreground_window();
     if (!GetSaveFileNameW(&dialog)) return std::nullopt;
@@ -661,6 +840,8 @@ void open_markdown_path(const std::filesystem::path& path) {
         post_status(L"Markdownファイルを読み込めませんでした: " + path.filename().wstring());
         return;
     }
+    g_current_markdown_path = path;
+    if (g_window) SetWindowTextW(g_window, (L"QuickMarkPDF - " + path.filename().wstring()).c_str());
     const std::wstring response = L"{\"type\":\"markdown_opened\",\"path\":" +
                                    json_string(path.wstring()) + L",\"content\":" +
                                    json_string(utf8_to_wide(content)) + L"}";
@@ -675,12 +856,11 @@ enum class DocumentOpenOutcome { Cancelled, RejectedMixed, OpenedMarkdown, Opene
 // calling open_pdfs/_load_markdown_document directly to skip the dialog
 // entirely, per CPP_PORT_POSTMORTEM.md's explicit recommendation not to
 // rely on automating the native file dialog for verification. Matches the
-// Python baseline's "PDF and Markdown together is rejected outright, not
-// silently resolved" rule: main_window.py's open_documents() shows an
-// info dialog and returns without touching pdf_manager/current_mode when
-// both extensions are present in the same selection -- mirrored here via
-// post_status (no native dialog) plus the early return that leaves
-// g_manager and the frontend's markdown state both untouched.
+// Mirrors main_window.py's open_documents() exactly: mixing PDF+Markdown in
+// one selection is rejected with a real info dialog (not just a status-bar
+// message, which is easy to miss), and selecting multiple Markdown files
+// also gets a real dialog before silently proceeding with the first one --
+// both previously silent in this port.
 DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>& paths) {
     if (paths.empty()) {
         post_status(L"ファイル選択をキャンセルしました");
@@ -690,9 +870,11 @@ DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>
     bool has_markdown = false;
     bool has_pdf = false;
     std::filesystem::path first_markdown;
+    int markdown_count = 0;
     for (const auto& path : paths) {
         if (is_markdown_path(path)) {
             has_markdown = true;
+            ++markdown_count;
             if (first_markdown.empty()) first_markdown = path;
         } else {
             has_pdf = true;
@@ -700,8 +882,24 @@ DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>
     }
 
     if (has_markdown && has_pdf) {
-        post_status(L"Markdown と PDF の同時読み込みは未対応です。どちらか一方を選んでください。");
+        const wchar_t* msg = L"Markdown と PDF の同時読み込みは未対応です。どちらか一方を選んでください。";
+        if (is_test_mode()) {
+            post_status(msg);
+        } else {
+            force_foreground_window();
+            MessageBoxW(g_window, msg, L"読み込み方法", MB_OK | MB_ICONINFORMATION);
+        }
         return DocumentOpenOutcome::RejectedMixed;
+    }
+
+    if (markdown_count > 1) {
+        const wchar_t* msg = L"Markdown は1ファイルずつ表示します。先頭の1件を読み込みます。";
+        if (is_test_mode()) {
+            post_status(msg);
+        } else {
+            force_foreground_window();
+            MessageBoxW(g_window, msg, L"読み込み方法", MB_OK | MB_ICONINFORMATION);
+        }
     }
 
     if (has_markdown) {
@@ -742,6 +940,21 @@ void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
     }
 
     const int total_loaded = result.loaded_count + extra_loaded;
+    if (total_loaded > 0 && g_window) SetWindowTextW(g_window, L"QuickMarkPDF");
+    if (!result.duplicate_files.empty()) {
+        std::wstring names;
+        for (std::size_t i = 0; i < result.duplicate_files.size(); ++i) {
+            if (i > 0) names += L", ";
+            names += std::filesystem::u8path(result.duplicate_files[i]).filename().wstring();
+        }
+        const std::wstring msg = L"既に読み込み済みのため読み込みをスキップしました:\n" + names;
+        if (is_test_mode()) {
+            post_status(msg);
+        } else {
+            force_foreground_window();
+            MessageBoxW(g_window, msg.c_str(), L"重複ファイル", MB_OK | MB_ICONINFORMATION);
+        }
+    }
 
     std::wstring failed_json = L"[";
     for (std::size_t i = 0; i < failed_files.size(); ++i) {
@@ -841,12 +1054,170 @@ void handle_close_document(const std::wstring& message) {
     }
 }
 
-// Mirrors main_window.py's save_pdf(): if every loaded page comes from the
-// same single source file, ask whether to overwrite it in place or save as
-// a new file; otherwise go straight to save-as. MB_YESNOCANCEL's fixed
-// button set (rather than the Python baseline's custom-labelled "上書き保存
-// / 新規で保存 / キャンセル" QMessageBox buttons) is a known simplification --
-// the message text spells out what each button does.
+// Markdown -> PDF export via WebView2's own PrintToPdf (ICoreWebView2_7),
+// mirroring main_window.py's _save_markdown_as_pdf (QWebEngineView.printToPdf,
+// A4 portrait, 12mm margins). Unlike Python -- which polls
+// document.body.dataset.rendered before printing, since QWebEngineView loads
+// content via async navigation -- our Markdown content is set synchronously
+// via markdownContent.innerHTML in the SAME script turn that handles the
+// 'markdown_opened' message (no navigation involved), so by the time the
+// user can even see it on screen (and click Save) it is already fully
+// rendered; no readiness poll is needed here.
+// The actual PrintToPdf call, factored out so the TCP test API
+// (qa/check_behaviors_cpp.py) can exercise it with an explicit output path,
+// bypassing the native save-as dialog -- same pattern as load_pdfs'
+// injected "password" field and the QUICKMARKPDF_TEST_OPEN_PATHS hook.
+void export_markdown_to_pdf(const std::filesystem::path& out_path,
+                             std::function<void(bool)> on_complete = nullptr) {
+    if (!g_webview) {
+        post_status(L"PDF変換に失敗しました(WebViewが初期化されていません)");
+        if (on_complete) on_complete(false);
+        return;
+    }
+    ICoreWebView2_2* webview2 = nullptr;
+    if (FAILED(g_webview->QueryInterface(IID_ICoreWebView2_2, reinterpret_cast<void**>(&webview2))) || !webview2) {
+        post_status(L"PDF変換に失敗しました(WebView2バージョンが対応していません)");
+        if (on_complete) on_complete(false);
+        return;
+    }
+    ComPtr<ICoreWebView2_2> webview2_ptr(webview2);
+    ICoreWebView2Environment* env_raw = nullptr;
+    if (FAILED(webview2_ptr->get_Environment(&env_raw)) || !env_raw) {
+        post_status(L"PDF変換に失敗しました(Environment取得エラー)");
+        if (on_complete) on_complete(false);
+        return;
+    }
+    ComPtr<ICoreWebView2Environment> env_ptr(env_raw);
+    ICoreWebView2Environment6* env6_raw = nullptr;
+    if (FAILED(env_ptr->QueryInterface(IID_ICoreWebView2Environment6, reinterpret_cast<void**>(&env6_raw))) ||
+        !env6_raw) {
+        post_status(L"PDF変換に失敗しました(このWebView2バージョンはPDF出力に対応していません)");
+        if (on_complete) on_complete(false);
+        return;
+    }
+    ComPtr<ICoreWebView2Environment6> env6_ptr(env6_raw);
+    ICoreWebView2PrintSettings* settings_raw = nullptr;
+    if (FAILED(env6_ptr->CreatePrintSettings(&settings_raw)) || !settings_raw) {
+        post_status(L"PDF変換に失敗しました(PrintSettings作成エラー)");
+        if (on_complete) on_complete(false);
+        return;
+    }
+    ComPtr<ICoreWebView2PrintSettings> settings(settings_raw);
+    // A4 in inches (8.27 x 11.69) with 12mm (0.4724in) margins on every
+    // side -- matches main_window.py's QPageSize(A4)/QMarginsF(12,12,12,12).
+    settings->put_PageWidth(8.27);
+    settings->put_PageHeight(11.69);
+    settings->put_MarginTop(0.4724);
+    settings->put_MarginBottom(0.4724);
+    settings->put_MarginLeft(0.4724);
+    settings->put_MarginRight(0.4724);
+    settings->put_ShouldPrintBackgrounds(TRUE);
+
+    ICoreWebView2_7* webview7_raw = nullptr;
+    if (FAILED(g_webview->QueryInterface(IID_ICoreWebView2_7, reinterpret_cast<void**>(&webview7_raw))) ||
+        !webview7_raw) {
+        post_status(L"PDF変換に失敗しました(このWebView2バージョンはPDF出力に対応していません)");
+        if (on_complete) on_complete(false);
+        return;
+    }
+    ComPtr<ICoreWebView2_7> webview7(webview7_raw);
+    const std::wstring out_path_w = out_path.wstring();
+    auto* handler = new PrintToPdfCompletedHandler(
+        [out_path_w, on_complete](HRESULT errorCode, BOOL result) -> HRESULT {
+            const bool ok = SUCCEEDED(errorCode) && result;
+            if (ok) {
+                post_status(L"PDFを保存しました: " + out_path_w);
+            } else {
+                post_status(L"PDF変換に失敗しました");
+            }
+            if (on_complete) on_complete(ok);
+            return S_OK;
+        });
+    webview7->PrintToPdf(out_path_w.c_str(), settings.get(), handler);
+    handler->Release();
+    post_status(L"Markdownを PDF に変換しています...");
+}
+
+void handle_save_markdown_pdf() {
+    if (g_current_markdown_path.empty()) {
+        post_status(L"保存するMarkdownがありません");
+        return;
+    }
+    const std::wstring default_name = g_current_markdown_path.stem().wstring() + L".pdf";
+    const auto default_dir = g_last_used_dir.empty() ? g_current_markdown_path.parent_path() : g_last_used_dir;
+    const auto picked = prompt_save_pdf(default_name, default_dir);
+    if (!picked) return;
+    g_last_used_dir = picked->parent_path();
+    export_markdown_to_pdf(*picked);
+}
+
+// Mirrors PDFManager.suggest_export_basename() exactly: single source +
+// single page -> "<stem>_pNNN"; single source + multiple pages ->
+// "<stem>_selected"; multiple sources -> "selected_pages".
+std::wstring suggest_export_basename(const std::vector<std::size_t>& indices) {
+    if (indices.empty()) return L"selected";
+    const auto infos = g_manager.page_infos();
+    std::vector<quickmarkpdf::PdfManager::PageInfo> selected;
+    for (auto i : indices) {
+        if (i < infos.size()) selected.push_back(infos[i]);
+    }
+    if (selected.empty()) return L"selected";
+    std::vector<std::string> unique_sources;
+    for (const auto& info : selected) {
+        if (std::find(unique_sources.begin(), unique_sources.end(), info.source_path) == unique_sources.end()) {
+            unique_sources.push_back(info.source_path);
+        }
+    }
+    const std::wstring stem = std::filesystem::u8path(unique_sources.front()).stem().wstring();
+    if (unique_sources.size() == 1) {
+        if (selected.size() == 1) {
+            wchar_t buf[16];
+            swprintf_s(buf, L"_p%03d", static_cast<int>(selected.front().original_page_index) + 1);
+            return stem + buf;
+        }
+        return stem + L"_selected";
+    }
+    return L"selected_pages";
+}
+
+std::filesystem::path source_dir_for_pages(const std::vector<std::size_t>& indices) {
+    const auto infos = g_manager.page_infos();
+    for (auto i : indices) {
+        if (i < infos.size()) return std::filesystem::u8path(infos[i].source_path).parent_path();
+    }
+    return g_last_used_dir;
+}
+
+// Mirrors main_window.py's _ask_overwrite_or_save_as(): three custom-labelled
+// buttons ("上書き保存" / "新規で保存" / "キャンセル") via TaskDialogIndirect,
+// rather than MessageBoxW's fixed Yes/No/Cancel wording (replaced; that was
+// a known simplification). Returns "overwrite"/"save_as"/"cancel".
+std::wstring ask_overwrite_or_save_as() {
+    if (is_test_mode()) return L"save_as";  // never shown under TCP test automation
+    force_foreground_window();
+
+    TASKDIALOG_BUTTON buttons[] = {
+        {101, L"上書き保存"},
+        {102, L"新規で保存"},
+    };
+    TASKDIALOGCONFIG config{};
+    config.cbSize = sizeof(config);
+    config.hwndParent = g_window;
+    config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION;
+    config.pszWindowTitle = L"保存方法の選択";
+    config.pszMainInstruction = L"保存方法の選択";
+    config.pszContent = L"開いているファイルを上書き保存しますか？\nそれとも新しいファイルとして保存しますか？";
+    config.cButtons = ARRAYSIZE(buttons);
+    config.pButtons = buttons;
+    config.pszMainIcon = TD_INFORMATION_ICON;
+
+    int clicked = 0;
+    if (FAILED(TaskDialogIndirect(&config, &clicked, nullptr, nullptr))) return L"cancel";
+    if (clicked == 101) return L"overwrite";
+    if (clicked == 102) return L"save_as";
+    return L"cancel";
+}
+
 void handle_save_pdf() {
     if (g_manager.get_page_count() == 0) return;
 
@@ -854,14 +1225,9 @@ void handle_save_pdf() {
     bool overwrite = false;
 
     if (g_manager.can_overwrite_source()) {
-        force_foreground_window();
-        const int choice = MessageBoxW(
-            g_window,
-            L"開いているファイルを上書き保存しますか？\n"
-            L"「はい」= 上書き保存 / 「いいえ」= 新しいファイルとして保存 / 「キャンセル」= 中止",
-            L"保存方法の選択", MB_YESNOCANCEL | MB_ICONQUESTION);
-        if (choice == IDCANCEL) return;
-        overwrite = (choice == IDYES);
+        const auto choice = ask_overwrite_or_save_as();
+        if (choice == L"cancel") return;
+        overwrite = (choice == L"overwrite");
     }
 
     if (overwrite) {
@@ -874,8 +1240,9 @@ void handle_save_pdf() {
         return;
     }
 
-    const auto picked = prompt_save_pdf();
+    const auto picked = prompt_save_pdf(L"edited.pdf", g_last_used_dir);
     if (!picked) return;
+    g_last_used_dir = picked->parent_path();
     if (g_manager.save_as(picked->u8string())) {
         post_status(L"保存しました: " + picked->wstring());
     } else {
@@ -893,8 +1260,11 @@ void handle_split_pdf(const std::wstring& message) {
         post_status(L"PDFを切り出したいページをサムネイルで選択してください");
         return;
     }
-    const auto picked = prompt_save_pdf();
+    const auto default_name = suggest_export_basename(indices) + L".pdf";
+    const auto default_dir = source_dir_for_pages(indices);
+    const auto picked = prompt_save_pdf(default_name, default_dir);
     if (!picked) return;
+    g_last_used_dir = picked->parent_path();
     if (g_manager.save_selected_pages(indices, picked->u8string())) {
         post_status(std::to_wstring(indices.size()) + L"ページを切り出しました: " + picked->wstring());
     } else {
@@ -902,32 +1272,58 @@ void handle_split_pdf(const std::wstring& message) {
     }
 }
 
+// #export-overlay (templates/index.html) now supplies every field
+// Python's ExportDialog does -- scope/area handled client-side (indices/
+// crop already reflect the user's scope+area choice by the time this
+// message arrives), format/dpi/jpeg_quality/output_dir/prefix arrive
+// directly instead of the previous MessageBoxW yes/no + bare folder-picker
+// + hardcoded dpi=150/quality=90/prefix="page".
 void handle_export_images(const std::wstring& message) {
     if (g_manager.get_page_count() == 0) return;
     auto indices = extract_size_t_array(message, L"indices");
     const int dpi = extract_int(message, L"dpi", 150);
-
-    // No format-picker dialog exists yet (Python's ExportDialog also covers
-    // scope/crop/output-dir, none of which this port has a UI for either),
-    // so this is a minimal stand-in: a single yes/no choice between the two
-    // formats PdfManager actually supports.
-    force_foreground_window();
-    const int choice = MessageBoxW(g_window, L"JPEG形式で書き出しますか？\n「いいえ」でPNG形式になります。",
-                                    L"画像出力", MB_YESNOCANCEL | MB_ICONQUESTION);
-    if (choice == IDCANCEL) return;
-    const std::string fmt = (choice == IDYES) ? "jpg" : "png";
-
-    const auto folder = prompt_pick_folder();
-    if (!folder) return;
+    const std::string fmt = wide_to_utf8(extract_string(message, L"fmt", L"png"));
+    const int jpeg_quality = extract_int(message, L"jpeg_quality", 90);
+    const std::string prefix = wide_to_utf8(extract_string(message, L"prefix", L"page"));
+    auto output_dir = extract_string(message, L"output_dir");
+    if (output_dir.empty()) {
+        const auto folder = prompt_pick_folder();
+        if (!folder) return;
+        output_dir = folder->wstring();
+    }
+    g_last_used_dir = std::filesystem::path(output_dir);
 
     // "crop" mirrors the TCP test API's field (see dispatch_test_command):
     // an optional [x0,y0,x1,y1] PDF-point rectangle from app.js's rubber-band
     // preview selection (PreviewLabel/get_pdf_clip_rect's C++ counterpart).
     const auto crop = extract_optional_double_array4(message, L"crop");
-    const auto result = g_manager.export_pages_to_images(indices, folder->u8string(), fmt, dpi, "page", crop, 90);
+    const auto result = g_manager.export_pages_to_images(indices, wide_to_utf8(output_dir), fmt, dpi, prefix, crop,
+                                                           jpeg_quality);
     post_status(std::to_wstring(result.success) + L"/" + std::to_wstring(result.attempted) +
                 L" 件の画像を書き出しました（" + (fmt == "jpg" ? L"JPEG" : L"PNG") +
                 (crop ? L"、選択範囲でクロップ" : L"") + L"）");
+}
+
+// Populates #export-overlay's フォルダ/接頭辞 fields once it's already open
+// (see doExport()'s post({type:'get_export_defaults', ...}) call) --
+// mirrors ExportDialog's constructor computing initial_dir/suggested_prefix
+// from PDFManager.get_source_dir_for_pages()/suggest_export_basename()
+// before the dialog is even shown.
+void handle_get_export_defaults(const std::wstring& message) {
+    const auto indices = extract_size_t_array(message, L"indices");
+    const auto dir = g_last_used_dir.empty() ? source_dir_for_pages(indices) : g_last_used_dir;
+    const auto prefix = suggest_export_basename(indices);
+    const std::wstring response = L"{\"type\":\"export_defaults\",\"output_dir\":" + json_string(dir.wstring()) +
+                                   L",\"prefix\":" + json_string(prefix) + L"}";
+    if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
+}
+
+void handle_browse_export_folder() {
+    const auto folder = prompt_pick_folder();
+    if (!folder) return;
+    g_last_used_dir = *folder;
+    const std::wstring response = L"{\"type\":\"folder_picked\",\"path\":" + json_string(folder->wstring()) + L"}";
+    if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
 }
 
 // =====================
@@ -939,6 +1335,18 @@ void handle_export_images(const std::wstring& message) {
 // WebMessage bridge. Only reachable when QUICKMARKPDF_TEST_PORT is set (see
 // maybe_start_test_api_server's call site in wWinMain); a normal user run
 // never has this code path invoked.
+
+// Set by export_markdown_to_pdf's completion callback. PrintToPdf is
+// inherently async (its callback fires later on the same message loop that
+// dispatch_test_command is itself invoked from via WM_APP_TEST_COMMAND) --
+// blocking dispatch_test_command until completion would deadlock the very
+// message pump PrintToPdf needs to finish, so the TCP command returns
+// immediately after starting the export, and a separate polled command
+// reports the result once it lands (mirrors qa/'s existing "poll, don't
+// block on WebView2 async work" pattern -- see selenium_client.py's
+// wait_bridge_alive docstring for why blocking on this kind of async isn't
+// safe here).
+std::atomic<int> g_last_markdown_pdf_result{-1};  // -1 = none yet, 0 = failed, 1 = succeeded
 
 std::wstring get_test_state_json() {
     return L"{\"page_count\":" + std::to_wstring(g_manager.get_page_count()) + L",\"can_undo\":" +
@@ -1018,6 +1426,13 @@ std::wstring dispatch_test_command(const std::wstring& message) {
             const bool ok = g_manager.save_selected_pages(extract_size_t_array(message, L"indices"),
                                                             wide_to_utf8(extract_string(message, L"output_path")));
             return L"{\"ok\":" + std::wstring(ok ? L"true" : L"false") + L"}";
+        } else if (type == L"save_markdown_pdf") {
+            g_last_markdown_pdf_result = -1;
+            const auto out_path = std::filesystem::path(extract_string(message, L"output_path"));
+            export_markdown_to_pdf(out_path, [](bool ok) { g_last_markdown_pdf_result = ok ? 1 : 0; });
+            return L"{\"started\":true}";
+        } else if (type == L"get_markdown_pdf_result") {
+            return L"{\"result\":" + std::to_wstring(g_last_markdown_pdf_result.load()) + L"}";
         } else if (type == L"load_documents") {
             const auto paths_w = extract_string_array(message, L"paths");
             std::vector<std::filesystem::path> paths;
@@ -1119,8 +1534,14 @@ void dispatch_message(const std::wstring& message) {
         handle_close_document(message);
     } else if (type == L"export_images") {
         handle_export_images(message);
+    } else if (type == L"get_export_defaults") {
+        handle_get_export_defaults(message);
+    } else if (type == L"browse_export_folder") {
+        handle_browse_export_folder();
     } else if (type == L"save_pdf") {
         handle_save_pdf();
+    } else if (type == L"save_markdown_pdf") {
+        handle_save_markdown_pdf();
     } else if (type == L"split_pdf") {
         handle_split_pdf(message);
     }
@@ -1254,6 +1675,8 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         }
         return 0;
     case WM_DESTROY:
+        save_window_geometry(window);
+        save_last_used_dir_setting();
         if (g_webview) {
             g_webview->Release();
             g_webview = nullptr;
@@ -1346,15 +1769,24 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     // 1280x820 regardless of the current DPI/theme's border metrics.
     const DWORD window_style = WS_OVERLAPPEDWINDOW;
     const DWORD window_ex_style = offscreen ? WS_EX_LAYERED : 0;
-    RECT client_rect{0, 0, 1280, 820};
-    AdjustWindowRectEx(&client_rect, window_style, FALSE, window_ex_style);
 
-    g_window = CreateWindowExW(
-        window_ex_style, window_class.lpszClassName, L"QuickMarkPDF",
-        window_style, CW_USEDEFAULT, CW_USEDEFAULT,
-        client_rect.right - client_rect.left, client_rect.bottom - client_rect.top,
-        nullptr, nullptr, instance, nullptr);
+    // A saved geometry (previous session's GetWindowRect, i.e. already the
+    // OUTER rect) is used as-is; falling back to the 1280x820 CLIENT default
+    // goes through AdjustWindowRectEx same as before. Never loaded/applied
+    // in offscreen (QA) mode -- see load_window_geometry's doc comment.
+    const auto saved_geo = load_window_geometry();
+    int window_x = saved_geo.x, window_y = saved_geo.y, window_w = saved_geo.width, window_h = saved_geo.height;
+    if (window_x == CW_USEDEFAULT) {
+        RECT client_rect{0, 0, window_w, window_h};
+        AdjustWindowRectEx(&client_rect, window_style, FALSE, window_ex_style);
+        window_w = client_rect.right - client_rect.left;
+        window_h = client_rect.bottom - client_rect.top;
+    }
+
+    g_window = CreateWindowExW(window_ex_style, window_class.lpszClassName, L"QuickMarkPDF", window_style, window_x,
+                                window_y, window_w, window_h, nullptr, nullptr, instance, nullptr);
     if (!g_window) return 1;
+    load_last_used_dir_setting();
 
     if (offscreen) SetLayeredWindowAttributes(g_window, 0, 0, LWA_ALPHA);  // alpha=0: fully invisible
 

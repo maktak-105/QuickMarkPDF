@@ -75,7 +75,11 @@ mappings:
   # ウィンドウ全体・大枠のレイアウト(意味的に一番近いコンテナ同士)
   "MainWindow": "html/body"
   "MainWindow/QStatusBar": "html/body/footer"
-  "MainWindow/QStatusBar/QSizeGrip": "html/body/footer/size-grip"
+  # QSizeGripは意図的に対応させない。2026-08-20、一度は測定用のダミー要素
+  # (#size-grip、機能を持たない13x13pxの飾り)を追加して「一致」させたが、
+  # 実際の機能を移植したものではなく数字の水増しだと指摘を受け、削除した。
+  # WebView2のウィンドウはOSネイティブの枠でリサイズされるため、Python版の
+  # QSizeGripに対応する実体は存在しない。未計測のまま残すのが正直な状態。
 
 # C++側にのみ存在し、Python版に対応するUI要素が無いもの。
 # 「余分に存在すること自体」が不一致であり、対応がつけられないから消すのではなく、

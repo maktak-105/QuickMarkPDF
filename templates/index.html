@@ -48,6 +48,63 @@
   <main class="markdown-workspace" id="markdown-workspace" hidden>
     <article id="markdown-content" class="markdown-content"></article>
   </main>
+  <div class="modal-overlay" id="export-overlay" hidden>
+    <div class="modal export-modal">
+      <h2>画像としてエクスポート</h2>
+      <fieldset class="modal-group">
+        <legend>出力対象</legend>
+        <label class="radio-row"><input type="radio" name="export-scope" value="all" id="export-scope-all">すべてのページ（<span id="export-total-count">0</span>ページ）</label>
+        <label class="radio-row"><input type="radio" name="export-scope" value="selected" id="export-scope-selected">選択中のページ（<span id="export-selected-count">0</span>ページ）</label>
+      </fieldset>
+      <fieldset class="modal-group">
+        <legend>出力領域</legend>
+        <label class="radio-row"><input type="radio" name="export-area" value="all" id="export-area-all">ページ全体</label>
+        <label class="radio-row"><input type="radio" name="export-area" value="crop" id="export-area-crop">クロップした範囲</label>
+      </fieldset>
+      <fieldset class="modal-group">
+        <legend>画像設定</legend>
+        <div class="modal-row">
+          <label for="export-format">形式:</label>
+          <select id="export-format">
+            <option value="png">PNG（可逆・高品質）</option>
+            <option value="jpg">JPEG（圧縮）</option>
+          </select>
+        </div>
+        <div class="modal-row">
+          <label for="export-dpi-preset">解像度 (DPI):</label>
+          <select id="export-dpi-preset">
+            <option value="72">72（画面・軽量）</option>
+            <option value="150" selected>150（標準）</option>
+            <option value="300">300（印刷品質）</option>
+            <option value="0">カスタム...</option>
+          </select>
+          <input type="number" id="export-dpi-custom" min="50" max="1200" value="150" disabled>
+        </div>
+        <div class="modal-row" id="export-quality-row">
+          <label for="export-quality">JPEG画質:</label>
+          <input type="range" id="export-quality" min="60" max="100" value="90" disabled>
+          <span id="export-quality-label">90</span>
+        </div>
+      </fieldset>
+      <fieldset class="modal-group">
+        <legend>保存先</legend>
+        <div class="modal-row">
+          <label for="export-dir">フォルダ:</label>
+          <input type="text" id="export-dir">
+          <button type="button" id="export-browse">参照...</button>
+        </div>
+        <div class="modal-row">
+          <label for="export-prefix">接頭辞:</label>
+          <input type="text" id="export-prefix" placeholder="page など">
+        </div>
+        <div class="modal-example" id="export-example"></div>
+      </fieldset>
+      <div class="modal-buttons">
+        <button type="button" id="export-cancel">キャンセル</button>
+        <button type="button" id="export-run" class="primary">エクスポート実行</button>
+      </div>
+    </div>
+  </div>
   <div class="modal-overlay" id="preferences-overlay" hidden>
     <div class="modal preferences-modal">
       <h2>環境設定</h2>
@@ -64,7 +121,6 @@
   </div>
   <footer class="statusbar">
     <span id="status">準備完了</span>
-    <span id="size-grip" aria-hidden="true"></span>
   </footer>
   <script src="../static/js/app.js"></script>
 </body>
