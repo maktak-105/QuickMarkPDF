@@ -45,6 +45,7 @@ output/
 dist/PDF_Editor/
 dist_tmp/
 *.manifest
+!core/native/QuickMarkPDF.manifest
 
 # Keep the distribution documentation and empty asset folders tracked.
 !dist/documents/

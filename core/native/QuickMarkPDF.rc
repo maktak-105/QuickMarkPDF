@@ -1,6 +1,11 @@
 #define IDI_ICON1 101
 IDI_ICON1 ICON "QuickMarkPDF.ico"
 
+// Common Controls v6 (TaskDialogIndirect等) を有効化するためのアプリケーションマニフェスト。
+// これが無いとシステムの旧comctl32.dll(v5)がロードされ、TaskDialogIndirectの
+// エントリポイントが見つからず起動時にクラッシュする。
+1 24 "QuickMarkPDF.manifest"
+
 1 VERSIONINFO
 FILEVERSION 0,1,0,0
 PRODUCTVERSION 0,1,0,0
