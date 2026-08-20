@@ -36,7 +36,11 @@ body { display: flex; flex-direction: column; background: #1e1e1e; color: #20202
 }
 /* 高さはqa/baseline.json実測値(QToolBar: 1行目56px、2行目24px)に合わせている。
    ボタン自身の高さはこの高さ - padding(2px上下)から自動的に決まる。 */
-.toolbar.size-toolbar { height: 24px; align-items: center; padding: 0 2px; gap: 1px; }
+/* gap:0 -- Python版のサムネイルサイズツールバーは要素間に隙間が無い(qa/baseline.json実測:
+   ラベル終端=小の開始=46、小の終端=中の開始=74 と、常に0px)。1pxでも入れると3要素分
+   累積してドリフトする(実測: 小+1px、中+2px、大+3pxとズレていき、大だけ許容誤差を
+   超えて不一致になった)。 */
+.toolbar.size-toolbar { height: 24px; align-items: center; padding: 0 2px; gap: 0; }
 .toolbar:not(.size-toolbar) { height: 56px; padding: 2px; gap: 0; }
 /* qa/baseline.json実測: セパレータ自体は6px幅×ツールバー内側の高さ(52px)いっぱいで、
    代表色(最頻色)は#f3f3f3(ツールバー背景そのもの)= 中の線は少数派ピクセルで背景色が
@@ -75,7 +79,8 @@ button.tool:disabled { opacity: .38; cursor: default; }
 
 /* サムネイルサイズツールバー（テキストのみ、トグルボタン） */
 .size-toolbar .size-label {
-  font-size: 11px; color: #202020; padding: 0 8px; opacity: .7;
+  font-size: 11px; color: #202020; padding: 0 9px; opacity: .7;
+  height: 20px; display: flex; align-items: center; box-sizing: border-box;
 }
 .size-btn {
   border: 1px solid transparent; border-radius: 3px; background: transparent;
