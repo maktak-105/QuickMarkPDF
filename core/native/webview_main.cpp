@@ -1445,6 +1445,13 @@ std::wstring dispatch_test_command(const std::wstring& message) {
             return L"{\"started\":true}";
         } else if (type == L"get_markdown_pdf_result") {
             return L"{\"result\":" + std::to_wstring(g_last_markdown_pdf_result.load()) + L"}";
+        } else if (type == L"get_last_used_dir") {
+            // Read-only introspection of g_last_used_dir, so a test can confirm
+            // it was actually updated by a REAL message-handler code path
+            // (e.g. handle_export_images via a real export_images message)
+            // rather than only by a TCP command that calls PdfManager/other
+            // logic directly and bypasses that handler.
+            return L"{\"last_used_dir\":" + json_string(g_last_used_dir.wstring()) + L"}";
         } else if (type == L"load_documents") {
             const auto paths_w = extract_string_array(message, L"paths");
             std::vector<std::filesystem::path> paths;
