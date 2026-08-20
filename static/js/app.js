@@ -378,7 +378,14 @@
 
     const number = document.createElement('div');
     number.className = 'page-number';
-    number.textContent = `p.${index + 1}`;
+    // page.source_page is the page's ORIGINAL index within its source file
+    // (webview_main.cpp's pages_json(), from PageInfo::original_page_index)
+    // -- matches thumbnail_panel.py's f"p.{info.original_page_index + 1}".
+    // Using index+1 here (the position in the CURRENT edited document, same
+    // value the gutter number already shows) made both numbers identical
+    // and meaningless for any document that had pages reordered, merged
+    // from multiple files, or partially deleted.
+    number.textContent = `p.${page.source_page + 1}`;
     body.appendChild(number);
 
     item.appendChild(body);

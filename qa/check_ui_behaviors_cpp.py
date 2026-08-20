@@ -25,7 +25,7 @@ import fitz  # PyMuPDF, for building test fixtures
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "qa"))
-from selenium_client import connect, disconnect  # noqa: E402
+from selenium_client import connect, disconnect, post_message  # noqa: E402
 import db  # noqa: E402
 
 EXE_PATH = REPO_ROOT / "dist" / "binary" / "QuickMarkPDF.exe"
@@ -198,6 +198,34 @@ def main():
                 f"実際に#crop-overlayが生成され、サイズは{overlay}だった"
             )
         check("preview_crop_area_selection", _crop_selection)
+
+        def _page_number_labels_distinct():
+            # 3ページ中1ページ目(index 0)を削除すると、残る2ページの
+            # source_page(元ファイル内での通し番号)は1,2のままだが、
+            # 編集後の位置(ガター番号)は1,2に詰まる -- 削除前は
+            # 両方とも1,2,3で偶然一致していたのが、削除後は
+            # ガター=1,2 / p.N=2,3 と実際に食い違うことを確認する
+            # (thumbnail_panel.py: f"p.{info.original_page_index + 1}" と
+            # 同じ意味を持たせる修正を検証)。
+            post_message(driver, {"type": "delete_pages", "indices": [0]})
+            time.sleep(1.0)
+            labels = driver.execute_script("""
+                return Array.from(document.querySelectorAll('.page-item')).map(item => ({
+                    gutter: item.querySelector('.page-gutter').textContent,
+                    pageNumber: item.querySelector('.page-number').textContent,
+                }));
+            """)
+            ok = (
+                len(labels) == 2
+                and labels[0]["gutter"] == "1" and labels[0]["pageNumber"] == "p.2"
+                and labels[1]["gutter"] == "2" and labels[1]["pageNumber"] == "p.3"
+            )
+            return "削除前: 両方とも1,2,3", labels, ok, (
+                f"3ページの文書から1ページ目を削除したところ、残り2ページの表示が{labels}になった"
+                "(ガター番号=編集後の位置、p.N=削除前の元ファイル内での番号、という異なる意味の"
+                "2つの数値が実際に別々の値になった)"
+            )
+        check("page_number_labels_distinct_from_position", _page_number_labels_distinct)
     finally:
         disconnect(proc, driver)
 
