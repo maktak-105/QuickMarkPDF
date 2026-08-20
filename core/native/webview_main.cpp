@@ -775,7 +775,9 @@ void handle_render_page(const std::wstring& message) {
         const std::wstring response = L"{\"type\":\"page_rendered\",\"page_index\":" +
                                        std::to_wstring(page_index) + L",\"width\":" +
                                        std::to_wstring(rendered.width) + L",\"height\":" +
-                                       std::to_wstring(rendered.height) + L",\"pixels\":\"" +
+                                       std::to_wstring(rendered.height) + L",\"page_width_pt\":" +
+                                       std::to_wstring(rendered.page_width_pt) + L",\"page_height_pt\":" +
+                                       std::to_wstring(rendered.page_height_pt) + L",\"pixels\":\"" +
                                        std::wstring(pixels_b64.begin(), pixels_b64.end()) + L"\"}";
         g_webview->PostWebMessageAsString(response.c_str());
     } catch (const std::exception&) {
@@ -918,10 +920,14 @@ void handle_export_images(const std::wstring& message) {
     const auto folder = prompt_pick_folder();
     if (!folder) return;
 
-    const auto result =
-        g_manager.export_pages_to_images(indices, folder->u8string(), fmt, dpi, "page", std::nullopt, 90);
+    // "crop" mirrors the TCP test API's field (see dispatch_test_command):
+    // an optional [x0,y0,x1,y1] PDF-point rectangle from app.js's rubber-band
+    // preview selection (PreviewLabel/get_pdf_clip_rect's C++ counterpart).
+    const auto crop = extract_optional_double_array4(message, L"crop");
+    const auto result = g_manager.export_pages_to_images(indices, folder->u8string(), fmt, dpi, "page", crop, 90);
     post_status(std::to_wstring(result.success) + L"/" + std::to_wstring(result.attempted) +
-                L" 件の画像を書き出しました（" + (fmt == "jpg" ? L"JPEG" : L"PNG") + L"）");
+                L" 件の画像を書き出しました（" + (fmt == "jpg" ? L"JPEG" : L"PNG") +
+                (crop ? L"、選択範囲でクロップ" : L"") + L"）");
 }
 
 // =====================

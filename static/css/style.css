@@ -126,6 +126,12 @@ button.tool:disabled { opacity: .38; cursor: default; }
   align-items: center; justify-content: center; padding: 0; position: relative;
 }
 .preview img { background: #fff; }
+/* QRubberBand相当。位置は app.js の renderCropOverlay() が img.offsetLeft/Top
+   基準(previewの現在のスクロール位置に依存しない座標)で設定する。 */
+#crop-overlay {
+  position: absolute; border: 1px solid #4a90d9; background: rgba(74, 144, 217, .2);
+  pointer-events: none;
+}
 .welcome { text-align: center; color: #aaaaaa; }
 .welcome h1 { font-size: 26px; margin: 0 0 10px; }
 .welcome p { font-size: 13px; }

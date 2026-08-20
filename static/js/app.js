@@ -59,6 +59,17 @@
   let vScrollStart = 0;
   let zoomDragStart = 1.0;
 
+  // クロップ範囲選択(PreviewLabel.get_pdf_clip_rect相当)。cropSelectionは
+  // previewNaturalWidth/Height基準(=ズーム前のレンダリング座標)の矩形。
+  // ページ寸法(PDFポイント)はrender_pageの応答から得る -- previewNaturalWidthピクセルが
+  // pageWidthPtポイントに相当するので、比率(pageWidthPt/previewNaturalWidth)で変換する。
+  let pageWidthPt = 0;
+  let pageHeightPt = 0;
+  let cropSelection = null;  // {x0,y0,x1,y1} in previewNaturalWidth/Height px space, or null
+  let cropDragging = false;
+  let cropDragOriginX = 0;
+  let cropDragOriginY = 0;
+
   const hasBridge = () => Boolean(window.chrome?.webview);
   const post = (payload) => {
     if (hasBridge()) window.chrome.webview.postMessage(JSON.stringify(payload));
@@ -585,6 +596,87 @@
   });
   previewEl.addEventListener('contextmenu', (event) => event.preventDefault());
 
+  // ── クロップ範囲選択(PreviewLabel相当。左ドラッグでラバーバンド選択) ──
+  function clearCropSelection() {
+    cropSelection = null;
+    const overlay = document.querySelector('#crop-overlay');
+    if (overlay) overlay.remove();
+  }
+  function renderCropOverlay(naturalRect) {
+    const img = previewEl.querySelector('img');
+    if (!img) return;
+    let overlay = document.querySelector('#crop-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'crop-overlay';
+      previewEl.appendChild(overlay);
+    }
+    // img.offsetLeft/Top is relative to previewEl (its offsetParent, since
+    // .preview has position:relative) and -- unlike getBoundingClientRect --
+    // is unaffected by previewEl's current scroll position, which is exactly
+    // what an absolutely-positioned sibling that should scroll along with
+    // the image needs.
+    overlay.style.left = `${img.offsetLeft + naturalRect.x0 * currentZoom}px`;
+    overlay.style.top = `${img.offsetTop + naturalRect.y0 * currentZoom}px`;
+    overlay.style.width = `${(naturalRect.x1 - naturalRect.x0) * currentZoom}px`;
+    overlay.style.height = `${(naturalRect.y1 - naturalRect.y0) * currentZoom}px`;
+  }
+  // previewEl自体はスクロールコンテナで、img自体もcurrentZoomでスケールされているため、
+  // オーバーレイの位置は「imgの左上からのnatural(ズーム前)座標」で管理し、img自体を
+  // 親要素として使う(previewEl直下だとスクロール位置分のズレが出るため)。
+  previewEl.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || currentMode !== 'pdf' || !previewNaturalWidth) return;
+    const img = previewEl.querySelector('img');
+    if (!img) return;
+    const rect = img.getBoundingClientRect();
+    const nx = (event.clientX - rect.left) / currentZoom;
+    const ny = (event.clientY - rect.top) / currentZoom;
+    if (nx < 0 || ny < 0 || nx > previewNaturalWidth || ny > previewNaturalHeight) {
+      clearCropSelection();
+      return;
+    }
+    cropDragging = true;
+    cropDragOriginX = nx;
+    cropDragOriginY = ny;
+    clearCropSelection();
+    event.preventDefault();
+  });
+  window.addEventListener('mousemove', (event) => {
+    if (!cropDragging) return;
+    const img = previewEl.querySelector('img');
+    if (!img) return;
+    const rect = img.getBoundingClientRect();
+    const nx = Math.max(0, Math.min((event.clientX - rect.left) / currentZoom, previewNaturalWidth));
+    const ny = Math.max(0, Math.min((event.clientY - rect.top) / currentZoom, previewNaturalHeight));
+    const naturalRect = {
+      x0: Math.min(cropDragOriginX, nx), y0: Math.min(cropDragOriginY, ny),
+      x1: Math.max(cropDragOriginX, nx), y1: Math.max(cropDragOriginY, ny),
+    };
+    renderCropOverlay(naturalRect);
+  });
+  window.addEventListener('mouseup', (event) => {
+    if (event.button !== 0 || !cropDragging) return;
+    cropDragging = false;
+    const overlay = document.querySelector('#crop-overlay');
+    const w = overlay ? parseFloat(overlay.style.width) : 0;
+    const h = overlay ? parseFloat(overlay.style.height) : 0;
+    // PythonのmouseReleaseEventと同じ閾値(5px、ズーム後の画面ピクセル基準):
+    // ドラッグ幅がほぼ0ならクリックとして扱い選択解除する。
+    if (w > 5 && h > 5 && overlay) {
+      const img = previewEl.querySelector('img');
+      const offsetLeft = img ? img.offsetLeft : 0;
+      const offsetTop = img ? img.offsetTop : 0;
+      const left = parseFloat(overlay.style.left) - offsetLeft;
+      const top = parseFloat(overlay.style.top) - offsetTop;
+      cropSelection = {
+        x0: left / currentZoom, y0: top / currentZoom,
+        x1: (left + w) / currentZoom, y1: (top + h) / currentZoom,
+      };
+    } else {
+      clearCropSelection();
+    }
+  });
+
   // ── 「設定」メニュー & 環境設定モーダル ──
   const settingsMenu = document.querySelector('#settings-menu');
   const settingsDropdown = document.querySelector('#settings-dropdown');
@@ -636,7 +728,19 @@
   }
   function doExport(indices) {
     if (pages.length === 0) return;
-    post({ type: 'export_images', indices: indices || [], dpi: 150 });
+    const payload = { type: 'export_images', indices: indices || [], dpi: 150 };
+    // pageWidthPt/previewNaturalWidth converts the selection from rendered-
+    // preview pixels to PDF points (page-space, pre-rotation-scale) --
+    // matches PreviewLabel.get_pdf_clip_rect()'s 1.5px/pt conversion, just
+    // with our own render width instead of Python's fixed 1.5x.
+    if (cropSelection && pageWidthPt > 0 && previewNaturalWidth > 0) {
+      const ptPerPx = pageWidthPt / previewNaturalWidth;
+      payload.crop = [
+        cropSelection.x0 * ptPerPx, cropSelection.y0 * ptPerPx,
+        cropSelection.x1 * ptPerPx, cropSelection.y1 * ptPerPx,
+      ];
+    }
+    post(payload);
   }
   function doSave() {
     if (pages.length === 0) return;
@@ -729,6 +833,12 @@
           paintImage(img, data);
           previewNaturalWidth = data.width;
           previewNaturalHeight = data.height;
+          pageWidthPt = data.page_width_pt || 0;
+          pageHeightPt = data.page_height_pt || 0;
+          // Matches PreviewLabel.set_base_pixmap: a freshly displayed page
+          // (even if it's the same page re-rendered after rotate/undo)
+          // clears any crop selection from before.
+          clearCropSelection();
           fitPreviewToWidth();
           // A fresh page should always open showing its top, not wherever
           // the previous page happened to be scrolled to.

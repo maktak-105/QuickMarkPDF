@@ -13,17 +13,28 @@ import db
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def parts_match(py_p, cpp_p, pos_tol=3, size_tol=3, hue_tol=10, sv_tol=10):
+def parts_match(py_p, cpp_p, tol_pct=0.10, min_tol_px=2, hue_tol=10, sv_tol=10):
     """True/False once both sides have a measurement, None if the C++ side
     hasn't been measured yet (kept out of the pass/fail denominator rather
     than counted as a fail, since "not measured" and "measured and wrong"
     are different facts).
+
+    Position/size tolerance is +-10% of that part's own Python-measured
+    width/height (user instruction, 2026-08-20: treat small coordinate
+    drift as acceptable for now rather than chasing every last pixel) --
+    min_tol_px keeps very small parts (e.g. a 4px splitter handle) from
+    getting an unreasonably tight tolerance.
     """
     if cpp_p is None:
         return None
     pr, cr = py_p["rect"], cpp_p["rect"]
-    pos_ok = abs(pr["x"] - cr["x"]) <= pos_tol and abs(pr["y"] - cr["y"]) <= pos_tol
-    size_ok = abs(pr["w"] - cr["w"]) <= size_tol and abs(pr["h"] - cr["h"]) <= size_tol
+
+    def within(a, b, scale):
+        tol = max(min_tol_px, abs(scale) * tol_pct)
+        return abs(a - b) <= tol
+
+    pos_ok = within(pr["x"], cr["x"], pr["w"]) and within(pr["y"], cr["y"], pr["h"])
+    size_ok = within(pr["w"], cr["w"], pr["w"]) and within(pr["h"], cr["h"], pr["h"])
     py_hsv, cpp_hsv = py_p["hsv"], cpp_p["hsv"]
     if py_hsv and cpp_hsv:
         dh = abs(py_hsv["h"] - cpp_hsv["h"])

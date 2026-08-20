@@ -229,6 +229,8 @@ RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_i
     RenderedPage result;
     result.width = target_width;
     result.height = target_height;
+    result.page_width_pt = page_width;
+    result.page_height_pt = page_height;
     result.rgba.resize(static_cast<std::size_t>(target_width) * static_cast<std::size_t>(target_height) * 4);
 
     const auto* buffer = static_cast<const unsigned char*>(api.BitmapGetBuffer(bitmap));

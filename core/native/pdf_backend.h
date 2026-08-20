@@ -30,6 +30,12 @@ struct RenderedPage {
     int width = 0;
     int height = 0;
     std::vector<unsigned char> rgba;
+    // The page's own size in PDF points (after `rotation` is applied, so it
+    // matches the orientation of width/height above) -- lets a caller that
+    // only knows the rendered pixel size convert a selection rectangle back
+    // to PDF points (e.g. for ClipRectPt) without a separate query.
+    double page_width_pt = 0;
+    double page_height_pt = 0;
 };
 
 // Thrown by PdfBackend::inspect / PdfBackend::save when a source PDF is
