@@ -180,6 +180,13 @@ def build(
     parts_cpp_measured = 0
     parts_cpp_matched = 0
     rows_parts = []
+    # Python's findChildren can return several parts with the IDENTICAL path
+    # string (e.g. three unlabeled QToolBar separator QWidgets) -- a plain
+    # {python_path: cpp_path} dict can only ever point at one of them, so
+    # part_mapping.yaml may disambiguate repeats with a 1-based "path[N]"
+    # suffix (N = which occurrence, in list order); look that up first and
+    # fall back to the plain path for everything that isn't duplicated.
+    path_occurrence = {}
     for p in parts:
         r = p["rect"]
         rect_valid = r["w"] > 0 and r["h"] > 0
@@ -190,7 +197,10 @@ def build(
         mark = "PASS" if ok else "FAIL"
         reason = "" if ok else (" rect不正" if not rect_valid else "") + (" HSV取得失敗" if not hsv_valid else "")
 
-        mapped_cpp_path = part_mapping.get(p["path"])
+        occurrence = path_occurrence.get(p["path"], 0) + 1
+        path_occurrence[p["path"]] = occurrence
+        indexed_key = f"{p['path']}[{occurrence}]"
+        mapped_cpp_path = part_mapping.get(indexed_key) or part_mapping.get(p["path"])
         cpp_p = cpp_parts_by_path.get(mapped_cpp_path) if mapped_cpp_path else None
         if cpp_p is None:
             cpp_rect_cell = f'<td class="cpp-missing">{CPP_NOT_MEASURED}</td>'

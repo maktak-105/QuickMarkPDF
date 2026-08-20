@@ -34,17 +34,40 @@ body { display: flex; flex-direction: column; background: #1e1e1e; color: #20202
   flex: 0 0 auto; display: flex; align-items: stretch; gap: 0;
   background: #f3f3f3;
 }
-.toolbar.size-toolbar { height: 26px; align-items: center; padding: 0 2px; gap: 1px; }
-.toolbar:not(.size-toolbar) { height: 58px; padding: 2px; gap: 0; }
-.toolbar .sep { width: 1px; align-self: stretch; margin: 6px 3px; background: #d3d3d3; }
+/* 高さはqa/baseline.json実測値(QToolBar: 1行目56px、2行目24px)に合わせている。
+   ボタン自身の高さはこの高さ - padding(2px上下)から自動的に決まる。 */
+.toolbar.size-toolbar { height: 24px; align-items: center; padding: 0 2px; gap: 1px; }
+.toolbar:not(.size-toolbar) { height: 56px; padding: 2px; gap: 0; }
+/* qa/baseline.json実測: セパレータ自体は6px幅×ツールバー内側の高さ(52px)いっぱいで、
+   代表色(最頻色)は#f3f3f3(ツールバー背景そのもの)= 中の線は少数派ピクセルで背景色が
+   支配的、ということ。箱のサイズを実測値に合わせ、線は::afterの疑似要素で中央に
+   細く描く(箱自体の背景は透明のまま、代表色測定が背景色寄りになるようにする)。 */
+.toolbar .sep {
+  width: 6px; align-self: stretch; margin: 0; position: relative;
+}
+.toolbar .sep::after {
+  content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1px;
+  background: #d3d3d3; transform: translateX(-50%);
+}
 
 /* メインツールバーのアイコン+テキストボタン（Python版 ToolButtonTextUnderIcon 相当） */
 button.tool {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 2px; border: 1px solid transparent; border-radius: 4px; background: transparent;
-  padding: 3px 8px; font-size: 11px; color: #202020; cursor: pointer;
-  width: max-content; min-width: 45px;
+  padding: 3px 3px; font-size: 11px; color: #202020; cursor: pointer;
+  width: max-content; min-width: 39px;
 }
+/* 幅を実測値ぴったりに固定した際、パディングが広いまま(元8px)だと「PDF切り出し」の
+   ような長いラベルが折り返してツールバー全体の高さを崩す。折り返し禁止+パディング
+   縮小の両方で対処する。 */
+button.tool span { white-space: nowrap; }
+/* 各ボタンの幅はqa/baseline.json実測値をそのまま指定している(Qtの自動サイズ計算は
+   ラベルごとに異なる余白を持つらしく、CSSのauto幅では再現できなかった -- 詳細は
+   plans/2026-08-20_*.md参照)。 */
+#open-button, #save-button, #export-button { width: 64px; }
+#split-button { width: 77px; }
+#rotate-right-button, #rotate-left-button { width: 45px; }
+#rotate-180-button { width: 39px; }
 button.tool img { width: 24px; height: 24px; object-fit: contain; }
 button.tool:hover:not(:disabled) { background: #e5e5e5; border-color: #d0d0d0; }
 button.tool:active:not(:disabled) { background: #d8d8d8; }
@@ -56,7 +79,8 @@ button.tool:disabled { opacity: .38; cursor: default; }
 }
 .size-btn {
   border: 1px solid transparent; border-radius: 3px; background: transparent;
-  padding: 2px 10px; font-size: 12px; color: #202020; cursor: pointer; height: 22px;
+  padding: 2px 7px; font-size: 12px; color: #202020; cursor: pointer;
+  height: 20px; width: 28px;
 }
 .size-btn:hover:not(:disabled) { background: #e5e5e5; }
 .size-btn.checked { background: #0067c0; color: #ffffff; }
@@ -89,8 +113,12 @@ button.tool:disabled { opacity: .38; cursor: default; }
 /* ── サムネイルパネル ── */
 .thumbnail-panel {
   overflow-y: auto; background: #fefefe; border-right: 1px solid #d3d3d3;
-  padding: 2px;
+  padding: 2px; display: flex; flex-direction: column;
 }
+/* Qtのqt_scrollarea_viewportはページが無くても常にスクロール領域いっぱいの高さを
+   持つ(実測674px = パネル678px - padding4px)。#page-listも同じ高さを持つよう
+   flex:1で親いっぱいに広げる(空状態のプレースホルダ文言のときも同様)。 */
+#page-list { flex: 1 1 auto; }
 .thumbnail-panel.empty, #page-list.empty {
   color: #888; font-size: 13px; text-align: center; padding: 24px 8px;
 }
