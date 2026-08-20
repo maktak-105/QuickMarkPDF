@@ -421,7 +421,14 @@
   function renderPageList(data) {
     pages = data.pages || [];
     canUndo = Boolean(data.can_undo);
-    setMode('pdf');
+    // setMode('pdf') used to live here unconditionally, which meant ANY
+    // document_state message -- including the read-only echo "get_state"
+    // triggers (see dispatch_message in webview_main.cpp) -- forced the UI
+    // out of Markdown mode even when nothing PDF-related had happened.
+    // Found via qa/check_ui_behaviors_cpp.py: querying state while in
+    // Markdown mode silently snapped the view back to the (empty) PDF
+    // workspace. Only the pdf_opened handler (a real "a PDF was just
+    // loaded" event) should switch mode now.
 
     if (pages.length === 0) {
       pageList.className = 'empty';
@@ -810,6 +817,7 @@
           }
           setStatus(message);
         }
+        setMode('pdf');
         renderPageList(data);
       }
 
