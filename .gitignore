@@ -82,17 +82,16 @@ tests/reports/
 htmlcov/
 
 # qa/: downloaded WebDriver binary and per-run temp artifacts are not tracked.
-# qa/baseline.json is the exception -- it's a reference fixture (Python-side
-# measurement other work reads from), not a disposable run report.
+# qa/*.json (baseline.json, baseline_cpp.json, behaviors.json, behaviors_cpp.json)
+# ARE tracked -- they're the reference snapshots other environments pick up
+# QA progress from. Only dashboard.html (generated view) and the temp/cache
+# dirs below stay untracked.
 qa/tools/
 qa/_tmp/
 qa/_tmp_cpp/
 qa/_tmp_dashboard_stripped.html
 qa/__pycache__/
 qa/dashboard.html
-qa/behaviors.json
-qa/behaviors_cpp.json
-qa/baseline_cpp.json
 # qa/qa_history.db: every qa/*.py run's result, appended (never overwritten) --
 # see qa/db.py. Local run history, not meant to be shared via git.
 qa/qa_history.db

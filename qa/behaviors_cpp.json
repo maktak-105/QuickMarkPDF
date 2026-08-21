@@ -1,0 +1,215 @@
+{
+  "source": "cpp",
+  "total": 26,
+  "passed": 17,
+  "results": [
+    {
+      "name": "open_pdf",
+      "pass": true,
+      "before": "0",
+      "after": "3",
+      "behavior": "「開く」でPDF(behavior_test.pdf)を読み込んだところ、実際に読み込まれたページ数は3だった(期待通り)",
+      "error": null
+    },
+    {
+      "name": "rotate",
+      "pass": true,
+      "before": "0",
+      "after": "90",
+      "behavior": "ページ0を90度回転操作したところ、rotation値が0→90に変化した",
+      "error": null
+    },
+    {
+      "name": "undo_rotate",
+      "pass": true,
+      "before": "90",
+      "after": "0",
+      "behavior": "直前の回転操作をUndoしたところ、rotation値が90→0に戻った",
+      "error": null
+    },
+    {
+      "name": "rotate_left_90",
+      "pass": true,
+      "before": "0",
+      "after": "270",
+      "behavior": "「左90°」相当の操作(-90度)をページ1に行ったところ、rotation値が0→270に変化した",
+      "error": null
+    },
+    {
+      "name": "rotate_180",
+      "pass": true,
+      "before": "0",
+      "after": "180",
+      "behavior": "「180°」操作をページ2に行ったところ、rotation値が0→180に変化した",
+      "error": null
+    },
+    {
+      "name": "drag_and_drop_reorder",
+      "pass": true,
+      "before": "[0, 1, 2]",
+      "after": "[2, 0, 1]",
+      "behavior": "3枚目のページを先頭に移動するreorder_pagesを送ったところ、ページ順が[0, 1, 2]→[2, 0, 1]に実際に入れ替わった",
+      "error": null
+    },
+    {
+      "name": "undo_reorder",
+      "pass": true,
+      "before": "[2, 0, 1]",
+      "after": "[0, 1, 2]",
+      "behavior": "直前の並べ替えをUndoしたところ、順序が[2, 0, 1]→[0, 1, 2]に戻った",
+      "error": null
+    },
+    {
+      "name": "delete",
+      "pass": true,
+      "before": "3",
+      "after": "2",
+      "behavior": "1ページ削除操作をしたところ、総ページ数が3→2になった",
+      "error": null
+    },
+    {
+      "name": "undo_delete",
+      "pass": true,
+      "before": "2",
+      "after": "3",
+      "behavior": "直前の削除をUndoしたところ、総ページ数が2→3に戻った",
+      "error": null
+    },
+    {
+      "name": "password_protected_pdf_retry",
+      "pass": true,
+      "before": "3",
+      "after": "4",
+      "behavior": "暗号化PDFを開き、パスワードを直接注入したところ、ページ数が3→4になり実際に開けた",
+      "error": null
+    },
+    {
+      "name": "duplicate_file_detection",
+      "pass": true,
+      "before": "4",
+      "after": "4",
+      "behavior": "既に読み込み済みの暗号化PDFを再度開こうとしたところ、ページ数は4のまま変化せず、duplicate_filesに1件記録された",
+      "error": null
+    },
+    {
+      "name": "close_single_file",
+      "pass": true,
+      "before": "5",
+      "after": "3",
+      "behavior": "2ファイル読込中にbehavior_test2.pdfだけを閉じたところ、総ページ数が5→3になり、そのファイル分だけ減った",
+      "error": null
+    },
+    {
+      "name": "overwrite_save_persists_to_disk",
+      "pass": true,
+      "before": "1137",
+      "after": "1422",
+      "behavior": "1ページ回転後に上書き保存したところ、ディスク上のファイルの内容が実際に変化した(1137→1422バイト)",
+      "error": null
+    },
+    {
+      "name": "split_pdf_cutout",
+      "pass": true,
+      "before": "no file",
+      "after": "exists=True, pages=2",
+      "behavior": "2ページ選択してPDF切り出しをしたところ、実際にディスク上に2ページのPDFファイルが生成された",
+      "error": null
+    },
+    {
+      "name": "export_images_png",
+      "pass": true,
+      "before": "no files",
+      "after": "3 PNG files",
+      "behavior": "PNG形式・全ページで画像出力したところ、実際に3個のPNGファイルがフォルダに生成された(success=3/3)",
+      "error": null
+    },
+    {
+      "name": "export_images_with_crop",
+      "pass": true,
+      "before": "(833, 1166)",
+      "after": "(167, 167)",
+      "behavior": "crop無し出力((833, 1166))とcrop=[10,10,90,90]指定出力((167, 167))を比較したところ、クロップ指定時の方が実際に小さい画像になった",
+      "error": null
+    },
+    {
+      "name": "mixed_pdf_markdown_open_rejected",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: PDF+Markdown混在時の警告が未実装(webview_main.cppのコメントで明記、UI層の判定でありPdfManager単体では検証不可)",
+      "error": null
+    },
+    {
+      "name": "unsaved_changes_confirmation",
+      "pass": true,
+      "before": "dirty=True",
+      "after": "confirm=False→ok=False,pages=3 / confirm=True→ok=True,pages=0",
+      "behavior": "1ページ回転後(dirty=true)にclose_allをconfirm=falseで送ったところ実際に拒否されページ数3のまま維持された。次にconfirm=trueで送ったところ実際に破棄されページ数が0になった",
+      "error": null
+    },
+    {
+      "name": "preview_wheel_zoom_default_mode",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: プレビューのホイールズームが未実装(<img>を置くだけ、UI層のみでPdfManager経由では検証不可)",
+      "error": null
+    },
+    {
+      "name": "preview_right_drag_pan_zoom_mode",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: プレビューの右ドラッグパンが未実装(同上)",
+      "error": null
+    },
+    {
+      "name": "preview_wheel_mode_setting_switches_behavior",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: 環境設定ダイアログ・ホイールモード切替が未実装(同上)",
+      "error": null
+    },
+    {
+      "name": "preview_crop_area_selection",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: プレビュー上のクロップ範囲選択が未実装(同上)",
+      "error": null
+    },
+    {
+      "name": "thumbnail_size_toggle",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: サムネイルサイズ切替ボタンが未実装(小/中/大ボタン自体が無い、UI層のみでPdfManager経由では検証不可)",
+      "error": null
+    },
+    {
+      "name": "thumbnail_size_small",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: 同上",
+      "error": null
+    },
+    {
+      "name": "thumbnail_size_medium",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: 同上",
+      "error": null
+    },
+    {
+      "name": "markdown_mode_switch",
+      "pass": false,
+      "before": "None",
+      "after": "None",
+      "behavior": "C++未実装: Markdownモード切替はUI層(app.js)の状態でありPdfManager経由では検証不可。DOM測定(extract_cpp.py)側の対象",
+      "error": null
+    }
+  ]
+}
