@@ -1,0 +1,135 @@
+# QuickMarkPDF 仕様書
+
+[English spec.md](spec.md)
+
+## 1. アプリ概要
+
+- **名称**: QuickMarkPDF
+- **目的**: 広告・寄付要求のない、シンプルなPDFページ編集ツール（分割・結合・並べ替え・回転・画像/PDF書き出し）。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しにも対応する
+- **対象OS**: Windows 10 / 11 (64-bit)
+- **実装**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/バニラJS
+- **配布形態**: GitHub Releases の ZIP（フラット構成）
+- **バージョン**: v1.1.0
+
+`python/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。製品として出荷されるのは`core/native/`（C++17 + WebView2版）である。
+
+## 2. アーキテクチャ
+
+```text
+[HTML/CSS/JS (WebView2)]  ←WebMessage(JSON)→  [webview_main.cpp]  ←直接呼出→  [engine.cpp (PdfManager)]
+```
+
+- `engine.cpp` (`PdfManager`): PDFの読み込み・回転・削除・並べ替え・Undo・保存・切り出し・画像書き出しを担当。GUI非依存で、CLI版・自動テストからも同じAPIを呼ぶ
+- `pdf_backend.cpp`: PDFiumを使ったページ描画・編集のラッパー
+- `image_io.cpp`: PNG書き出し（自前実装）とJPEG書き出し（Windows Imaging Component経由）
+- `webview_main.cpp`: Win32ウィンドウ生成、WebView2初期化、JSONメッセージの受け渡し、`IFileDialog`/`GetOpenFileNameW`/`GetSaveFileNameW`によるファイル選択・保存ダイアログ
+- フロントエンド: フレームワーク非依存。`bundle_html.py`で1枚のHTMLへバンドルし、その際にMermaid/MathJaxの`<script>`タグとMathJax設定を注入する
+
+## 3. 画面構成
+
+| 領域 | 内容 |
+| --- | --- |
+| メニューバー | 「設定」（環境設定）、「ヘルプ」（使い方・バージョン情報） |
+| メインツールバー | 開く／PDF切り出し／画像出力／右90°／左90°／180°／保存 |
+| サムネイルサイズツールバー | サムネイル表示サイズの小・中・大切り替え |
+| サムネイルパネル（左） | ページ一覧。ファイル名タグ・ページ番号（編集後の位置／元ファイル内番号）を表示 |
+| プレビュー（右） | 選択ページの拡大表示。ホイールでズームまたはスクロール（環境設定で切替）、右ドラッグでパンまたはズーム、左ドラッグでクロップ範囲選択 |
+| Markdownワークスペース | .mdファイルを開いた際に表示される、PDFワークスペースと排他のプレビュー領域 |
+| ステータスバー | 直近の操作結果・進捗メッセージ |
+
+## 4. 機能一覧
+
+| # | 機能 | 説明 |
+| --- | --- | --- |
+| 1 | PDFを開く | 複数PDFの同時読み込み・連結表示。パスワード保護PDFは3回まで再試行。重複ファイルは検出してスキップ |
+| 2 | Markdownを開く | .md/.markdownファイルを開き、Markdownプレビューモードに切り替える。PDF+Markdownの混在選択は警告して拒否 |
+| 3 | ページ選択 | クリック（単一）／Ctrl+クリック（複数）／Shift+クリック（範囲） |
+| 4 | 並べ替え | サムネイルのドラッグ&ドロップ。複数ファイルをまたいだ移動も可能 |
+| 5 | 回転 | 右90°／左90°／180°、複数選択可、右クリックメニューからも操作可 |
+| 6 | 削除 | 選択ページを削除 |
+| 7 | 元に戻す | 直前の編集操作（回転・削除・並べ替え）を1段階取り消し |
+| 8 | PDF切り出し | 選択ページのみを新規PDFとして保存（元ファイル・Undo履歴に影響しない） |
+| 9 | 画像出力 | PNG/JPEG、DPI（72/150/300/カスタム）、JPEG品質、出力範囲（全体/選択ページ）、クロップ範囲を指定して書き出し |
+| 10 | 保存 | 単一ファイルのみ開いている場合は上書き保存／名前を付けて保存を選択可能。**複数ファイルを同時に開いている場合は上書き保存できず、常に名前を付けて保存になり、開いている全ファイルのページが1つの新規PDFへ連結して書き出される**（元ファイルは変更されない）。判定は`PdfManager::can_overwrite_source()`（全ページのsource_pathが同一かどうか）で行う |
+| 11 | サムネイルサイズ切替 | 小（80px）／中（120px）／大（200px） |
+| 12 | プレビュー操作 | ホイールでズーム（既定）またはスクロール、右ドラッグでパンまたはズーム（環境設定で切替） |
+| 13 | クロップ範囲選択 | プレビュー上を左ドラッグして画像出力用の切り出し範囲を指定 |
+| 14 | 未保存変更の確認 | 破棄を伴う操作の前に確認ダイアログを表示 |
+| 15 | 右クリックメニュー | 右90°／左90°／180°回転、PDF切り出し、画像を切り出し、ページを削除、このファイルを閉じる |
+| 16 | キーボードショートカット | Ctrl+O／Delete／Ctrl+Z／Ctrl+S（詳細は7節） |
+| 17 | Markdownプレビュー | 見出し・太字/斜体・インラインコード・コードブロック・引用・リスト・リンク・画像・水平線・表（GFM）に対応 |
+| 18 | Mermaid図 | ```` ```mermaid ```` フェンスブロックをMermaid.jsでレンダリング |
+| 19 | 数式 | `$...$`（インライン）／`$$...$$`（ディスプレイ）記法をMathJaxでレンダリング |
+| 20 | MarkdownのPDF書き出し | `ICoreWebView2_7::PrintToPdf`でMarkdownプレビューをPDF化（chrome部分は`@media print`で除外） |
+| 21 | 環境設定 | プレビューのマウスホイール操作モード（ズーム/スクロール）を切替、`localStorage`に保存 |
+
+## 5. WebMessage プロトコル
+
+### JS → native
+
+| type | パラメータ | 説明 |
+| --- | --- | --- |
+| `open_pdf` | なし | ファイル選択ダイアログを開きPDF/Markdownを読み込む |
+| `get_state` | なし | 現在のドキュメント状態を再取得 |
+| `render_page` | `page_index` | 指定ページをレンダリングし`page_rendered`で返す |
+| `reorder_pages` | `order` | ページの新しい並び順を適用 |
+| `rotate_pages` | `indices`, `degrees` | 指定ページを回転 |
+| `delete_pages` | `indices` | 指定ページを削除 |
+| `undo_edit` | なし | 直前の編集を取り消す |
+| `close_document` | `path` | 指定ファイルを閉じる |
+| `export_images` | `format`, `dpi`, `quality`, `scope`, `crop`, `output_dir`, `prefix` | 画像として書き出す |
+| `get_export_defaults` | なし | 画像出力ダイアログの初期値を取得 |
+| `browse_export_folder` | なし | 出力先フォルダ選択ダイアログを開く |
+| `save_pdf` | なし | 上書き保存（不可の場合は名前を付けて保存） |
+| `split_pdf` | `indices` | 選択ページをPDF切り出し |
+| `save_markdown_pdf` | `output_path` | MarkdownプレビューをPDFへ書き出す |
+
+### native → JS
+
+| type | パラメータ | 説明 |
+| --- | --- | --- |
+| `pdf_opened` | `loaded_files`, `failed_files` | PDF読み込み結果 |
+| `markdown_opened` | `path`, `content` | Markdownファイルの読み込み完了、本文を送信 |
+| `page_rendered` | `page_index`, 画像データ | ページの描画結果 |
+| `document_state` | ページ一覧・選択状態など | ドキュメント状態の再送信（各操作の後に送られる） |
+| `backend_status` | `message` | バックエンド接続状況の通知 |
+| `export_defaults` | `output_dir` 等 | 画像出力ダイアログの初期値 |
+| `folder_picked` | `path` | フォルダ選択ダイアログの結果 |
+| `status` | メッセージ文字列 | ステータスバー表示用の短いメッセージ |
+
+## 6. 処理フロー
+
+1. 起動時、コマンドライン引数にPDF/Markdownパスがあれば自動的に開く
+2. ユーザー操作（ボタン/ショートカット/右クリック）→ WebMessage送信 → `webview_main.cpp`が`PdfManager`を呼び出し → 結果を`document_state`等で返す → `app.js`がDOMを更新
+3. 画像出力・PDF切り出しはファイルI/Oを伴うため、完了後にステータスバーへ結果件数を表示する
+
+## 7. キーボードショートカット
+
+| キー | 動作 |
+| --- | --- |
+| `Ctrl+O` | ファイルを開く |
+| `Delete` | 選択ページを削除 |
+| `Ctrl+Z` | 元に戻す |
+| `Ctrl+S` | 上書き保存 |
+
+## 8. 出力フォーマット仕様
+
+- **PDF切り出し**: 選択ページのみを含む新規PDF（元のページ順を維持）
+- **画像出力（PNG）**: 自前のPNGエンコーダで書き出し。可逆・無圧縮相当
+- **画像出力（JPEG）**: Windows Imaging Component経由でエンコード。品質60〜100を指定可能
+- **MarkdownのPDF書き出し**: WebView2の`PrintToPdf`によるA4相当のページ出力。ツールバー等のUI要素は`@media print`で除外される
+
+## 9. パフォーマンス
+
+### 並列化設計
+
+現状、ページ描画・書き出しは同期的に処理する（Python版と異なり、大量ページの並列レンダリングは未実装）。
+
+### キャッシュ
+
+PDFiumのページオブジェクトはドキュメントを閉じるまで保持し、再描画のたびに開き直さない。
+
+## 10. 今後の実装予定
+
+- PDF+Markdown混在選択時のPython版相当の詳細な挙動の一部簡略化を解消
+- ネストしたリスト（Markdown）への対応

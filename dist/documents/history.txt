@@ -1,5 +1,17 @@
 QuickMarkPDF - Change log
 
+v1.1.0 (2026-08-21)
+- Fixed the right-click menu overflowing the window near screen edges.
+- Fixed unreadable (near-white) headings in Markdown-to-PDF export.
+- Fixed Markdown-to-PDF export always producing only 1 page regardless of document length.
+
+v1.0.0 (2026-08-21)
+- Completed the second C++/WebView2 port to feature parity with the Python prototype: page split, PNG/JPEG image export with crop, keyboard shortcuts, right-click menu, Markdown preview mode (Mermaid diagrams, MathJax math), Markdown-to-PDF export, and a PDF+Markdown mixed-selection guard.
+- python/ (PySide6) is now a development-time evaluation prototype only; it is not distributed.
+- Switched to the Modern Dark theme shared with the other Quick apps, added a new application icon.
+- Added an in-app Help menu (usage guide, keyboard shortcuts) and an About dialog.
+- Rewrote README, distribution readme, and document/ specs to match the native version, including how Save merges multiple open files into one PDF.
+
 Unreleased (2026-08-18)
 - Refreshed the PDF editing core and user interface.
 - Improved page tagging, thumbnail reordering, Markdown preview, and background processing.

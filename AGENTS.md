@@ -31,3 +31,7 @@
    - 作業時は必ず企画・計画・実装・評価をドキュメントに記録・更新すること。
 6. **言語設定**:
    - 思考・調査・報告・会話はすべて日本語で行うこと (すべて日本語で表示・思考)。
+7. **WebView2アプリのプロセスを誤って落とさない**:
+   - `msedgewebview2.exe` はこのアプリ専用のプロセス名ではない。Teams・Windows検索・他のWebView2アプリすべてが同じプロセス名を使う。
+   - ビルド失敗（exeがロックされ書き込めない等）やテスト後のクリーンアップで、`taskkill /IM msedgewebview2.exe /F` のような**プロセス名だけを条件にした一括終了は絶対に実行しないこと**。無関係な他アプリ（Teams等）を巻き込んで落としてしまう。
+   - 必ず対象アプリ自身の固有exe名（例: `QuickMarkPDF.exe`）でプロセスを特定し、そのPIDだけを `taskkill /PID <pid> /T /F`（プロセスツリーごと）で終了すること。`msedgewebview2.exe` を直接操作せざるを得ない場合は、`Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'"` 等でコマンドライン（`--user-data-dir` 等）を確認し、対象アプリのものだと確認できたPIDだけを終了すること。

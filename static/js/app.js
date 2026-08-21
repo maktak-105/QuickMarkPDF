@@ -441,6 +441,13 @@
     closeContextMenu();
     const menu = document.createElement('div');
     menu.className = 'context-menu';
+    // Measure off-screen first (visibility:hidden keeps layout so
+    // getBoundingClientRect() returns real dimensions), then clamp the
+    // requested (x, y) so the menu never renders past the window's right/
+    // bottom edge -- previously a right-click near the bottom of a long
+    // thumbnail list opened a menu whose lower items landed outside the
+    // WebView2 window and were unreachable.
+    menu.style.visibility = 'hidden';
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
 
@@ -466,6 +473,14 @@
 
     document.body.appendChild(menu);
     contextMenuEl = menu;
+
+    const margin = 4;
+    const rect = menu.getBoundingClientRect();
+    const clampedLeft = Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin));
+    const clampedTop = Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin));
+    menu.style.left = `${clampedLeft}px`;
+    menu.style.top = `${clampedTop}px`;
+    menu.style.visibility = '';
   }
   document.addEventListener('click', closeContextMenu);
   document.addEventListener('scroll', closeContextMenu, true);
@@ -922,6 +937,33 @@
     const savedWheelMode = localStorage.getItem('quickmarkpdf.wheelMode');
     if (savedWheelMode === 'zoom' || savedWheelMode === 'scroll') wheelMode = savedWheelMode;
   } catch (e) { /* ignore */ }
+
+  // ── 「ヘルプ」メニュー、使い方モーダル、バージョン情報モーダル ──
+  const helpMenu = document.querySelector('#help-menu');
+  const helpDropdown = document.querySelector('#help-dropdown');
+  helpMenu.querySelector('.menu-label').addEventListener('click', (event) => {
+    event.stopPropagation();
+    helpDropdown.hidden = !helpDropdown.hidden;
+  });
+  document.addEventListener('click', () => { helpDropdown.hidden = true; });
+
+  const helpOverlay = document.querySelector('#help-overlay');
+  document.querySelector('#help-item').addEventListener('click', () => {
+    helpDropdown.hidden = true;
+    helpOverlay.hidden = false;
+  });
+  document.querySelector('#help-close').addEventListener('click', () => {
+    helpOverlay.hidden = true;
+  });
+
+  const aboutOverlay = document.querySelector('#about-overlay');
+  document.querySelector('#about-item').addEventListener('click', () => {
+    helpDropdown.hidden = true;
+    aboutOverlay.hidden = false;
+  });
+  document.querySelector('#about-close').addEventListener('click', () => {
+    aboutOverlay.hidden = true;
+  });
 
   function doOpen() {
     if (!hasBridge()) {

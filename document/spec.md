@@ -1,0 +1,139 @@
+# QuickMarkPDF Specification
+
+[日本語版 spec_jp.md](spec_jp.md)
+
+## 1. Overview
+
+- **Name**: QuickMarkPDF
+- **Purpose**: A simple PDF page editor with no ads and no donation nagging (split, merge, reorder, rotate, export to image/PDF). As a bonus, it also exports Markdown (with Mermaid diagrams and math) to PDF.
+- **Target OS**: Windows 10 / 11 (64-bit)
+- **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
+- **Distribution**: GitHub Releases ZIP (flat layout)
+- **Version**: v1.1.0
+
+`python/` (PySide6) is a prototype used only for evaluating behavior during
+development; it is not shipped. `core/native/` (C++17 + WebView2) is the
+shipped product.
+
+## 2. Architecture
+
+```text
+[HTML/CSS/JS (WebView2)]  <-WebMessage(JSON)->  [webview_main.cpp]  <-direct call->  [engine.cpp (PdfManager)]
+```
+
+- `engine.cpp` (`PdfManager`): handles PDF loading, rotation, deletion, reordering, undo, saving, page splitting, and image export. GUI-independent, shared by the CLI build and automated tests.
+- `pdf_backend.cpp`: PDFium wrapper for page rendering/editing.
+- `image_io.cpp`: a hand-written PNG encoder plus JPEG encoding via the Windows Imaging Component.
+- `webview_main.cpp`: creates the Win32 window, initializes WebView2, relays JSON messages, and drives file dialogs (`IFileDialog`/`GetOpenFileNameW`/`GetSaveFileNameW`).
+- Frontend: framework-free. `bundle_html.py` bundles it into a single self-contained `index.html`, injecting the Mermaid/MathJax `<script>` tags and MathJax config at bundle time.
+
+## 3. Screen layout
+
+| Area | Content |
+| --- | --- |
+| Menu bar | "Settings" (preferences), "Help" (usage guide, about) |
+| Main toolbar | Open / Split PDF / Export images / Rotate right 90° / Rotate left 90° / 180° / Save |
+| Thumbnail-size toolbar | Small / Medium / Large thumbnail size toggle |
+| Thumbnail panel (left) | Page list with a filename tag and page numbers (post-edit position vs. original in-file index) |
+| Preview (right) | Enlarged view of the selected page. Wheel zooms or scrolls (mode set in preferences), right-drag pans or zooms, left-drag selects a crop area |
+| Markdown workspace | Shown instead of the PDF workspace when a `.md` file is open |
+| Status bar | The result/progress of the most recent action |
+
+## 4. Feature list
+
+| # | Feature | Description |
+| --- | --- | --- |
+| 1 | Open PDF | Loads and concatenates multiple PDFs at once. Password-protected files get up to 3 retries. Duplicate files are detected and skipped. |
+| 2 | Open Markdown | Opens `.md`/`.markdown` and switches to Markdown preview mode. Mixing PDF and Markdown in one selection is rejected with a warning. |
+| 3 | Page selection | Click (single) / Ctrl+click (multi) / Shift+click (range). |
+| 4 | Reorder | Drag-and-drop thumbnails, including across multiple open files. |
+| 5 | Rotate | Right 90° / left 90° / 180°, multi-select capable, also available from the right-click menu. |
+| 6 | Delete | Removes the selected pages. |
+| 7 | Undo | Reverts the most recent edit (rotate/delete/reorder) one step. |
+| 8 | Split PDF | Saves only the selected pages as a new PDF (does not affect the source file or its undo history). |
+| 9 | Export images | PNG/JPEG, DPI (72/150/300/custom), JPEG quality, scope (all/selected pages), and an optional crop area. |
+| 10 | Save | If only one file is open, you can choose to overwrite it or save as a new file. **If multiple files are open at once, overwriting is not possible; Save always opens a "Save As" dialog and merges every open file's pages into one new PDF** (original files are left unmodified). Determined by `PdfManager::can_overwrite_source()` (whether every page shares the same `source_path`). |
+| 11 | Thumbnail size | Small (80px) / Medium (120px) / Large (200px). |
+| 12 | Preview interaction | Wheel zooms (default) or scrolls; right-drag pans or zooms (mode set in preferences). |
+| 13 | Crop area selection | Left-drag on the preview to define the crop region used by image export. |
+| 14 | Unsaved-change confirmation | Confirms before an action that would discard unsaved edits. |
+| 15 | Right-click menu | Rotate right/left/180°, split PDF, export image, delete page, close this file. |
+| 16 | Keyboard shortcuts | Ctrl+O / Delete / Ctrl+Z / Ctrl+S (see section 7). |
+| 17 | Markdown preview | Headings, bold/italic, inline code, code blocks, blockquotes, lists, links, images, horizontal rules, GFM tables. |
+| 18 | Mermaid diagrams | ` ```mermaid ` fenced blocks are rendered with Mermaid.js. |
+| 19 | Math | `$...$` (inline) / `$$...$$` (display) notation is rendered with MathJax. |
+| 20 | Markdown-to-PDF export | Uses `ICoreWebView2_7::PrintToPdf` on the Markdown preview (UI chrome is excluded via `@media print`). |
+| 21 | Preferences | Toggles the preview mouse-wheel mode (zoom/scroll), persisted to `localStorage`. |
+
+## 5. WebMessage protocol
+
+### JS -> native
+
+| type | parameters | description |
+| --- | --- | --- |
+| `open_pdf` | none | Opens the file picker and loads PDF/Markdown |
+| `get_state` | none | Re-fetches the current document state |
+| `render_page` | `page_index` | Renders a page, returned via `page_rendered` |
+| `reorder_pages` | `order` | Applies a new page order |
+| `rotate_pages` | `indices`, `degrees` | Rotates the given pages |
+| `delete_pages` | `indices` | Deletes the given pages |
+| `undo_edit` | none | Reverts the most recent edit |
+| `close_document` | `path` | Closes the given file |
+| `export_images` | `format`, `dpi`, `quality`, `scope`, `crop`, `output_dir`, `prefix` | Exports pages as images |
+| `get_export_defaults` | none | Gets defaults for the export dialog |
+| `browse_export_folder` | none | Opens a folder picker for the export destination |
+| `save_pdf` | none | Overwrite-saves (or "save as" when not possible) |
+| `split_pdf` | `indices` | Saves the selected pages as a new PDF |
+| `save_markdown_pdf` | `output_path` | Exports the Markdown preview to PDF |
+
+### native -> JS
+
+| type | parameters | description |
+| --- | --- | --- |
+| `pdf_opened` | `loaded_files`, `failed_files` | Result of loading PDFs |
+| `markdown_opened` | `path`, `content` | Markdown file loaded, body content sent |
+| `page_rendered` | `page_index`, image data | Rendered page image |
+| `document_state` | page list, selection state, etc. | Re-sent after each operation |
+| `backend_status` | `message` | Backend connection status |
+| `export_defaults` | `output_dir`, etc. | Defaults for the export dialog |
+| `folder_picked` | `path` | Result of the folder picker |
+| `status` | message string | Short message for the status bar |
+
+## 6. Processing flow
+
+1. At startup, PDF/Markdown paths passed as command-line arguments are opened automatically.
+2. A user action (button/shortcut/right-click) sends a WebMessage -> `webview_main.cpp` calls into `PdfManager` -> the result is sent back via `document_state` etc. -> `app.js` updates the DOM.
+3. Image export and PDF splitting involve file I/O, so the result count is shown in the status bar once complete.
+
+## 7. Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+O` | Open a file |
+| `Delete` | Delete selected pages |
+| `Ctrl+Z` | Undo |
+| `Ctrl+S` | Overwrite save |
+
+## 8. Output format notes
+
+- **Split PDF**: a new PDF containing only the selected pages, in their original order.
+- **PNG export**: written with a hand-written PNG encoder — lossless, uncompressed-equivalent.
+- **JPEG export**: encoded via the Windows Imaging Component; quality 60-100 is configurable.
+- **Markdown-to-PDF**: A4-equivalent output via WebView2's `PrintToPdf`; UI chrome (toolbar etc.) is excluded via `@media print`.
+
+## 9. Performance
+
+### Parallelization
+
+Page rendering and export are currently synchronous (unlike the Python
+version, parallel rendering of a large page count is not implemented).
+
+### Caching
+
+PDFium page objects are kept open until the document is closed, rather than
+being reopened on every re-render.
+
+## 10. Planned work
+
+- Resolve the remaining simplifications in the mixed PDF/Markdown selection handling relative to the Python version's behavior.
+- Support nested lists in Markdown.

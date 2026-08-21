@@ -1,7 +1,7 @@
 {
   "source": "cpp",
-  "total": 26,
-  "passed": 17,
+  "total": 27,
+  "passed": 27,
   "results": [
     {
       "name": "open_pdf",
@@ -133,10 +133,10 @@
     },
     {
       "name": "mixed_pdf_markdown_open_rejected",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: PDF+Markdown混在時の警告が未実装(webview_main.cppのコメントで明記、UI層の判定でありPdfManager単体では検証不可)",
+      "pass": true,
+      "before": "page_count=3",
+      "after": "outcome=rejected_mixed,page_count=3",
+      "behavior": "PDFとMarkdownを同時に指定してload_documentsを送ったところ、outcome=\"rejected_mixed\"で実際に拒否され、ページ数は3のまま変化しなかった",
       "error": null
     },
     {
@@ -149,66 +149,74 @@
     },
     {
       "name": "preview_wheel_zoom_default_mode",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: プレビューのホイールズームが未実装(<img>を置くだけ、UI層のみでPdfManager経由では検証不可)",
+      "pass": true,
+      "before": "1051",
+      "after": "1208.640625",
+      "behavior": "環境設定が既定の「ズーム」モードの状態でプレビュー上にホイールイベント(deltaY=-300)を送ったところ、表示幅が1051.0px→1208.6pxに変化した(拡大された)",
       "error": null
     },
     {
       "name": "preview_right_drag_pan_zoom_mode",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: プレビューの右ドラッグパンが未実装(同上)",
+      "pass": true,
+      "before": "0",
+      "after": "100",
+      "behavior": "「ズーム」モードで右ボタンドラッグ(x: 400→300)したところ、scrollLeftが0→100に変化した(パン動作)",
       "error": null
     },
     {
       "name": "preview_wheel_mode_setting_switches_behavior",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: 環境設定ダイアログ・ホイールモード切替が未実装(同上)",
+      "pass": true,
+      "before": "1208.640625",
+      "after": "733.984375",
+      "behavior": "環境設定を「スクロール」モードに切り替えた状態で右ドラッグしたところ、(パンではなく)表示幅が1208.6px→734.0pxに変化した(モード切替が実際に効いている)",
       "error": null
     },
     {
       "name": "preview_crop_area_selection",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: プレビュー上のクロップ範囲選択が未実装(同上)",
+      "pass": true,
+      "before": "選択なし",
+      "after": "{'h': 150, 'w': 200}",
+      "behavior": "プレビュー上で(50,50)から(250,200)へ左ドラッグしたところ、実際に#crop-overlayが生成され、サイズは{'h': 150, 'w': 200}だった",
       "error": null
     },
     {
       "name": "thumbnail_size_toggle",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: サムネイルサイズ切替ボタンが未実装(小/中/大ボタン自体が無い、UI層のみでPdfManager経由では検証不可)",
+      "pass": true,
+      "before": "120",
+      "after": "200",
+      "behavior": "サムネイルサイズを「大」に切り替えたところ、実描画幅が120px→200pxに変化し(期待値200px)、ボタンのchecked状態も実際に切り替わった",
       "error": null
     },
     {
       "name": "thumbnail_size_small",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: 同上",
+      "pass": true,
+      "before": "120",
+      "after": "80",
+      "behavior": "サムネイルサイズを「小」に切り替えたところ、実描画幅が120px→80pxに変化し(期待値80px)、ボタンのchecked状態も実際に切り替わった",
       "error": null
     },
     {
       "name": "thumbnail_size_medium",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: 同上",
+      "pass": true,
+      "before": "80",
+      "after": "120",
+      "behavior": "サムネイルサイズを「中」に切り替えたところ、実描画幅が80px→120pxに変化し(期待値120px)、ボタンのchecked状態も実際に切り替わった",
       "error": null
     },
     {
       "name": "markdown_mode_switch",
-      "pass": false,
-      "before": "None",
-      "after": "None",
-      "behavior": "C++未実装: Markdownモード切替はUI層(app.js)の状態でありPdfManager経由では検証不可。DOM測定(extract_cpp.py)側の対象",
+      "pass": true,
+      "before": "pdf",
+      "after": "markdown",
+      "behavior": ".mdファイルを起動時に指定して開いたところ、window.__qa.mode=pdf、pdf-workspace.hidden=True、markdown-workspace.hidden=False、本文HTML長=37文字、受信メッセージ種別=['document_state']となり、実際にMarkdownモードへ切り替わった",
+      "error": null
+    },
+    {
+      "name": "page_number_labels_distinct_from_position",
+      "pass": true,
+      "before": "削除前: 両方とも1,2,3",
+      "after": "[{'gutter': '1', 'pageNumber': 'p.2'}, {'gutter': '2', 'pageNumber': 'p.3'}]",
+      "behavior": "3ページの文書から1ページ目を削除したところ、残り2ページの表示が[{'gutter': '1', 'pageNumber': 'p.2'}, {'gutter': '2', 'pageNumber': 'p.3'}]になった(ガター番号=編集後の位置、p.N=削除前の元ファイル内での番号、という異なる意味の2つの数値が実際に別々の値になった)",
       "error": null
     }
   ]

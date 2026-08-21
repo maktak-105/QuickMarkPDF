@@ -197,6 +197,15 @@ def build_tests():
     if os.path.exists(pdfium_dll):
         shutil.copy2(pdfium_dll, test_dll)
 
+    # GUI/CLIビルドは-staticでMinGWランタイムを静的リンクするが、テストexeは
+    # -static無しでビルドしているため、g++と同じ場所にあるランタイムDLLを
+    # 隣にコピーしてやる必要がある(無いとDLL not foundで起動できない)。
+    compiler_dir = os.path.dirname(compiler)
+    for runtime_dll in ("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll"):
+        src = os.path.join(compiler_dir, runtime_dll)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(native_dir, runtime_dll))
+
     print("\n[test 2/2] 実行中...")
     result = subprocess.run([out_exe], cwd=native_dir)
     if result.returncode != 0:

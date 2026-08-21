@@ -14,6 +14,13 @@
         <button type="button" id="preferences-item">環境設定...</button>
       </div>
     </div>
+    <div class="menu" id="help-menu">
+      <button type="button" class="menu-label">ヘルプ</button>
+      <div class="menu-dropdown" id="help-dropdown" hidden>
+        <button type="button" id="help-item">使い方...</button>
+        <button type="button" id="about-item">バージョン情報...</button>
+      </div>
+    </div>
   </header>
   <header class="toolbar">
     <button id="open-button" class="tool" title="PDF または Markdown ファイルを開く"><img src="../resources/icons/open.png" alt=""><span>開く</span></button>
@@ -116,6 +123,59 @@
       <div class="modal-buttons">
         <button type="button" id="preferences-cancel">キャンセル</button>
         <button type="button" id="preferences-ok" class="primary">OK</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="help-overlay" hidden>
+    <div class="modal help-modal">
+      <h2>QuickMarkPDF の使い方</h2>
+      <div class="help-body">
+        <section>
+          <h3>基本操作</h3>
+          <ul>
+            <li><strong>開く</strong>: PDFまたはMarkdown（.md）ファイルを選択します。複数のPDFを同時に開くと、ページ一覧に連結して表示されます。</li>
+            <li><strong>ページ選択</strong>: サムネイルをクリックで単一選択、Ctrl+クリックで複数選択、Shift+クリックで範囲選択できます。</li>
+            <li><strong>並べ替え</strong>: サムネイルをドラッグ&ドロップすると順序を変更できます。複数ファイルを開いている場合はファイルをまたいだ移動もできます。</li>
+            <li><strong>回転・削除</strong>: 選択したページをツールバーまたは右クリックメニューから右90°／左90°／180°回転、削除できます。</li>
+            <li><strong>元に戻す</strong>: 直前の操作を取り消します（Ctrl+Z）。</li>
+            <li><strong>保存</strong>: 「保存」（Ctrl+S）で編集内容を保存します。開いているファイルが<u>1つだけ</u>のときは「上書き保存」か「名前を付けて保存」かを選べます。<u>複数のPDFファイルを同時に開いているとき</u>は上書き保存はできず、常に名前を付けて保存になります——このとき、開いている全ファイルのページがひとつに<strong>連結された新しいPDF</strong>として書き出されます（元のファイルはどれも変更されません）。</li>
+          </ul>
+        </section>
+        <section>
+          <h3>書き出し</h3>
+          <ul>
+            <li><strong>PDF切り出し</strong>: 選択したページだけを新しいPDFファイルとして保存します（元のファイルは変更されません）。</li>
+            <li><strong>画像出力</strong>: 選択ページまたは全ページをPNG/JPEGとして書き出せます。解像度（DPI）・JPEG画質・出力範囲（クロップ）を指定できます。</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Markdownモード</h3>
+          <p>.md ファイルを開くと、PDF編集の代わりにMarkdownプレビューが表示されます。見出し・リスト・表・コードブロックに加えて、Mermaid記法の図（<code>```mermaid</code>）と、$記法（<code>$...$</code> / <code>$$...$$</code>）による数式（MathJax）に対応しています。設定メニューはこの間も利用できます。</p>
+        </section>
+        <section>
+          <h3>キーボードショートカット</h3>
+          <table class="help-shortcuts">
+            <tr><td><kbd>Ctrl+O</kbd></td><td>ファイルを開く</td></tr>
+            <tr><td><kbd>Delete</kbd></td><td>選択ページを削除</td></tr>
+            <tr><td><kbd>Ctrl+Z</kbd></td><td>元に戻す</td></tr>
+            <tr><td><kbd>Ctrl+S</kbd></td><td>上書き保存</td></tr>
+          </table>
+        </section>
+      </div>
+      <div class="modal-buttons">
+        <button type="button" id="help-close" class="primary">閉じる</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="about-overlay" hidden>
+    <div class="modal about-modal">
+      <h2>QuickMarkPDF について</h2>
+      <p>Ver. 1.1.0</p>
+      <p>広告・寄付要求のない、シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。</p>
+      <p>C++17 (MinGW-w64) + WebView2</p>
+      <p>GitHub: <a href="https://github.com/maktak-105/QuickMarkPDF" target="_blank" rel="noopener">maktak-105/QuickMarkPDF</a></p>
+      <div class="modal-buttons">
+        <button type="button" id="about-close" class="primary">閉じる</button>
       </div>
     </div>
   </div>
