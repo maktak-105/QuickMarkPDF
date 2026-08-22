@@ -1,0 +1,5 @@
+# Shipped product is C++ / WebView2. Keep Python prototypes, tests, and QA
+# in the repository, but exclude them from GitHub Linguist language stats.
+python/** linguist-vendored
+qa/** linguist-vendored
+tests/** linguist-vendored
