@@ -21,13 +21,13 @@
 
 ## 配布版を使う
 
-現時点ではGitHub Releaseをまだ公開していません。下記「ネイティブ版のビルド」に従ってソースからビルドしてください。リリース公開後は次から取得できます。
+実行だけなら GitHub Releases の ZIP を使います。`v*` タグで GitHub Actions が `QuickMarkPDF-binary.zip` を作ります。ZIP はリポジトリには置きません。
 
 - [最新版の配布ページ](https://github.com/maktak-105/QuickMarkPDF/releases)
 - [QuickMarkPDF v1.1.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v1.1.0)
 - [QuickMarkPDF-binary.zipを直接ダウンロード](https://github.com/maktak-105/QuickMarkPDF/releases/download/v1.1.0/QuickMarkPDF-binary.zip)
 
-ZIPを展開すると、すべての配布ファイルが同じフォルダに入ります。
+ZIPを展開すると、すべての配布ファイルが同じフォルダに入ります（`vendor/` は `index.html` の隣に置きます）。
 
 - `QuickMarkPDF.exe` - GUI版（製品本体）
 - `QuickMarkPDF_cli.exe` - 軽量な非GUIデモバイナリ（製品CLIではありません）
@@ -39,7 +39,7 @@ ZIPを展開すると、すべての配布ファイルが同じフォルダに�
 - `history.txt` / `history_jp.txt` - 更新履歴
 - `LICENSE.txt` / `LICENSE_jp.txt` - MIT License
 
-v1.1.0 配布バイナリの SHA-256 は未取得です（このバージョンはまだバイナリをリリースしていません）。
+配布バイナリとチェックサムは GitHub Releases に掲載します。このリポジトリには置きません。
 
 GUI版は`QuickMarkPDF.exe`を実行します。`QuickMarkPDF.exe`、`pdfium.dll`、`WebView2Loader.dll`、`index.html`、`vendor/` は必ず同じフォルダに置いてください。WebView2 Runtimeがない場合は、Microsoft Edge WebView2 Runtime (Evergreen)をインストールしてください。Windows 11には通常含まれていますが、Windows 10の古い環境、LTSC、Server、管理端末では追加導入が必要な場合があります。
 

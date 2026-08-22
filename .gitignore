@@ -55,6 +55,11 @@ dist_tmp/
 
 # AI tools and local notes
 CODEX_PROJECT_NOTE.txt
+.claude/
+
+# QA scratch output
+qa/_tmp/
+qa/_tmp_*/
 
 # core/native: build_native.py が生成する中間ファイル
 core/native/*.dll

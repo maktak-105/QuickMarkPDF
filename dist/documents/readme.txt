@@ -9,10 +9,8 @@ https://github.com/maktak-105/QuickMarkPDF
 
 Binary release
 --------------
-No GitHub Release has been published yet for this version. Build from
-source instead -- see README.md ("Building the native version") in the
-repository. Once a release is tagged, download `QuickMarkPDF-binary.zip`
-from:
+GitHub Actions builds `QuickMarkPDF-binary.zip` when a `v*` tag is pushed.
+The ZIP is not stored in the repository. Download it from:
 https://github.com/maktak-105/QuickMarkPDF/releases
 and extract it. All distribution files are placed in the same folder
 without subfolders (except `vendor/`, which must stay next to index.html).
@@ -151,7 +149,7 @@ Distribution files
 
 SHA-256
 -------
-Not yet available -- no binary has been released for this version.
+Published with the GitHub Release that contains this ZIP.
 
 License
 -------
