@@ -57,10 +57,6 @@ dist_tmp/
 CODEX_PROJECT_NOTE.txt
 .claude/
 
-# QA scratch output
-qa/_tmp/
-qa/_tmp_*/
-
 # core/native: build_native.py が生成する中間ファイル
 core/native/*.dll
 core/native/*.o
@@ -86,17 +82,12 @@ python/tests/reports/
 .coverage
 htmlcov/
 
-# qa/: downloaded WebDriver binary and per-run temp artifacts are not tracked.
-# qa/*.json (baseline.json, baseline_cpp.json, behaviors.json, behaviors_cpp.json)
-# ARE tracked -- they're the reference snapshots other environments pick up
-# QA progress from. Only dashboard.html (generated view) and the temp/cache
-# dirs below stay untracked.
-qa/tools/
-qa/_tmp/
-qa/_tmp_cpp/
-qa/_tmp_dashboard_stripped.html
-qa/__pycache__/
-qa/dashboard.html
-# qa/qa_history.db: every qa/*.py run's result, appended (never overwritten) --
-# see qa/db.py. Local run history, not meant to be shared via git.
-qa/qa_history.db
+# python/qa/: downloaded WebDriver and per-run temp artifacts are not tracked.
+# python/qa/*.json baselines ARE tracked.
+python/qa/tools/
+python/qa/_tmp/
+python/qa/_tmp_cpp/
+python/qa/_tmp_dashboard_stripped.html
+python/qa/__pycache__/
+python/qa/dashboard.html
+python/qa/qa_history.db
