@@ -1,5 +1,3 @@
-# Shipped product is C++ / WebView2. Keep Python prototypes, tests, and QA
-# in the repository, but exclude them from GitHub Linguist language stats.
+# Shipped product is C++ / WebView2.
+# All non-build Python lives under python/ and is excluded from Linguist.
 python/** linguist-vendored
-qa/** linguist-vendored
-tests/** linguist-vendored

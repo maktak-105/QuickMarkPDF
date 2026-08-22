@@ -7,7 +7,7 @@
 
 A simple Windows desktop PDF page editor — free, no ads, no donation requests, no paid features. Just the split / merge / reorder / rotate / export you actually need. As a bonus, it also renders and exports Markdown to PDF, with Mermaid diagrams and math (MathJax).
 
-**Current version: v1.1.0.** `core/native/` (C++17 + WebView2) is the shipped product. `python/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
+**Current version: v1.1.0.** `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
 
 The UI is Japanese-only; there is no language toggle. The English and Japanese README screenshots are the same window.
 
@@ -95,7 +95,7 @@ The PySide6 prototype is not the shipped app. It remains in the tree so page-edi
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt
-python python/main.py
+python python/prototype/main.py
 ```
 
 ## License

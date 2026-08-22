@@ -7,7 +7,7 @@
 `core/native/`（C++17 + WebView2）が**製品として出荷される版**です。単に
 「ビルドして」と言われた場合は、この版をビルドします。
 
-`python/`（PySide6）は**開発中の挙動評価用プロトタイプ**であり、配布しません。
+`python/prototype/`（PySide6）は**開発中の挙動評価用プロトタイプ**であり、配布しません。
 ページ編集の挙動比較のためにリポジトリへ残しています。Python 版 UI との見た目一致は
 **目標ではありません**。ネイティブ GUI は意図して Modern Dark テーマです。
 
@@ -117,7 +117,7 @@ Teams・Windows 検索などと共有されます。終了するのは `QuickMar
 | 起動できない（Runtime） | Microsoft Edge WebView2 Runtime (Evergreen) をインストール |
 | `g++` / `windres` を直接叩けない | WinLibs の `mingw64\bin` をユーザー PATH へ。`build_native.py` 自体には不要 |
 | 未署名 exe が消える、または終了コード `3221225785` | 上記 Falcon の癖。回帰と決めつける前に再実行 |
-| `ModuleNotFoundError: No module named 'src'` | Python テストはリポジトリ直下を cwd にする（`pyproject.toml` の `pythonpath = ["python"]`） |
+| `ModuleNotFoundError: No module named 'src'` | Python テストはリポジトリ直下を cwd にする（`pyproject.toml` の `pythonpath = ["python/prototype"]`） |
 
 ## 評価用プロトタイプ（Python）
 
@@ -125,8 +125,8 @@ Teams・Windows 検索などと共有されます。終了するのは `QuickMar
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python python/main.py
-python python/main.py path\to\file.pdf
+python python/prototype/main.py
+python python/prototype/main.py path\to\file.pdf
 ```
 
 PyInstaller onedir（配布しない）:
@@ -140,31 +140,31 @@ PyInstaller onedir（配布しない）:
 ### Python 自動テスト
 
 ```powershell
-.venv\Scripts\python.exe run_tests.py
+.venv\Scripts\python.exe python/tests/run_tests.py
 ```
 
-既定の pytest 一式を実行し、`tests/reports/summary.md` と JUnit XML・HTML カバレッジを
-`tests/reports/` へ書きます（Git 管理外）。
+既定の pytest 一式を実行し、`python/tests/reports/summary.md` と JUnit XML・HTML カバレッジを
+`python/tests/reports/` へ書きます（Git 管理外）。
 
-`tests/conftest.py` のオートユース `dialog_guard` が `QFileDialog` / `QMessageBox` /
+`python/tests/conftest.py` のオートユース `dialog_guard` が `QFileDialog` / `QMessageBox` /
 `QInputDialog` / `QDialog.exec` をパッチします。未登録のダイアログはハングせず即失敗します。
 テストあたり 60 秒のタイムアウトと合わせ、クリック待ちで止まらないようにしています。
 
 | 場所 | 内容 | 既定で実行 |
 | --- | --- | --- |
-| `tests/test_*.py` | 単体 + `MainWindow` の開く/回転/削除/並べ替え/Undo/保存/書き出し | する |
-| `tests/visual/` | `tests/visual_baselines/` とのスクリーンショット回帰 | する |
-| `tests/perf/` | 読み込み/回転/並べ替え/Undo/書き出しの所要時間 | する |
-| `tests/real_screen/` | 実ウィンドウ + `QTest` 入力 | しない（`--real-screen`） |
+| `python/tests/test_*.py` | 単体 + `MainWindow` の開く/回転/削除/並べ替え/Undo/保存/書き出し | する |
+| `python/tests/visual/` | `python/tests/visual_baselines/` とのスクリーンショット回帰 | する |
+| `python/tests/perf/` | 読み込み/回転/並べ替え/Undo/書き出しの所要時間 | する |
+| `python/tests/real_screen/` | 実ウィンドウ + `QTest` 入力 | しない（`--real-screen`） |
 
 `QUICKMARKPDF_REAL_SCREEN=1` が無い限り offscreen Qt（`QT_QPA_PLATFORM=offscreen`）です。
 この環境の offscreen Qt には CJK フォントが無く、見た目テストの日本語は豆腐になります。
 レイアウト回帰の検出用であり、実機の日本語表示そのものではありません。
 
 ```powershell
-.venv\Scripts\python.exe run_tests.py --update-visual-baselines
-.venv\Scripts\python.exe run_tests.py --real-screen
-.venv\Scripts\python.exe -m pytest tests/test_pdf_manager.py -v
+.venv\Scripts\python.exe python/tests/run_tests.py --update-visual-baselines
+.venv\Scripts\python.exe python/tests/run_tests.py --real-screen
+.venv\Scripts\python.exe -m pytest python/tests/test_pdf_manager.py -v
 ```
 
 ## QA パリティダッシュボード（Python 対 C++）
@@ -205,19 +205,20 @@ TCP 制御チャネル（`core/native/test_api_server.cpp`）は `QUICKMARKPDF_T
 
 Python 試作 / テスト: `requirements.txt`（PyMuPDF、PySide6、Pillow、Markdown、PyInstaller）と
 `requirements-dev.txt`（pytest、pytest-qt、pytest-timeout、pytest-cov）。
-QA 追加: `qa/requirements-qa.txt`。
+QA 追加: `python/qa/requirements-qa.txt`。
 
 ## ファイル構成（出荷レイアウト）
 
 ```text
 QuickMarkPDF/
-├── .github/workflows/     ci.yml, release.yml（現状はまだ PyInstaller。残課題）
+├── .github/workflows/     ci.yml, release.yml（v* タグでネイティブ ZIP）
 ├── core/native/           C++ エンジン、WebView2 ホスト、CLI デモ、リソース
 ├── templates/             開発用 HTML
 ├── static/                開発用 CSS/JS
-├── python/                評価用プロトタイプ（配布しない）
-├── tests/                 Python 試作のテスト
-├── qa/                    Python 対 C++ の挙動ダッシュボード
+├── python/prototype/      評価用プロトタイプ（配布しない）
+├── python/tests/          Python 試作のテスト
+├── python/qa/             Python 対 C++ の挙動ダッシュボード
+├── python/tools/          補助スクリプト
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
 ├── resources/vendor/      dist/binary/vendor/ へコピーする Mermaid / MathJax
 ├── assets/                README 用スクリーンショット（ZIP には入れない）
@@ -233,9 +234,6 @@ QuickMarkPDF/
 
 ## 残課題（ビルド/CI。アプリ本体ではない）
 
-- v1.1.0 の GitHub Release は未公開。
-- `.github/workflows/ci.yml` と `release.yml` はまだ PyInstaller（Python）ビルド。
-  出荷するネイティブバイナリは作らない。
 - `QuickMarkPDF_cli.exe` に製品級の `--option` インタフェースは無い。
 - Markdown のネストしたリストは未実装。
 - ネイティブ版のページ描画・書き出しは同期処理（大量ページの並列レンダリングは無い）。
