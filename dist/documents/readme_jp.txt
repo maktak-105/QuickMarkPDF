@@ -9,9 +9,8 @@ https://github.com/maktak-105/QuickMarkPDF
 
 配布用Release
 -------------
-このバージョンのGitHub Releaseはまだ公開されていません。README.md（英語）の
-「Building the native version」を参照し、ソースからビルドしてください。
-Release公開後は、以下から `QuickMarkPDF-binary.zip` をダウンロードできます。
+`v*` タグを push すると GitHub Actions が `QuickMarkPDF-binary.zip` を作ります。
+ZIP はリポジトリには置きません。次からダウンロードしてください。
 https://github.com/maktak-105/QuickMarkPDF/releases
 ダウンロード後、任意のフォルダへ展開してください。ZIP内の配布ファイルは、
 `vendor/` 以外はサブフォルダを作らず同じフォルダに置かれます。`vendor/` は
@@ -152,7 +151,7 @@ Markdownモード中に「保存」（またはCtrl+S）を押すと、現在の
 
 SHA-256
 -------
-未取得です（このバージョンはまだバイナリをリリースしていません）。
+この ZIP を添付した GitHub Release に掲載します。
 
 ライセンス
 ----------

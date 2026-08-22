@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing release tag to update, for example v1.0.0'
+        description: 'Existing release tag to update, for example v1.1.0'
         required: true
         type: string
 
@@ -20,32 +20,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
+      - name: Install MinGW and Python
+        shell: pwsh
+        run: choco install mingw python --yes --no-progress
 
-      - name: Install dependencies
+      - name: Fetch WebView2 SDK and PDFium
+        shell: pwsh
+        run: |
+          powershell -File scripts\fetch_webview2_sdk.ps1
+          powershell -File scripts\fetch_pdfium.ps1
+
+      - name: Build native application
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Build EXE
-        shell: pwsh
-        run: |
-          $env:PYTHONIOENCODING = 'utf-8'
-          python -m PyInstaller quickmarkpdf.spec --noconfirm
-          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed' }
+          python build_native.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
 
       - name: Package distribution files
         shell: pwsh
         run: |
-          $staging = Join-Path $env:RUNNER_TEMP 'QuickMarkPDF-package'
-          New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          Copy-Item -Path 'dist/QuickMarkPDF/*' -Destination $staging -Recurse -Force
-          $docs = @(
+          $files = @(
+            'dist/binary/QuickMarkPDF.exe',
+            'dist/binary/QuickMarkPDF_cli.exe',
+            'dist/binary/pdfium.dll',
+            'dist/binary/WebView2Loader.dll',
+            'dist/binary/index.html',
             'dist/documents/readme.txt',
             'dist/documents/readme_jp.txt',
             'dist/documents/history.txt',
@@ -53,10 +53,17 @@ jobs:
             'dist/documents/LICENSE.txt',
             'dist/documents/LICENSE_jp.txt'
           )
-          foreach ($file in $docs) {
+          foreach ($file in $files) {
             if (!(Test-Path -LiteralPath $file)) { throw "Missing distribution file: $file" }
+          }
+          $vendor = 'dist/binary/vendor'
+          if (!(Test-Path -LiteralPath $vendor)) { throw "Missing distribution file: $vendor" }
+          $staging = Join-Path $env:RUNNER_TEMP 'QuickMarkPDF-package'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          foreach ($file in $files) {
             Copy-Item -LiteralPath $file -Destination $staging -Force
           }
+          Copy-Item -LiteralPath $vendor -Destination (Join-Path $staging 'vendor') -Recurse -Force
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'QuickMarkPDF-binary.zip') -Force
 
       - name: Upload release asset
@@ -67,3 +74,10 @@ jobs:
           files: QuickMarkPDF-binary.zip
           overwrite_files: true
           generate_release_notes: true
+          body: |
+            QuickMarkPDF ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+            Download `QuickMarkPDF-binary.zip`, extract every file into the same folder, and run `QuickMarkPDF.exe`.
+
+            Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebView2Loader.dll`, `index.html`, and `vendor/` together.
+            Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server PCs, install Microsoft Edge WebView2 Runtime (Evergreen).

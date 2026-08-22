@@ -21,13 +21,13 @@ The UI is Japanese-only; there is no language toggle. The English and Japanese R
 
 ## Using the binary release
 
-No GitHub Release has been published yet — build from source for now (see "Building the native version" below). Once a release is tagged, download from:
+If you only want to run the app, download the ZIP from GitHub Releases. GitHub Actions builds `QuickMarkPDF-binary.zip` on a `v*` tag; the ZIP is not stored in this repository.
 
 - [Latest releases](https://github.com/maktak-105/QuickMarkPDF/releases)
 - [QuickMarkPDF v1.1.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v1.1.0)
 - [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v1.1.0/QuickMarkPDF-binary.zip)
 
-The ZIP will contain all distribution files in one flat folder.
+The ZIP contains all distribution files in one flat folder (`vendor/` stays next to `index.html`).
 
 - `QuickMarkPDF.exe` - GUI version (the shipped app)
 - `QuickMarkPDF_cli.exe` - lightweight non-GUI demo binary (not a product CLI)
@@ -39,7 +39,7 @@ The ZIP will contain all distribution files in one flat folder.
 - `history.txt` / `history_jp.txt` - change log
 - `LICENSE.txt` / `LICENSE_jp.txt` - MIT License files
 
-SHA-256 of the v1.1.0 release binaries is not yet available (no binary has been published).
+Release binaries and checksums are published on GitHub Releases, not in this repository.
 
 Run `QuickMarkPDF.exe` for the GUI. Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebView2Loader.dll`, `index.html`, and `vendor/` in the same folder. If WebView2 Runtime is unavailable, install Microsoft Edge WebView2 Runtime (Evergreen). It is normally included with Windows 11, but may require installation on older Windows 10 systems, LTSC, Server, or managed devices.
 
