@@ -6,7 +6,7 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+dist/*
 downloads/
 eggs/
 .eggs/
@@ -38,5 +38,60 @@ Thumbs.db
 
 # Project specific
 *.pdf
-!documents/*.pdf
+!document/*.pdf
 output/
+
+# PyInstaller build output
+dist/PDF_Editor/
+dist_tmp/
+*.manifest
+!core/native/QuickMarkPDF.manifest
+
+# Keep the distribution documentation and empty asset folders tracked.
+!dist/documents/
+!dist/documents/*
+!dist/assets/
+!dist/assets/.gitkeep
+
+# AI tools and local notes
+CODEX_PROJECT_NOTE.txt
+
+# core/native: build_native.py が生成する中間ファイル
+core/native/*.dll
+core/native/*.o
+core/native/*.exe
+
+# dist/binary: ビルド成果物はGit管理外、フォルダ構造だけ管理
+dist/binary/*
+!dist/binary/.gitkeep
+
+# Downloaded SDKs
+third_party/webview2/
+third_party/pdfium/
+third_party/*.nupkg
+third_party/*.tgz
+
+# Build logs
+*.log
+
+# Test tooling: generated reports/caches are not tracked.
+# tests/visual_baselines/ (the actual reference screenshots) IS tracked.
+tests/reports/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# qa/: downloaded WebDriver binary and per-run temp artifacts are not tracked.
+# qa/*.json (baseline.json, baseline_cpp.json, behaviors.json, behaviors_cpp.json)
+# ARE tracked -- they're the reference snapshots other environments pick up
+# QA progress from. Only dashboard.html (generated view) and the temp/cache
+# dirs below stay untracked.
+qa/tools/
+qa/_tmp/
+qa/_tmp_cpp/
+qa/_tmp_dashboard_stripped.html
+qa/__pycache__/
+qa/dashboard.html
+# qa/qa_history.db: every qa/*.py run's result, appended (never overwritten) --
+# see qa/db.py. Local run history, not meant to be shared via git.
+qa/qa_history.db

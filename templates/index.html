@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QuickMarkPDF</title>
+  <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+  <header class="menubar">
+    <div class="menu" id="settings-menu">
+      <button type="button" class="menu-label">設定</button>
+      <div class="menu-dropdown" id="settings-dropdown" hidden>
+        <button type="button" id="preferences-item">環境設定...</button>
+      </div>
+    </div>
+    <div class="menu" id="help-menu">
+      <button type="button" class="menu-label">ヘルプ</button>
+      <div class="menu-dropdown" id="help-dropdown" hidden>
+        <button type="button" id="help-item">使い方...</button>
+        <button type="button" id="about-item">バージョン情報...</button>
+      </div>
+    </div>
+  </header>
+  <header class="toolbar">
+    <button id="open-button" class="tool" title="PDF または Markdown ファイルを開く"><img src="../resources/icons/open.png" alt=""><span>開く</span></button>
+    <span class="sep" id="sep-1"></span>
+    <button id="split-button" class="tool" disabled title="選択ページを新しいPDFとして保存（切り出し）"><img src="../resources/icons/split.png" alt=""><span>PDF切り出し</span></button>
+    <button id="export-button" class="tool" disabled title="ページをPNG/JPG画像としてエクスポート"><img src="../resources/icons/image_export.png" alt=""><span>画像出力</span></button>
+    <span class="sep" id="sep-2"></span>
+    <button id="rotate-right-button" class="tool" disabled title="選択ページを右に90度回転"><img src="../resources/icons/rotate_right.png" alt=""><span>右90°</span></button>
+    <button id="rotate-left-button" class="tool" disabled title="選択ページを左に90度回転"><img src="../resources/icons/rotate_left.png" alt=""><span>左90°</span></button>
+    <button id="rotate-180-button" class="tool" disabled title="選択ページを180度回転"><img src="../resources/icons/rotate_180.png" alt=""><span>180°</span></button>
+    <span class="sep" id="sep-3"></span>
+    <button id="save-button" class="tool" disabled title="PDF を保存"><img src="../resources/icons/save.png" alt=""><span>保存</span></button>
+  </header>
+  <header class="toolbar size-toolbar">
+    <span class="size-label" id="size-label">サムネ</span>
+    <button type="button" id="thumb-size-small" class="size-btn" disabled>小</button>
+    <button type="button" id="thumb-size-medium" class="size-btn checked" disabled>中</button>
+    <button type="button" id="thumb-size-large" class="size-btn" disabled>大</button>
+  </header>
+  <main class="workspace" id="pdf-workspace">
+    <aside class="thumbnail-panel">
+      <div id="page-list" class="empty">PDFを開くとページ一覧を表示します。</div>
+    </aside>
+    <div class="panel-splitter" id="panel-splitter"></div>
+    <section class="preview" id="preview">
+      <div class="welcome">
+        <h1>QuickMarkPDF</h1>
+        <p>「開く」からPDFまたはMarkdownファイルを選択してください。</p>
+      </div>
+    </section>
+  </main>
+  <main class="markdown-workspace" id="markdown-workspace" hidden>
+    <article id="markdown-content" class="markdown-content"></article>
+  </main>
+  <div class="modal-overlay" id="export-overlay" hidden>
+    <div class="modal export-modal">
+      <h2>画像としてエクスポート</h2>
+      <fieldset class="modal-group">
+        <legend>出力対象</legend>
+        <label class="radio-row"><input type="radio" name="export-scope" value="all" id="export-scope-all">すべてのページ（<span id="export-total-count">0</span>ページ）</label>
+        <label class="radio-row"><input type="radio" name="export-scope" value="selected" id="export-scope-selected">選択中のページ（<span id="export-selected-count">0</span>ページ）</label>
+      </fieldset>
+      <fieldset class="modal-group">
+        <legend>出力領域</legend>
+        <label class="radio-row"><input type="radio" name="export-area" value="all" id="export-area-all">ページ全体</label>
+        <label class="radio-row"><input type="radio" name="export-area" value="crop" id="export-area-crop">クロップした範囲</label>
+      </fieldset>
+      <fieldset class="modal-group">
+        <legend>画像設定</legend>
+        <div class="modal-row">
+          <label for="export-format">形式:</label>
+          <select id="export-format">
+            <option value="png">PNG（可逆・高品質）</option>
+            <option value="jpg">JPEG（圧縮）</option>
+          </select>
+        </div>
+        <div class="modal-row">
+          <label for="export-dpi-preset">解像度 (DPI):</label>
+          <select id="export-dpi-preset">
+            <option value="72">72（画面・軽量）</option>
+            <option value="150" selected>150（標準）</option>
+            <option value="300">300（印刷品質）</option>
+            <option value="0">カスタム...</option>
+          </select>
+          <input type="number" id="export-dpi-custom" min="50" max="1200" value="150" disabled>
+        </div>
+        <div class="modal-row" id="export-quality-row">
+          <label for="export-quality">JPEG画質:</label>
+          <input type="range" id="export-quality" min="60" max="100" value="90" disabled>
+          <span id="export-quality-label">90</span>
+        </div>
+      </fieldset>
+      <fieldset class="modal-group">
+        <legend>保存先</legend>
+        <div class="modal-row">
+          <label for="export-dir">フォルダ:</label>
+          <input type="text" id="export-dir">
+          <button type="button" id="export-browse">参照...</button>
+        </div>
+        <div class="modal-row">
+          <label for="export-prefix">接頭辞:</label>
+          <input type="text" id="export-prefix" placeholder="page など">
+        </div>
+        <div class="modal-example" id="export-example"></div>
+      </fieldset>
+      <div class="modal-buttons">
+        <button type="button" id="export-cancel">キャンセル</button>
+        <button type="button" id="export-run" class="primary">エクスポート実行</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="preferences-overlay" hidden>
+    <div class="modal preferences-modal">
+      <h2>環境設定</h2>
+      <fieldset class="modal-group">
+        <legend>プレビューでのマウスホイール操作</legend>
+        <label class="radio-row"><input type="radio" name="wheel-mode" value="zoom" checked>拡大・縮小（既定）　※右ドラッグでパン</label>
+        <label class="radio-row"><input type="radio" name="wheel-mode" value="scroll">縦スクロール　※右ドラッグで拡大・縮小（下=拡大／上=縮小）</label>
+      </fieldset>
+      <div class="modal-buttons">
+        <button type="button" id="preferences-cancel">キャンセル</button>
+        <button type="button" id="preferences-ok" class="primary">OK</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="help-overlay" hidden>
+    <div class="modal help-modal">
+      <h2>QuickMarkPDF の使い方</h2>
+      <div class="help-body">
+        <section>
+          <h3>基本操作</h3>
+          <ul>
+            <li><strong>開く</strong>: PDFまたはMarkdown（.md）ファイルを選択します。複数のPDFを同時に開くと、ページ一覧に連結して表示されます。</li>
+            <li><strong>ページ選択</strong>: サムネイルをクリックで単一選択、Ctrl+クリックで複数選択、Shift+クリックで範囲選択できます。</li>
+            <li><strong>並べ替え</strong>: サムネイルをドラッグ&ドロップすると順序を変更できます。複数ファイルを開いている場合はファイルをまたいだ移動もできます。</li>
+            <li><strong>回転・削除</strong>: 選択したページをツールバーまたは右クリックメニューから右90°／左90°／180°回転、削除できます。</li>
+            <li><strong>元に戻す</strong>: 直前の操作を取り消します（Ctrl+Z）。</li>
+            <li><strong>保存</strong>: 「保存」（Ctrl+S）で編集内容を保存します。開いているファイルが<u>1つだけ</u>のときは「上書き保存」か「名前を付けて保存」かを選べます。<u>複数のPDFファイルを同時に開いているとき</u>は上書き保存はできず、常に名前を付けて保存になります——このとき、開いている全ファイルのページがひとつに<strong>連結された新しいPDF</strong>として書き出されます（元のファイルはどれも変更されません）。</li>
+          </ul>
+        </section>
+        <section>
+          <h3>書き出し</h3>
+          <ul>
+            <li><strong>PDF切り出し</strong>: 選択したページだけを新しいPDFファイルとして保存します（元のファイルは変更されません）。</li>
+            <li><strong>画像出力</strong>: 選択ページまたは全ページをPNG/JPEGとして書き出せます。解像度（DPI）・JPEG画質・出力範囲（クロップ）を指定できます。</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Markdownモード</h3>
+          <p>.md ファイルを開くと、PDF編集の代わりにMarkdownプレビューが表示されます。見出し・リスト・表・コードブロックに加えて、Mermaid記法の図（<code>```mermaid</code>）と、$記法（<code>$...$</code> / <code>$$...$$</code>）による数式（MathJax）に対応しています。設定メニューはこの間も利用できます。</p>
+        </section>
+        <section>
+          <h3>キーボードショートカット</h3>
+          <table class="help-shortcuts">
+            <tr><td><kbd>Ctrl+O</kbd></td><td>ファイルを開く</td></tr>
+            <tr><td><kbd>Delete</kbd></td><td>選択ページを削除</td></tr>
+            <tr><td><kbd>Ctrl+Z</kbd></td><td>元に戻す</td></tr>
+            <tr><td><kbd>Ctrl+S</kbd></td><td>上書き保存</td></tr>
+          </table>
+        </section>
+      </div>
+      <div class="modal-buttons">
+        <button type="button" id="help-close" class="primary">閉じる</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="about-overlay" hidden>
+    <div class="modal about-modal">
+      <h2>QuickMarkPDF について</h2>
+      <p>Ver. 1.1.0</p>
+      <p>無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。</p>
+      <p>C++17 (MinGW-w64) + WebView2</p>
+      <p>GitHub: <a href="https://github.com/maktak-105/QuickMarkPDF" target="_blank" rel="noopener">maktak-105/QuickMarkPDF</a></p>
+      <div class="modal-buttons">
+        <button type="button" id="about-close" class="primary">閉じる</button>
+      </div>
+    </div>
+  </div>
+  <footer class="statusbar">
+    <span id="status">準備完了</span>
+  </footer>
+  <script src="../static/js/app.js"></script>
+</body>
+</html>
