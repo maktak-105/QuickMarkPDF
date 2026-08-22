@@ -30,7 +30,7 @@ Ver. v1.1.0
 ## 現在の位置づけ
 
 `core/native/`（C++17 + WebView2版）が製品として出荷される版です。
-`python/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、
+`python/prototype/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、
 製品として配布されません。ビルド手順、一度目の移植の破棄、ページ編集挙動の比較 QA は
 [`environment_jp.md`](environment_jp.md) を参照してください。
 

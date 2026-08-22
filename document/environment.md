@@ -7,7 +7,7 @@
 `core/native/` (C++17 + WebView2) is the **shipped product**. When asked to
 "build the app" without qualification, build this version.
 
-`python/` (PySide6) is a **development-time evaluation prototype**. It is
+`python/prototype/` (PySide6) is a **development-time evaluation prototype**. It is
 not distributed. It remains in the tree so page-editing behavior can still
 be compared during development. Visual match with the Python UI is **not**
 a goal — the native GUI uses the Modern Dark theme on purpose.
@@ -122,7 +122,7 @@ shared by Teams, Windows Search, and other apps. Stop only
 | GUI will not start (Runtime) | Install Microsoft Edge WebView2 Runtime (Evergreen) |
 | `g++` / `windres` not found when invoked directly | Add WinLibs `mingw64\bin` to user PATH — not needed for `build_native.py` |
 | Fresh unsigned exe disappears or tests fail with exit `3221225785` | CrowdStrike quirk above; re-run before assuming a regression |
-| `ModuleNotFoundError: No module named 'src'` | Python tests need the repo root as cwd (`pyproject.toml` sets `pythonpath = ["python"]`) |
+| `ModuleNotFoundError: No module named 'src'` | Python tests need the repo root as cwd (`pyproject.toml` sets `pythonpath = ["python/prototype"]`) |
 
 ## Evaluation prototype (Python)
 
@@ -130,8 +130,8 @@ shared by Teams, Windows Search, and other apps. Stop only
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python python/main.py
-python python/main.py path\to\file.pdf
+python python/prototype/main.py
+python python/prototype/main.py path\to\file.pdf
 ```
 
 PyInstaller onedir (not shipped):
@@ -145,23 +145,23 @@ Output: `dist/QuickMarkPDF/` (`QuickMarkPDF.exe` plus `_internal`).
 ### Python automated tests
 
 ```powershell
-.venv\Scripts\python.exe run_tests.py
+.venv\Scripts\python.exe python/tests/run_tests.py
 ```
 
-This runs the default pytest suite, then writes `tests/reports/summary.md`
-plus JUnit XML and HTML coverage under `tests/reports/` (gitignored).
+This runs the default pytest suite, then writes `python/tests/reports/summary.md`
+plus JUnit XML and HTML coverage under `python/tests/reports/` (gitignored).
 
-`tests/conftest.py` installs an autouse `dialog_guard` that patches
+`python/tests/conftest.py` installs an autouse `dialog_guard` that patches
 `QFileDialog` / `QMessageBox` / `QInputDialog` / `QDialog.exec`. An
 unregistered dialog fails immediately instead of hanging. Combined with a
 60s per-test timeout, the suite cannot wait forever for a click.
 
 | Location | What it checks | Default? |
 | --- | --- | --- |
-| `tests/test_*.py` | Unit + `MainWindow` flows (open/rotate/delete/reorder/undo/save/export) | Yes |
-| `tests/visual/` | Screenshot regression vs `tests/visual_baselines/` | Yes |
-| `tests/perf/` | Timing for load/rotate/reorder/undo/export | Yes |
-| `tests/real_screen/` | Visible window + `QTest` input | No (`--real-screen`) |
+| `python/tests/test_*.py` | Unit + `MainWindow` flows (open/rotate/delete/reorder/undo/save/export) | Yes |
+| `python/tests/visual/` | Screenshot regression vs `python/tests/visual_baselines/` | Yes |
+| `python/tests/perf/` | Timing for load/rotate/reorder/undo/export | Yes |
+| `python/tests/real_screen/` | Visible window + `QTest` input | No (`--real-screen`) |
 
 Tests use offscreen Qt (`QT_QPA_PLATFORM=offscreen`) unless
 `QUICKMARKPDF_REAL_SCREEN=1`. Offscreen Qt in this environment has no CJK
@@ -217,19 +217,20 @@ under `vendor/` for Markdown preview.
 
 Python prototype / tests: `requirements.txt` (PyMuPDF, PySide6, Pillow,
 Markdown, PyInstaller) and `requirements-dev.txt` (pytest, pytest-qt,
-pytest-timeout, pytest-cov). QA extras: `qa/requirements-qa.txt`.
+pytest-timeout, pytest-cov). QA extras: `python/qa/requirements-qa.txt`.
 
 ## File structure (shipped layout)
 
 ```text
 QuickMarkPDF/
-├── .github/workflows/     ci.yml, release.yml (currently still PyInstaller — see remaining work)
+├── .github/workflows/     ci.yml, release.yml (native ZIP on v* tags)
 ├── core/native/           C++ engine, WebView2 host, CLI demo, resources
 ├── templates/             development HTML
 ├── static/                development CSS/JS
-├── python/                evaluation prototype (not shipped)
-├── tests/                 Python prototype tests
-├── qa/                    Python vs C++ behavior dashboard
+├── python/prototype/      evaluation prototype (not shipped)
+├── python/tests/          Python prototype tests
+├── python/qa/             Python vs C++ behavior dashboard
+├── python/tools/          helper scripts
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
 ├── resources/vendor/      Mermaid / MathJax source copied to dist/binary/vendor/
 ├── assets/                README screenshots (not in the ZIP)

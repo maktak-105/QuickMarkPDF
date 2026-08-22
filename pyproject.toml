@@ -1,7 +1,7 @@
 [tool.pytest.ini_options]
 # Lets `pytest` find `src.pdf_editor...` imports without setting PYTHONPATH by hand.
-pythonpath = ["python"]
-testpaths = ["tests"]
+pythonpath = ["python/prototype"]
+testpaths = ["python/tests"]
 qt_api = "pyside6"
 timeout = 60
 markers = [

@@ -31,7 +31,7 @@ other third-party C++ libraries.
 ## Status
 
 `core/native/` (C++17 + WebView2) is the shipped product.
-`python/` (PySide6) is a prototype used only for evaluating behavior during
+`python/prototype/` (PySide6) is a prototype used only for evaluating behavior during
 development; it is not shipped. See [`environment.md`](environment.md) for
 the build, the first discarded port, and the QA process that still compares
 page-editing behavior between the two.

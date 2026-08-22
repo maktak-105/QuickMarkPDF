@@ -12,7 +12,7 @@
 - **UI language**: Japanese only (no language toggle)
 - **Version**: v1.1.0
 
-`core/native/` (C++17 + WebView2) is the shipped product. `python/` (PySide6)
+`core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
 not shipped.
 

@@ -7,7 +7,7 @@
 
 無料、広告無し、寄付無し、課金無し。シンプルなWindowsデスクトップ向けPDFページ編集ツールです。分割・結合・並べ替え・回転・書き出しといった、必要最小限の編集に絞っています。おまけとして、Markdown（Mermaid図・数式（MathJax）対応）のプレビュー・PDF書き出しも備えています。
 
-**現在のバージョンは v1.1.0 です。** `core/native/`（C++17 + WebView2版）が製品として出荷される版です。`python/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、配布はされません。詳細は[`document/about_jp.md`](document/about_jp.md)・[`document/environment_jp.md`](document/environment_jp.md)を参照してください。
+**現在のバージョンは v1.1.0 です。** `core/native/`（C++17 + WebView2版）が製品として出荷される版です。`python/prototype/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、配布はされません。詳細は[`document/about_jp.md`](document/about_jp.md)・[`document/environment_jp.md`](document/environment_jp.md)を参照してください。
 
 画面は日本語のみです。言語切替はありません。英語版 README のスクリーンショットも同じウィンドウです。
 
@@ -95,7 +95,7 @@ PySide6版は製品ではありません。開発中にページ編集の挙動�
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt
-python python/main.py
+python python/prototype/main.py
 ```
 
 ## ライセンス

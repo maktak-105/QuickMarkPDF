@@ -1,0 +1,105 @@
+# Python widget path <-> C++ DOM path 対応表(plans/2026-08-20_C++版Python完全一致化_v1.3.md
+# 「変更内容」節で「人手で作成する唯一の対応表」と定義されているもの)。
+#
+# ここに値(サイズ・色・合否)は一切書かない。識別のための対応関係のみを書く。
+# 実際の測定値の比較は qa/dashboard.py が qa/baseline.json (Python) と
+# qa/baseline_cpp.json (C++) をこの対応表経由で突き合わせて行う。
+#
+# 更新ルール:
+# - C++側に対応するUI要素が実装されたら、この対応表に1行足す(実装が対応表を追いかける、
+#   対応表を先回りで埋めない — 存在しないC++要素を書くと「対応あり」の体で「未計測」と
+#   誤表示されてしまうため)
+# - Python側に無くC++側にのみ存在する要素(=C++が誤って追加したもの)は
+#   extra_in_cpp に列挙し、その理由を note に書く。dashboard側で「Python版に無い要素」
+#   として明示するための情報であり、削除して隠すためのものではない。
+
+mappings:
+  # ツールバー(1行目・機能ボタン) -- python/src/pdf_editor/ui/main_window.py:_create_toolbar()
+  "MainWindow/QToolBar/QToolButton:開く": "html/body/header/open-button"
+  "MainWindow/QToolBar/QToolButton:PDF切り出し": "html/body/header/split-button"
+  "MainWindow/QToolBar/QToolButton:画像出力": "html/body/header/export-button"
+  "MainWindow/QToolBar/QToolButton:右90°": "html/body/header/rotate-right-button"
+  "MainWindow/QToolBar/QToolButton:左90°": "html/body/header/rotate-left-button"
+  "MainWindow/QToolBar/QToolButton:180°": "html/body/header/rotate-180-button"
+  "MainWindow/QToolBar/QToolButton:保存": "html/body/header/save-button"
+  "MainWindow/QToolBar/QToolButton:サムネ": "html/body/header/size-label"
+  # ツールバー本体2行(帯そのもの)。extract_cpp.pyがidに頼らず直接セレクタで測定した
+  # 合成pathを使う(id付けで測ろうとして既存対応を全部壊した経緯はgit history参照)。
+  "MainWindow/QToolBar[1]": "html/body/header[toolbar-1]"
+  "MainWindow/QToolBar[2]": "html/body/header[toolbar-2]"
+
+  # ツールバーのセパレータ(3本)。Python側はいずれも無ラベルの"QWidget"で、
+  # widgetPath()だけでは3本とも区別できないため、位置(x座標)の並び順で対応させる:
+  # 1本目=開くの直後、2本目=画像出力の直後、3本目=180°の直後。
+  # C++側にはid(sep-1/2/3)を振って一意に測定できるようにした。
+  "MainWindow/QToolBar/QWidget[1]": "html/body/header/sep-1"
+  "MainWindow/QToolBar/QWidget[2]": "html/body/header/sep-2"
+  "MainWindow/QToolBar/QWidget[3]": "html/body/header/sep-3"
+
+  # サムネイルサイズ切替ツールバー(2行目) -- 2026-08-20、thumb-size-*ボタン実装に伴い追加。
+  # サムネ(ラベルのみ、クリック不可)はC++側で<span>(id無し)なため対応するpathを一意に
+  # 特定できず、意図的に対応表から外している(更新ルールの「先回りで埋めない」に従う)。
+  "MainWindow/QToolBar/QToolButton:小": "html/body/header/thumb-size-small"
+  "MainWindow/QToolBar/QToolButton:中": "html/body/header/thumb-size-medium"
+  "MainWindow/QToolBar/QToolButton:大": "html/body/header/thumb-size-large"
+
+  # サムネイルパネル・プレビュー領域 -- 2026-08-20追加。qt_scrollarea_viewportは
+  # Qt内部のスクロール実装用ラッパーで、DOM側の直接の対応物ではないため、意味的に
+  # 一番近い「実際にスクロールする要素」に対応させている(厳密な構造一致ではなく、
+  # 領域としての対応)。
+  # QSplitter自体はpdf-workspace要素そのもの(margin適用後の内側の範囲がQSplitterの
+  # 範囲と一致する -- ハンドル・中身のパーツが既に個別に一致しているのと同じ理由)。
+  "MainWindow/QWidget/QSplitter": "html/body/pdf-workspace"
+  "MainWindow/QWidget/QSplitter/ThumbnailPanel": "html/body/pdf-workspace/aside"
+  "MainWindow/QWidget/QSplitter/ThumbnailPanel/qt_scrollarea_viewport": "html/body/pdf-workspace/aside/page-list"
+  # QStackedWidget・qt_scrollarea_viewport・PreviewLabelは、Python側の実測値でも
+  # QScrollArea(またはその2pxインセットのビューポート)と同一の範囲を占めている
+  # (空状態のQLabelがQScrollAreaいっぱいに広がっているため)。異なるQtクラス名だが
+  # 実際に同じ矩形を指しているので、同じ.preview要素への対応で偽りにならない。
+  "MainWindow/QWidget/QSplitter/QStackedWidget": "html/body/pdf-workspace/preview"
+  "MainWindow/QWidget/QSplitter/QStackedWidget/QScrollArea": "html/body/pdf-workspace/preview"
+  "MainWindow/QWidget/QSplitter/QStackedWidget/QScrollArea/qt_scrollarea_viewport": "html/body/pdf-workspace/preview"
+  "MainWindow/QWidget/QSplitter/QStackedWidget/QScrollArea/qt_scrollarea_viewport/PreviewLabel": "html/body/pdf-workspace/preview"
+  # 2026-08-20: リサイズ可能な境界(#panel-splitter)を実装したのに伴い追加。
+  "MainWindow/QWidget/QSplitter/qt_splithandle_": "html/body/pdf-workspace/panel-splitter"
+
+  # 設定メニュー -- <header class="menubar">自体は元々ウィンドウ幅いっぱい(bodyの
+  # フレックス子要素としてデフォルトでstretch)だったが、対応表が中の「設定」ボタン
+  # divを指していたため見かけ上不一致になっていた。ヘッダー自体を直接測定する
+  # (toolbar-1/2と同じ手法)よう対応先を差し替え。
+  "MainWindow/QMenuBar": "html/body/header[menubar]"
+
+  # 中央ウィジェット(setCentralWidget)。#pdf-workspace自身のmargin適用前の外側の範囲。
+  "MainWindow/QWidget": "html/body[central-widget]"
+
+  # ウィンドウ全体・大枠のレイアウト(意味的に一番近いコンテナ同士)
+  "MainWindow": "html/body"
+  "MainWindow/QStatusBar": "html/body/footer"
+  # QSizeGripは意図的に対応させない。2026-08-20、一度は測定用のダミー要素
+  # (#size-grip、機能を持たない13x13pxの飾り)を追加して「一致」させたが、
+  # 実際の機能を移植したものではなく数字の水増しだと指摘を受け、削除した。
+  # WebView2のウィンドウはOSネイティブの枠でリサイズされるため、Python版の
+  # QSizeGripに対応する実体は存在しない。未計測のまま残すのが正直な状態。
+
+# C++側にのみ存在し、Python版に対応するUI要素が無いもの。
+# 「余分に存在すること自体」が不一致であり、対応がつけられないから消すのではなく、
+# 明示的に記録しておく。
+#
+# 2026-08-20時点: 空。以前ここには削除/元に戻すツールバーボタン
+# (html/body/header/delete-button, undo-button) が記録されていたが、これは
+# commit b265084 のUI全面書き直し(qa/baseline.jsonの実測値に基づく再実装)より前の
+# 古いC++ビルドを指しており、現在の templates/index.html には該当ボタンは存在しない
+# (削除はDelキー、元に戻すはCtrl+Zのみ、Python版と同じ設計)。ここに古い記録を
+# 残したままだと、実際には解消済みの不一致を毎回FAILとして報告し続けてしまうため削除した。
+extra_in_cpp: []
+
+# Python版に存在しC++版にまだ実装されていない主な機能領域(個々のウィジェット単位では
+# なく領域単位のメモ)。実装が進み次第、上の mappings に個別のpathを追加していく。
+#
+# 2026-08-20時点: 空。プレビューのクロップ範囲選択(左ドラッグでのラバーバンド選択 →
+# export_pages_to_imagesのcropに反映)を実装し、qa/_diag_crop.py(一時スクリプト、
+# 検証後に削除済み)で合成マウスイベントによるドラッグ→#crop-overlayの座標・サイズが
+# 期待通りになることとスクリーンショットでの見た目を確認した。ただし対応するUIが
+# app.js内の状態のみでPdfManager経由では観測できないため、check_behaviors_cpp.pyの
+# 自動チェックには反映されていない(preview_crop_area_selectionは引き続きFAILのまま
+# 表示される -- これは「未実装」ではなく「このチェック方式では検証不可」の意味)。

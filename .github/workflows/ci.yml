@@ -32,8 +32,8 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
-          $env:PYTHONPATH = 'python'
-          python -m unittest discover -s tests -v
+          $env:PYTHONPATH = 'python/prototype'
+          python -m unittest discover -s python/tests -v
           # PySide6 may return an access-violation code during Qt teardown
           # after all unittest cases have passed on Windows.
           if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1073741819) { throw "Tests failed with exit code $LASTEXITCODE" }
