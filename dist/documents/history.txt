@@ -4,6 +4,8 @@ v1.1.0 (2026-08-21)
 - Fixed the right-click menu overflowing the window near screen edges.
 - Fixed unreadable (near-white) headings in Markdown-to-PDF export.
 - Fixed Markdown-to-PDF export always producing only 1 page regardless of document length.
+- Unified project and distribution documentation (native build is the shipped app).
+- Stated that the app is free, with no ads, no donation requests, and no paid features.
 
 v1.0.0 (2026-08-21)
 - Completed the second C++/WebView2 port to feature parity with the Python prototype: page split, PNG/JPEG image export with crop, keyboard shortcuts, right-click menu, Markdown preview mode (Mermaid diagrams, MathJax math), Markdown-to-PDF export, and a PDF+Markdown mixed-selection guard.

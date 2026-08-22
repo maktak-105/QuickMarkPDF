@@ -1,5 +1,7 @@
-QuickMarkPDF - QuickMarkPDF
+QuickMarkPDF - Simple PDF page editor
 Distribution package  v1.1.0
+
+Free. No ads, no donation requests, no paid features.
 
 GitHub
 ------
@@ -13,7 +15,7 @@ repository. Once a release is tagged, download `QuickMarkPDF-binary.zip`
 from:
 https://github.com/maktak-105/QuickMarkPDF/releases
 and extract it. All distribution files are placed in the same folder
-without subfolders.
+without subfolders (except `vendor/`, which must stay next to index.html).
 
 Requirements
 ------------
@@ -32,13 +34,16 @@ it is not the Runtime itself.
 Usage (quick start)
 -------------------
 1. Extract the distribution ZIP into any folder.
-2. Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebView2Loader.dll`, and `index.html` together.
+2. Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebView2Loader.dll`, `index.html`,
+   and the `vendor` folder together.
 3. Run `QuickMarkPDF.exe`.
 4. Click "Open" to load one or more PDF files, or a single Markdown (.md) file.
 5. Select pages in the left thumbnail panel, then use the toolbar or the
    right-click menu to edit them. Drag thumbnails to reorder pages.
 6. Use the "Help" menu at the top for an in-app usage guide and keyboard
    shortcuts, and "Settings" for preview wheel-mode preferences.
+
+The GUI is Japanese only. There is no language toggle.
 
 Opening files
 -------------
@@ -126,8 +131,8 @@ with the wheel and zooms with a right-drag instead. The choice is
 remembered between runs.
 
 `QuickMarkPDF_cli.exe` is a lightweight, non-GUI demo binary used to
-exercise the underlying page-editing engine; it is not the shipped
-application.
+exercise the underlying page-editing engine (`--help` / `demo`). It is not
+a product command-line interface.
 
 Distribution files
 ------------------
@@ -135,7 +140,8 @@ Distribution files
 - `QuickMarkPDF_cli.exe` - non-GUI demo/verification binary
 - `pdfium.dll` - PDF rendering/editing engine
 - `WebView2Loader.dll` - WebView2 loader
-- `index.html` - GUI content (includes bundled Mermaid/MathJax)
+- `index.html` - GUI content
+- `vendor/` - Mermaid.js and MathJax used by Markdown preview
 - `readme.txt` - this file
 - `readme_jp.txt` - Japanese distribution documentation
 - `history.txt` - change log
@@ -150,8 +156,17 @@ Not yet available -- no binary has been released for this version.
 License
 -------
 The source code of this software is provided under the MIT License.
+Copyright (c) 2026 maktak-105 (GitHub: https://github.com/maktak-105)
 See the bundled `LICENSE.txt` for the original text or `LICENSE_jp.txt`
 for the Japanese reference translation.
+
+Third-party software
+--------------------
+The GUI redistributes PDFium (pdfium.dll), Microsoft WebView2 Loader
+(WebView2Loader.dll), Mermaid.js (MIT), and MathJax (Apache License 2.0).
+WebView2 Runtime is not bundled; install it separately if missing.
+License texts for bundled copies live with the project source
+(third_party/ and resources/vendor/).
 
 Disclaimer
 ----------
@@ -160,4 +175,4 @@ software, its results, data loss, system failures, hardware damage, or any other
 Always back up important PDFs before editing or exporting them.
 
 QuickMarkPDF is an independent application and is not affiliated with or endorsed by
-any third-party software or hardware vendor.
+Adobe, Microsoft, or any other third-party software vendor.

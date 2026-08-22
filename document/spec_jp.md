@@ -5,13 +5,14 @@
 ## 1. アプリ概要
 
 - **名称**: QuickMarkPDF
-- **目的**: 広告・寄付要求のない、シンプルなPDFページ編集ツール（分割・結合・並べ替え・回転・画像/PDF書き出し）。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しにも対応する
+- **目的**: 無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツール（分割・結合・並べ替え・回転・画像/PDF書き出し）。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しにも対応する
 - **対象OS**: Windows 10 / 11 (64-bit)
 - **実装**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/バニラJS
-- **配布形態**: GitHub Releases の ZIP（フラット構成）
+- **配布形態**: GitHub Releases の ZIP（フラット構成。Release は未公開）
+- **表示言語**: 日本語のみ（言語切替なし）
 - **バージョン**: v1.1.0
 
-`python/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。製品として出荷されるのは`core/native/`（C++17 + WebView2版）である。
+製品として出荷されるのは`core/native/`（C++17 + WebView2版）である。`python/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。
 
 ## 2. アーキテクチャ
 
@@ -77,12 +78,12 @@
 | `delete_pages` | `indices` | 指定ページを削除 |
 | `undo_edit` | なし | 直前の編集を取り消す |
 | `close_document` | `path` | 指定ファイルを閉じる |
-| `export_images` | `format`, `dpi`, `quality`, `scope`, `crop`, `output_dir`, `prefix` | 画像として書き出す |
-| `get_export_defaults` | なし | 画像出力ダイアログの初期値を取得 |
+| `export_images` | `indices`, `dpi`, `fmt`, `jpeg_quality`, `output_dir`, `prefix`、任意の `crop` | 画像として書き出す |
+| `get_export_defaults` | `indices` | 画像出力ダイアログの初期値を取得 |
 | `browse_export_folder` | なし | 出力先フォルダ選択ダイアログを開く |
 | `save_pdf` | なし | 上書き保存（不可の場合は名前を付けて保存） |
 | `split_pdf` | `indices` | 選択ページをPDF切り出し |
-| `save_markdown_pdf` | `output_path` | MarkdownプレビューをPDFへ書き出す |
+| `save_markdown_pdf` | 任意の `output_path` | MarkdownプレビューをPDFへ書き出す。`output_path` を省略すると保存ダイアログ。テストはパスを渡してダイアログを省略できる |
 
 ### native → JS
 
@@ -123,7 +124,7 @@
 
 ### 並列化設計
 
-現状、ページ描画・書き出しは同期的に処理する（Python版と異なり、大量ページの並列レンダリングは未実装）。
+現状、ページ描画・書き出しは同期的に処理する。大量ページの並列レンダリングは未実装。
 
 ### キャッシュ
 
@@ -131,5 +132,7 @@ PDFiumのページオブジェクトはドキュメントを閉じるまで保�
 
 ## 10. 今後の実装予定
 
-- PDF+Markdown混在選択時のPython版相当の詳細な挙動の一部簡略化を解消
-- ネストしたリスト（Markdown）への対応
+- Markdown のネストしたリストへの対応
+- 大量ページの並列描画・書き出し
+- 製品級の CLI（現状の `QuickMarkPDF_cli.exe` はページモデルのデモ）
+- GitHub Release の公開（v1.1.0 は未タグ）

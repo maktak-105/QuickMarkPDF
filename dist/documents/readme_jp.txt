@@ -1,5 +1,7 @@
-QuickMarkPDF - QuickMarkPDF
+QuickMarkPDF - シンプルなPDFページ編集ツール
 配布パッケージ  v1.1.0
+
+無料、広告無し、寄付無し、課金無し。
 
 GitHub
 ------
@@ -11,8 +13,9 @@ https://github.com/maktak-105/QuickMarkPDF
 「Building the native version」を参照し、ソースからビルドしてください。
 Release公開後は、以下から `QuickMarkPDF-binary.zip` をダウンロードできます。
 https://github.com/maktak-105/QuickMarkPDF/releases
-ダウンロード後、任意のフォルダへ展開してください。ZIP内のすべての配布ファイルは、
-サブフォルダを作らず同じフォルダに置かれています。
+ダウンロード後、任意のフォルダへ展開してください。ZIP内の配布ファイルは、
+`vendor/` 以外はサブフォルダを作らず同じフォルダに置かれます。`vendor/` は
+`index.html` の隣に置いたままにしてください。
 
 動作環境
 --------
@@ -30,8 +33,8 @@ Microsoft Edge WebView2 Runtime (Evergreen)をインストールしてくださ�
 起動方法（クイックスタート）
 ----------------------------
 1. 配布ZIPを任意のフォルダへ展開します。
-2. `QuickMarkPDF.exe`、`pdfium.dll`、`WebView2Loader.dll`、`index.html` は
-   必ず同じフォルダに置いてください。
+2. `QuickMarkPDF.exe`、`pdfium.dll`、`WebView2Loader.dll`、`index.html`、
+   `vendor` フォルダは必ず同じ場所に置いてください。
 3. `QuickMarkPDF.exe` を実行します。
 4. 「開く」ボタンから、1つ以上のPDFファイル、または単一のMarkdown（.md）
    ファイルを選択します。
@@ -40,6 +43,8 @@ Microsoft Edge WebView2 Runtime (Evergreen)をインストールしてくださ�
 6. 画面上部の「ヘルプ」メニューからアプリ内の使い方ガイドとキーボードショート
    カット一覧を確認できます。「設定」メニューではプレビューのホイール操作
    モードを変更できます。
+
+画面は日本語のみです。言語切替はありません。
 
 ファイルを開く
 --------------
@@ -128,7 +133,7 @@ Markdownモード中に「保存」（またはCtrl+S）を押すと、現在の
 ます。
 
 `QuickMarkPDF_cli.exe` はページ編集エンジンの動作確認用に用意された軽量な非GUIの
-デモバイナリであり、製品としての配布物ではありません。
+デモバイナリです（`--help` / `demo`）。製品としてのコマンドライン版ではありません。
 
 配布ファイル
 ------------
@@ -136,7 +141,8 @@ Markdownモード中に「保存」（またはCtrl+S）を押すと、現在の
 - `QuickMarkPDF_cli.exe` - 非GUIのデモ・動作確認用バイナリ
 - `pdfium.dll` - PDF描画・編集エンジン
 - `WebView2Loader.dll` - WebView2ローダー
-- `index.html` - GUIに使用するUI（Mermaid/MathJax同梱）
+- `index.html` - GUIに使用するUI
+- `vendor/` - Markdownプレビュー用の Mermaid.js と MathJax
 - `readme.txt` - 英語版の配布ファイル説明書
 - `readme_jp.txt` - このファイル
 - `history.txt` - 更新履歴（英語）
@@ -150,8 +156,18 @@ SHA-256
 
 ライセンス
 ----------
-このソフトウェアのソースコードはMIT Licenseで提供されます。MIT Licenseの全文は、
-同梱の `LICENSE.txt`（英語原文）または `LICENSE_jp.txt`（日本語参考訳）を確認してください。
+このソフトウェアのソースコードはMIT Licenseで提供されます。
+Copyright (c) 2026 maktak-105 (GitHub: https://github.com/maktak-105)
+MIT Licenseの全文は、同梱の `LICENSE.txt`（英語原文）または
+`LICENSE_jp.txt`（日本語参考訳）を確認してください。
+
+第三者ソフトウェア
+------------------
+GUI には PDFium（pdfium.dll）、Microsoft WebView2 Loader
+（WebView2Loader.dll）、Mermaid.js（MIT）、MathJax（Apache License 2.0）
+を同梱します。WebView2 Runtime 自体は同梱しません。欠けていれば別途
+インストールしてください。同梱コピーのライセンス本文はソース側の
+third_party/ と resources/vendor/ にあります。
 
 免責事項
 --------
@@ -159,5 +175,5 @@ SHA-256
 システム障害、ハードウェア故障、その他の損害について、作者は責任を負いません。
 重要なPDFは必ずバックアップしてから編集・書き出ししてください。
 
-QuickMarkPDF is an independent application and is not affiliated with or endorsed by
-any third-party software or hardware vendor.
+QuickMarkPDFは独立したアプリケーションであり、Adobe・Microsoftその他いかなる
+サードパーティのソフトウェアベンダーとも提携・承認関係にありません。

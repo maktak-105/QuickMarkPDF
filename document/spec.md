@@ -5,15 +5,16 @@
 ## 1. Overview
 
 - **Name**: QuickMarkPDF
-- **Purpose**: A simple PDF page editor with no ads and no donation nagging (split, merge, reorder, rotate, export to image/PDF). As a bonus, it also exports Markdown (with Mermaid diagrams and math) to PDF.
+- **Purpose**: A simple PDF page editor — free, no ads, no donation requests, no paid features (split, merge, reorder, rotate, export to image/PDF). As a bonus, it also exports Markdown (with Mermaid diagrams and math) to PDF.
 - **Target OS**: Windows 10 / 11 (64-bit)
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
-- **Distribution**: GitHub Releases ZIP (flat layout)
+- **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
+- **UI language**: Japanese only (no language toggle)
 - **Version**: v1.1.0
 
-`python/` (PySide6) is a prototype used only for evaluating behavior during
-development; it is not shipped. `core/native/` (C++17 + WebView2) is the
-shipped product.
+`core/native/` (C++17 + WebView2) is the shipped product. `python/` (PySide6)
+is a prototype used only for evaluating behavior during development; it is
+not shipped.
 
 ## 2. Architecture
 
@@ -79,12 +80,12 @@ shipped product.
 | `delete_pages` | `indices` | Deletes the given pages |
 | `undo_edit` | none | Reverts the most recent edit |
 | `close_document` | `path` | Closes the given file |
-| `export_images` | `format`, `dpi`, `quality`, `scope`, `crop`, `output_dir`, `prefix` | Exports pages as images |
-| `get_export_defaults` | none | Gets defaults for the export dialog |
+| `export_images` | `indices`, `dpi`, `fmt`, `jpeg_quality`, `output_dir`, `prefix`, optional `crop` | Exports pages as images |
+| `get_export_defaults` | `indices` | Gets defaults for the export dialog |
 | `browse_export_folder` | none | Opens a folder picker for the export destination |
 | `save_pdf` | none | Overwrite-saves (or "save as" when not possible) |
 | `split_pdf` | `indices` | Saves the selected pages as a new PDF |
-| `save_markdown_pdf` | `output_path` | Exports the Markdown preview to PDF |
+| `save_markdown_pdf` | optional `output_path` | Exports the Markdown preview to PDF. Omitted `output_path` opens a save dialog; tests may pass a path to skip the dialog |
 
 ### native -> JS
 
@@ -125,8 +126,8 @@ shipped product.
 
 ### Parallelization
 
-Page rendering and export are currently synchronous (unlike the Python
-version, parallel rendering of a large page count is not implemented).
+Page rendering and export are currently synchronous. Parallel rendering of
+a large page count is not implemented.
 
 ### Caching
 
@@ -135,5 +136,7 @@ being reopened on every re-render.
 
 ## 10. Planned work
 
-- Resolve the remaining simplifications in the mixed PDF/Markdown selection handling relative to the Python version's behavior.
 - Support nested lists in Markdown.
+- Parallel page rendering / export for large page counts.
+- A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
+- Publish a GitHub Release (v1.1.0 is not tagged yet).

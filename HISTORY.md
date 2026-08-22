@@ -2,11 +2,13 @@
 
 [日本語版 HISTORY_jp.md](HISTORY_jp.md)
 
+This file records the major changes in each public version.
+
 ## Versioning rules
 
-- First digit: new features
-- Second digit: bug fixes
-- Third digit: other changes, such as documentation updates
+- First digit (for example, `1.0.0` to `2.0.0`): new features
+- Second digit (for example, `1.0.0` to `1.1.0`): bug fixes
+- Third digit (for example, `1.1.0` to `1.1.1`): other changes, such as documentation updates
 
 ## v1.1.0 (2026-08-21)
 
@@ -15,6 +17,11 @@
 - Fixed the right-click context menu rendering outside the window when opened near the bottom/right edge (e.g. the last page of a long thumbnail list) — it now clamps to stay fully visible.
 - Fixed Markdown-to-PDF export: heading text (h1-h6) rendered near-invisible (light gray on white) in the exported PDF because the dark-theme heading color wasn't overridden by the print stylesheet.
 - Fixed Markdown-to-PDF export producing only 1 page regardless of document length: `html`/`body`'s `height:100%; overflow:hidden` (needed for the app's own chrome) was clipping print output to a single viewport-height page. The print stylesheet now lets content grow to its natural height. Verified with a 40-section test document exporting to 14 pages.
+
+### Documentation
+
+- Unified README, `document/`, distribution readme, HISTORY, and LICENSE to the Quick app template: C++/WebView2 is the shipped product, Python is an evaluation prototype, UI is Japanese-only, and third-party redistributions (PDFium, WebView2 Loader, Mermaid, MathJax) are listed.
+- Stated in user-facing docs that the app is free, with no ads, no donation requests, and no paid features.
 
 ## v1.0.0 (2026-08-21)
 
