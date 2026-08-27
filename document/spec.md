@@ -10,7 +10,7 @@
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
 - **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
 - **UI language**: Japanese only (no language toggle)
-- **Version**: v1.1.0
+- **Version**: v1.2.1
 
 `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
@@ -114,6 +114,7 @@ not shipped.
 | `Delete` | Delete selected pages |
 | `Ctrl+Z` | Undo |
 | `Ctrl+S` | Overwrite save |
+| `ArrowUp` / `ArrowDown` (thumbnail panel focused) | Select the previous/next page |
 
 ## 8. Output format notes
 
@@ -131,12 +132,15 @@ a large page count is not implemented.
 
 ### Caching
 
-PDFium page objects are kept open until the document is closed, rather than
-being reopened on every re-render.
+`PdfBackend` keeps up to 4 recently-used source documents open (keyed by
+path + password) instead of re-reading the file and re-parsing its xref
+table on every `render_page`/`inspect` call. `PdfBackend::save()` evicts the
+cache entry for its output path right after a successful write, so an
+overwrite-save is always reflected in the next render.
 
 ## 10. Planned work
 
 - Support nested lists in Markdown.
 - Parallel page rendering / export for large page counts.
 - A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
-- Publish a GitHub Release (v1.1.0 is not tagged yet).
+- Publish a GitHub Release (v1.2.1 is not tagged yet; v1.1.0 has been published).

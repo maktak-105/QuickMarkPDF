@@ -314,9 +314,17 @@ kbd {
   background: var(--bg-input); border: 1px solid var(--border-color-strong); border-radius: 3px;
   padding: 1px 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-main);
 }
+/* Quickシリーズ アプリ仕様書 9.2: バージョン情報カード外周はシアン色の境界線+
+   弱い発光感を持たせる(他の汎用モーダルの白系境界線とは別扱い)。 */
+.about-modal { border-color: var(--accent-cyan); box-shadow: 0 0 0 1px rgba(0, 240, 255, .25), 0 0 20px rgba(0, 240, 255, .2), var(--glass-shadow); }
 .about-modal p { font-size: 12px; line-height: 1.7; margin: 6px 0; color: var(--text-muted); }
-.about-modal p:first-of-type { color: var(--text-main); font-size: 13px; }
 .about-modal a { color: var(--accent-cyan); }
+.about-version { color: var(--accent-cyan); font-size: 13px; font-weight: 600; margin: 0 0 10px; }
+.about-divider { border: none; border-top: 1px solid var(--border-color); margin: 0 0 12px; }
+.about-section-title { font-size: 12px; margin: 14px 0 4px; color: var(--accent-cyan); font-weight: 600; }
+/* QuickFolderSize/QuickDiskBenchと同じ制作者ワッペンの標準寸法(幅160px、
+   高さ自動)に合わせる。 */
+.about-badge { display: block; width: 160px; height: auto; margin: 16px auto 0; border-radius: 50%; background: #fff; }
 
 /* Markdown -> PDF (ICoreWebView2_7::PrintToPdf) prints whatever the "print"
    media type would render for the WHOLE page -- since this app is a single

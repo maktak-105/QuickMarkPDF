@@ -152,6 +152,59 @@ FPDF_DOCUMENT open_source(const PdfiumApi& api, const std::string& path, const s
     return doc;
 }
 
+// render_page()/inspect() reopen and re-parse the same source file on every
+// single call -- with N pages worth of thumbnail requests fired back-to-back
+// on open, that meant N full file reads + N xref parses for what should be
+// one open document. This cache keeps a handful of recently-used documents
+// open across calls; PdfBackend is only ever invoked from the UI thread (see
+// webview_main.cpp's WM_APP_TEST_COMMAND handling), so no locking is needed.
+// Capped so a long session that opens many distinct files doesn't hold every
+// one of them in memory forever.
+constexpr std::size_t kMaxCachedDocuments = 4;
+
+struct CachedEntry {
+    std::string password;
+    OpenSource source;
+};
+
+std::vector<std::pair<std::string, CachedEntry>>& document_cache() {
+    static std::vector<std::pair<std::string, CachedEntry>> cache;
+    return cache;
+}
+
+void invalidate_cached_document(const std::string& path) {
+    auto& cache = document_cache();
+    const auto& api = pdfium();
+    cache.erase(std::remove_if(cache.begin(), cache.end(),
+                                [&](auto& entry) {
+                                    if (entry.first != path) return false;
+                                    if (entry.second.source.doc) api.CloseDocument(entry.second.source.doc);
+                                    return true;
+                                }),
+                cache.end());
+}
+
+// Returns a document handle owned by the cache -- callers must NOT close it.
+// A cache hit requires both the path and the password used to open it to
+// match, so a stale (or wrong-password) entry never masks the real error.
+FPDF_DOCUMENT open_source_cached(const PdfiumApi& api, const std::string& path, const std::string& password) {
+    auto& cache = document_cache();
+    for (auto& entry : cache) {
+        if (entry.first == path && entry.second.password == password) return entry.second.source.doc;
+    }
+
+    OpenSource source;
+    source.doc = open_source(api, path, password, source.bytes);
+
+    invalidate_cached_document(path);
+    cache.push_back({path, CachedEntry{password, std::move(source)}});
+    if (cache.size() > kMaxCachedDocuments) {
+        if (cache.front().second.source.doc) api.CloseDocument(cache.front().second.source.doc);
+        cache.erase(cache.begin());
+    }
+    return cache.back().second.source.doc;
+}
+
 struct FileWriter : FPDF_FILEWRITE {
     std::ofstream* stream = nullptr;
 
@@ -166,12 +219,11 @@ struct FileWriter : FPDF_FILEWRITE {
 
 PdfDocumentInfo PdfBackend::inspect(const std::string& path, const std::string& password) {
     const auto& api = pdfium();
-    std::string bytes;
-    FPDF_DOCUMENT document = open_source(api, path, password, bytes);
+    FPDF_DOCUMENT document = open_source_cached(api, path, password);
 
     const int pages = api.GetPageCount(document);
     if (pages <= 0) {
-        api.CloseDocument(document);
+        invalidate_cached_document(path);
         throw std::runtime_error("PDF page tree could not be inspected: " + path);
     }
 
@@ -188,7 +240,6 @@ PdfDocumentInfo PdfBackend::inspect(const std::string& path, const std::string& 
         api.ClosePage(page);
     }
 
-    api.CloseDocument(document);
     return {path, static_cast<std::size_t>(pages), std::move(rotations)};
 }
 
@@ -197,12 +248,10 @@ RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_i
     if (target_width < 1) throw std::invalid_argument("target_width must be at least 1");
 
     const auto& api = pdfium();
-    std::string bytes;
-    FPDF_DOCUMENT document = open_source(api, path, password, bytes);
+    FPDF_DOCUMENT document = open_source_cached(api, path, password);
 
     FPDF_PAGE page = api.LoadPage(document, static_cast<int>(page_index));
     if (!page) {
-        api.CloseDocument(document);
         throw std::runtime_error("page not found: " + path + " page " + std::to_string(page_index));
     }
 
@@ -219,7 +268,6 @@ RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_i
     FPDF_BITMAP bitmap = api.BitmapCreate(target_width, target_height, /*alpha=*/1);
     if (!bitmap) {
         api.ClosePage(page);
-        api.CloseDocument(document);
         throw std::runtime_error("failed to allocate render target for: " + path);
     }
 
@@ -249,7 +297,6 @@ RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_i
 
     api.BitmapDestroy(bitmap);
     api.ClosePage(page);
-    api.CloseDocument(document);
     return result;
 }
 
@@ -259,18 +306,15 @@ RenderedPage PdfBackend::render_page_at_dpi(const std::string& path, std::size_t
     if (dpi < 1) throw std::invalid_argument("dpi must be at least 1");
 
     const auto& api = pdfium();
-    std::string bytes;
-    FPDF_DOCUMENT document = open_source(api, path, password, bytes);
+    FPDF_DOCUMENT document = open_source_cached(api, path, password);
 
     FPDF_PAGE page = api.LoadPage(document, static_cast<int>(page_index));
     if (!page) {
-        api.CloseDocument(document);
         throw std::runtime_error("page not found: " + path + " page " + std::to_string(page_index));
     }
     api.SetPageRotation(page, ((rotation / 90) % 4 + 4) % 4);
     const float page_width = api.GetPageWidthF(page);
     api.ClosePage(page);
-    api.CloseDocument(document);
 
     const int target_width = std::max(1, static_cast<int>(std::lround(page_width * dpi / 72.0f)));
     RenderedPage full = render_page(path, page_index, target_width, rotation, password);
@@ -356,6 +400,12 @@ void PdfBackend::save(const WorkingDocument& document, const std::string& output
         if (!api.SaveAsCopy(dest, &writer, 0)) {
             throw std::runtime_error("failed to save PDF: " + output_path);
         }
+        // output_path may be an overwrite of an existing source file (see
+        // DocumentManager::overwrite_source's rebase_all_pages_to), in which
+        // case the cache above still holds the pre-save bytes/handle for
+        // that exact path -- drop it so the next render_page reads what was
+        // just written instead of the stale copy.
+        invalidate_cached_document(output_path);
     } catch (...) {
         close_all();
         throw;

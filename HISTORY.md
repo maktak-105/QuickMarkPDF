@@ -10,6 +10,21 @@ This file records the major changes in each public version.
 - Second digit (for example, `1.0.0` to `1.1.0`): bug fixes
 - Third digit (for example, `1.1.0` to `1.1.1`): other changes, such as documentation updates
 
+## v1.2.1 (2026-08-27)
+
+### Features
+
+- The thumbnail panel now switches pages with the Up/Down arrow keys when it has focus, instead of just scrolling the panel.
+
+### Performance
+
+- Sped up opening PDFs (and the file-association double-click launch, which goes through the same code path) by caching the currently-open PDFium document per source file, instead of re-reading and re-parsing the whole file from disk on every single page thumbnail/preview render.
+
+### Documentation
+
+- Brought the About dialog in line with the Quick app series specification: app name, a cyan version line, a divider, bracketed "[Development environment]" / "[Author]" sections, the author's circular badge image, and a cyan glow border on the card.
+- Documented the new Up/Down shortcut in the in-app Help dialog and in `document/spec.md` / `spec_jp.md`.
+
 ## v1.1.0 (2026-08-21)
 
 ### Bug fixes

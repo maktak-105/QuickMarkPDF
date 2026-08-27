@@ -159,6 +159,7 @@
             <tr><td><kbd>Delete</kbd></td><td>選択ページを削除</td></tr>
             <tr><td><kbd>Ctrl+Z</kbd></td><td>元に戻す</td></tr>
             <tr><td><kbd>Ctrl+S</kbd></td><td>上書き保存</td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>サムネイルパネルにフォーカス時、前後のページを選択</td></tr>
           </table>
         </section>
       </div>
@@ -169,11 +170,15 @@
   </div>
   <div class="modal-overlay" id="about-overlay" hidden>
     <div class="modal about-modal">
-      <h2>QuickMarkPDF について</h2>
-      <p>Ver. 1.1.0</p>
+      <h2>QuickMarkPDF</h2>
+      <p class="about-version">Ver. 1.2.1</p>
+      <hr class="about-divider">
       <p>無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。</p>
+      <h3 class="about-section-title">[開発環境]</h3>
       <p>C++17 (MinGW-w64) + WebView2</p>
+      <h3 class="about-section-title">[制作者]</h3>
       <p>GitHub: <a href="https://github.com/maktak-105/QuickMarkPDF" target="_blank" rel="noopener">maktak-105/QuickMarkPDF</a></p>
+      <img class="about-badge" src="../assets/maktak105-V04-01.jpg" alt="Jûgo / @maktak105">
       <div class="modal-buttons">
         <button type="button" id="about-close" class="primary">閉じる</button>
       </div>

@@ -1147,6 +1147,19 @@
     } else if (event.ctrlKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'o') {
       event.preventDefault();
       doOpen();
+    } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+               target && target.closest('.thumbnail-panel') &&
+               currentMode === 'pdf' && pages.length > 0) {
+      // Thumbnail panel is a scrollable region (overflow-y: auto), so
+      // Chromium implicitly focuses it on click and Up/Down would otherwise
+      // just scroll it -- switch the page selection instead, matching how
+      // clicking a neighboring thumbnail already behaves.
+      event.preventDefault();
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = Math.max(0, Math.min(pages.length - 1, primaryIndex + delta));
+      selectPage(nextIndex);
+      const nextEl = pageList.querySelector(`.page-item[data-page-index="${nextIndex}"]`);
+      if (nextEl) nextEl.scrollIntoView({ block: 'nearest' });
     }
   });
 

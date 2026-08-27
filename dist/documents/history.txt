@@ -1,5 +1,10 @@
 QuickMarkPDF - Change log
 
+v1.2.1 (2026-08-27)
+- Added Up/Down arrow key page switching when the thumbnail panel has focus (it used to just scroll).
+- Sped up opening PDFs and the file-association double-click launch by caching the open PDFium document per source file instead of re-reading/re-parsing it for every page.
+- Updated the About dialog to the Quick app series look: cyan version line, [Development environment]/[Author] sections, and the author's circular badge.
+
 v1.1.0 (2026-08-21)
 - Fixed the right-click menu overflowing the window near screen edges.
 - Fixed unreadable (near-white) headings in Markdown-to-PDF export.

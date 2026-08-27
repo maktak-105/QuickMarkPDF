@@ -15,7 +15,7 @@ a goal — the native GUI uses the Modern Dark theme on purpose.
 A first C++/WebView2 port was fully discarded. See
 [`../CPP_PORT_POSTMORTEM.md`](../CPP_PORT_POSTMORTEM.md) for why (it treated
 "build passes, tests pass" as done without driving the real app). The second
-port (from 2026-08-19) is what ships as v1.1.0.
+port (from 2026-08-19) is what ships as v1.2.1.
 
 **In short:** users run the C++ GUI. Python is a prototype, not the spec of
 the shipped UI. If page-editing behavior differs, investigate both; the C++
@@ -246,7 +246,7 @@ QuickMarkPDF/
 
 ## Remaining work (build/CI, not the app)
 
-- GitHub Release for v1.1.0 is not published.
+- GitHub Release for v1.2.1 is not published yet (v1.1.0 has been published).
 - `.github/workflows/ci.yml` and `release.yml` still run a PyInstaller
   (Python) build. They do **not** produce the shipped native binary.
 - `QuickMarkPDF_cli.exe` has no product-grade `--option` interface.

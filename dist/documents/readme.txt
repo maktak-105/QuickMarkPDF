@@ -1,5 +1,5 @@
 QuickMarkPDF - Simple PDF page editor
-Distribution package  v1.1.0
+Distribution package  v1.2.1
 
 Free. No ads, no donation requests, no paid features.
 
@@ -104,6 +104,7 @@ Keyboard shortcuts
 - Delete   Delete the selected pages
 - Ctrl+Z   Undo
 - Ctrl+S   Save
+- Up/Down  With the thumbnail panel focused, select the previous/next page
 
 Markdown mode (bonus feature)
 ------------------------------
