@@ -1,7 +1,5 @@
 # QuickMarkPDF Specification
 
-[日本語版 spec_jp.md](spec_jp.md)
-
 ## 1. Overview
 
 - **Name**: QuickMarkPDF

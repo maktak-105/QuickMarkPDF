@@ -1,7 +1,5 @@
 # QuickMarkPDF Changelog
 
-[日本語版 HISTORY_jp.md](HISTORY_jp.md)
-
 This file records the major changes in each public version.
 
 ## Versioning rules

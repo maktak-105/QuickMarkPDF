@@ -1,7 +1,5 @@
 # QuickMarkPDF 仕様書
 
-[English spec.md](spec.md)
-
 ## 1. アプリ概要
 
 - **名称**: QuickMarkPDF

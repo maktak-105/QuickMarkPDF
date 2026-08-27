@@ -1,7 +1,5 @@
 # QuickMarkPDF 変更履歴
 
-[English HISTORY.md](HISTORY.md)
-
 このファイルには、公開版の主な変更履歴を記載します。
 
 ## バージョン命名規則

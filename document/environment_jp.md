@@ -1,7 +1,5 @@
 # 開発環境
 
-[English environment.md](environment.md)
-
 ## 現状（まずここを読む）
 
 `core/native/`（C++17 + WebView2）が**製品として出荷される版**です。単に

@@ -1,5 +1,4 @@
 # QuickMarkPDF
-[English README.md](README.md)
 
 <p align="center">
   <img src="assets/quickmarkpdf-gui-ja.png" alt="QuickMarkPDF 日本語GUI" width="720">

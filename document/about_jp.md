@@ -1,7 +1,5 @@
 # QuickMarkPDF バージョン情報
 
-[English about.md](about.md)
-
 ## バージョン
 
 Ver. v1.2.1

@@ -1,7 +1,5 @@
 # QuickMarkPDF — About
 
-[日本語版 about_jp.md](about_jp.md)
-
 ## Version
 
 Ver. v1.2.1

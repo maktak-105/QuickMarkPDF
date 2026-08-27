@@ -1,7 +1,5 @@
 # Development Environment
 
-[日本語版 environment_jp.md](environment_jp.md)
-
 ## Status (read this first)
 
 `core/native/` (C++17 + WebView2) is the **shipped product**. When asked to
