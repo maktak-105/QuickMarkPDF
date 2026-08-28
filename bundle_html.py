@@ -7,12 +7,15 @@ def bundle(output_dir=None):
     base_dir = os.path.dirname(__file__)
     tmpl_path = os.path.join(base_dir, "templates", "index.html")
     css_path = os.path.join(base_dir, "static", "css", "style.css")
+    i18n_path = os.path.join(base_dir, "static", "js", "i18n.js")
     app_path = os.path.join(base_dir, "static", "js", "app.js")
 
     with open(tmpl_path, "r", encoding="utf-8") as f:
         html = f.read()
     with open(css_path, "r", encoding="utf-8") as f:
         css = f.read()
+    with open(i18n_path, "r", encoding="utf-8") as f:
+        i18n_js = f.read()
     with open(app_path, "r", encoding="utf-8") as f:
         app_js = f.read()
 
@@ -66,6 +69,9 @@ def bundle(output_dir=None):
 
     bundled += body_content
     bundled += f"""
+  <script>
+{i18n_js}
+  </script>
   <script>
 {app_js}
   </script>

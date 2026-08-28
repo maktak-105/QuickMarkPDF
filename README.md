@@ -8,12 +8,13 @@ A simple Windows desktop PDF page editor — free, no ads, no donation requests,
 
 **Current version: v1.2.1.** `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
 
-The UI is Japanese-only; there is no language toggle. The English and Japanese README screenshots are the same window.
+The UI can switch between Japanese and English (toggle button at the right end of the menu bar). The English and Japanese README screenshots show the same window in each language.
 
 ## Features
 
 - Open, combine, split, reorder, and rotate PDF pages
 - Drag-and-drop page reordering, including moving pages between files
+- Text selection and copy in the preview (on by default; switch to crop-area selection from the right-click menu)
 - Export selected/all pages to PDF (split) or PNG/JPEG (DPI, quality, and crop)
 - Undo and unsaved-change protection
 - Markdown preview with Mermaid diagrams and math, exportable to PDF

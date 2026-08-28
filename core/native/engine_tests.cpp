@@ -65,6 +65,50 @@ void write_min_pdf(const std::string& path, int num_pages, int page_width = 200,
     out << buf;
 }
 
+// Like write_min_pdf, but the single page also carries a content stream
+// drawing `text` with the standard Helvetica font (no embedded font file
+// needed -- pdfium resolves the 14 standard PDF fonts by name) at
+// (text_x, text_y) in PDF points, for exercising
+// PdfBackend::get_text_layout. rotation is the page's own /Rotate entry
+// (0/90/180/270), matching write_min_pdf's page_rotations parameter for a
+// single page.
+void write_text_pdf(const std::string& path, const std::string& text, int text_x, int text_y,
+                     int page_width = 200, int page_height = 200, int rotation = 0) {
+    std::string buf = "%PDF-1.7\n";
+    std::vector<std::size_t> offsets(6, 0);
+
+    auto append_obj = [&](int num, const std::string& body) {
+        offsets[static_cast<std::size_t>(num)] = buf.size();
+        buf += std::to_string(num) + " 0 obj\n" + body + "\nendobj\n";
+    };
+
+    append_obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+    append_obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    const std::string media_box =
+        "[0 0 " + std::to_string(page_width) + " " + std::to_string(page_height) + "]";
+    const std::string rotate_entry = rotation != 0 ? " /Rotate " + std::to_string(rotation) : "";
+    append_obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox " + media_box + rotate_entry +
+                      " /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>");
+
+    const std::string content =
+        "BT /F1 24 Tf " + std::to_string(text_x) + " " + std::to_string(text_y) + " Td (" + text + ") Tj ET";
+    append_obj(4, "<< /Length " + std::to_string(content.size()) + " >>\nstream\n" + content + "\nendstream");
+    append_obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+    const auto xref_offset = buf.size();
+    buf += "xref\n0 6\n0000000000 65535 f \n";
+    for (int n = 1; n < 6; ++n) {
+        char entry[32];
+        std::snprintf(entry, sizeof(entry), "%010zu 00000 n \n", offsets[static_cast<std::size_t>(n)]);
+        buf += entry;
+    }
+    buf += "trailer\n<< /Size 6 /Root 1 0 R >>\n";
+    buf += "startxref\n" + std::to_string(xref_offset) + "\n%%EOF\n";
+
+    std::ofstream out(path, std::ios::binary);
+    out << buf;
+}
+
 // A genuinely encrypted (AES-128, standard security handler) 2-page PDF,
 // user password "secret123". Unlike write_min_pdf() above, PDF encryption's
 // key derivation (per the spec's standard security handler) is too involved
@@ -437,6 +481,66 @@ void test_render_page_at_dpi_matches_pdf_point_size() {
     const auto page = quickmarkpdf::PdfBackend::render_page_at_dpi(path, 0, /*dpi=*/100, /*rotation=*/0);
     assert(page.width == 100);
     assert(page.height == 200);
+
+    std::remove(path.c_str());
+}
+
+void test_get_text_layout_extracts_text_and_bbox() {
+    const auto path = std::string("quickmarkpdf_test_text_layout.pdf");
+    write_text_pdf(path, "Hello", /*text_x=*/20, /*text_y=*/150, /*page_width=*/200, /*page_height=*/200);
+
+    const auto layout = quickmarkpdf::PdfBackend::get_text_layout(path, 0, /*rotation=*/0);
+    assert(layout.page_width_pt == 200.0);
+    assert(layout.page_height_pt == 200.0);
+    assert(!layout.runs.empty());
+
+    bool found = false;
+    for (const auto& run : layout.runs) {
+        if (run.text.find("Hello") == std::string::npos) continue;
+        found = true;
+        // Bbox must land inside the page, in top-left-origin coordinates
+        // (see get_text_layout's comment) -- the Td baseline sits at
+        // y=150pt in PDF's bottom-left space, i.e. roughly 50pt from the
+        // top, so the run's top-left-origin y-range should straddle that.
+        assert(run.x0 >= 0 && run.x1 <= 200 && run.x0 < run.x1);
+        assert(run.y0 >= 0 && run.y1 <= 200 && run.y0 < run.y1);
+        assert(run.y0 < 55 && run.y1 > 40);
+    }
+    assert(found);
+
+    std::remove(path.c_str());
+}
+
+void test_get_text_layout_empty_for_blank_page() {
+    // write_min_pdf's pages have no content stream (see
+    // test_render_page_produces_blank_white_bitmap), so there is nothing to
+    // extract -- an empty run list, not an error/throw.
+    const auto path = std::string("quickmarkpdf_test_text_layout_blank.pdf");
+    write_min_pdf(path, 1);
+
+    const auto layout = quickmarkpdf::PdfBackend::get_text_layout(path, 0, /*rotation=*/0);
+    assert(layout.runs.empty());
+
+    std::remove(path.c_str());
+}
+
+void test_get_text_layout_rotation_keeps_bbox_within_rotated_page() {
+    // A 100x200pt (portrait) page rotated 90 degrees renders as landscape
+    // (200x100pt), mirroring test_render_page_rotation_swaps_aspect_ratio.
+    // get_text_layout must apply the same SetPageRotation-before-size-query
+    // ordering render_page uses, so page_width_pt/height_pt and every run's
+    // bbox land within that swapped extent, not the original portrait one.
+    const auto path = std::string("quickmarkpdf_test_text_layout_rotated.pdf");
+    write_text_pdf(path, "Hi", /*text_x=*/10, /*text_y=*/50, /*page_width=*/100, /*page_height=*/200);
+
+    const auto layout = quickmarkpdf::PdfBackend::get_text_layout(path, 0, /*rotation=*/90);
+    assert(layout.page_width_pt == 200.0);
+    assert(layout.page_height_pt == 100.0);
+    assert(!layout.runs.empty());
+    for (const auto& run : layout.runs) {
+        assert(run.x0 >= 0 && run.x1 <= layout.page_width_pt);
+        assert(run.y0 >= 0 && run.y1 <= layout.page_height_pt);
+    }
 
     std::remove(path.c_str());
 }
@@ -878,6 +982,9 @@ int main() {
     test_render_page_produces_blank_white_bitmap();
     test_render_page_rotation_swaps_aspect_ratio();
     test_render_page_at_dpi_matches_pdf_point_size();
+    test_get_text_layout_extracts_text_and_bbox();
+    test_get_text_layout_empty_for_blank_page();
+    test_get_text_layout_rotation_keeps_bbox_within_rotated_page();
     test_inspect_rejects_corrupted_pdf();
     test_inspect_requires_password_for_encrypted_pdf();
 

@@ -278,6 +278,36 @@ bool is_offscreen_mode() {
     return GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
 }
 
+// =====================
+// UI language (native-side dialogs/status messages; the WebView2 side has
+// its own copy in static/js/i18n.js, kept in sync via the "set_language"
+// WebMessage -- see handle_set_language). Persisted the same way window
+// geometry is (registry, skipped in offscreen/QA mode so a test run never
+// reads or overwrites a real user's saved language).
+// =====================
+
+enum class Language { Japanese, English };
+Language g_language = Language::Japanese;
+
+Language load_language_setting() {
+    if (is_offscreen_mode()) return Language::Japanese;
+    const auto v = load_dword_setting(L"Language");
+    return (v && *v == 1) ? Language::English : Language::Japanese;
+}
+
+void save_language_setting(Language lang) {
+    if (is_offscreen_mode()) return;
+    save_dword_setting(L"Language", lang == Language::English ? 1 : 0);
+}
+
+// Returns `ja` or `en` depending on the current UI language -- every
+// native-side user-facing string (status bar messages, MessageBoxW/
+// TaskDialogIndirect dialogs) is wrapped in this instead of being a bare
+// string literal.
+const wchar_t* tr(const wchar_t* ja, const wchar_t* en) {
+    return g_language == Language::English ? en : ja;
+}
+
 // True when QUICKMARKPDF_TEST_PORT is set, i.e. the TCP test API
 // (qa/check_behaviors_cpp.py) is reachable. A real MessageBoxW triggered
 // from that path would block main-thread message processing forever with
@@ -675,11 +705,13 @@ std::optional<std::vector<std::filesystem::path>> test_hook_open_documents() {
 // API (qa/check_behaviors_cpp.py) supply the answer directly instead of a
 // real MessageBoxW -- the same pattern load_pdfs' "password" field already
 // uses to bypass the password-prompt dialog.
-bool confirm_discard_dirty_state(std::optional<bool> forced_answer,
-                                  const wchar_t* question = L"保存されていない変更があります。破棄してもよろしいですか?") {
+bool confirm_discard_dirty_state(std::optional<bool> forced_answer, const wchar_t* question = nullptr) {
     if (!g_manager.is_dirty()) return true;
     if (forced_answer.has_value()) return *forced_answer;
-    const int result = MessageBoxW(g_window, question, L"QuickMarkPDF", MB_YESNO | MB_ICONWARNING);
+    const wchar_t* q = question ? question
+                                 : tr(L"保存されていない変更があります。破棄してもよろしいですか?",
+                                      L"There are unsaved changes. Discard them?");
+    const int result = MessageBoxW(g_window, q, L"QuickMarkPDF", MB_YESNO | MB_ICONWARNING);
     return result == IDYES;
 }
 
@@ -706,7 +738,8 @@ std::vector<std::filesystem::path> prompt_open_documents() {
     if (!GetOpenFileNameW(&dialog)) {
         const DWORD error = CommDlgExtendedError();
         if (error != 0) {
-            post_status(L"ファイル選択ダイアログを開けませんでした (エラーコード: " + std::to_wstring(error) + L")");
+            post_status(tr(L"ファイル選択ダイアログを開けませんでした (エラーコード: ", L"Could not open the file picker (error code: ") +
+                        std::to_wstring(error) + L")");
         }
         return {};
     }
@@ -778,8 +811,9 @@ std::optional<std::string> prompt_for_password(const std::filesystem::path& path
     CREDUI_INFOW ui_info{};
     ui_info.cbSize = sizeof(ui_info);
     ui_info.hwndParent = g_window;
-    const std::wstring message = L"パスワード付きPDFです: " + path.filename().wstring();
-    const std::wstring caption = L"PDFパスワードの入力";
+    const std::wstring message =
+        tr(L"パスワード付きPDFです: ", L"This PDF is password-protected: ") + path.filename().wstring();
+    const std::wstring caption = tr(L"PDFパスワードの入力", L"Enter PDF password");
     ui_info.pszMessageText = message.c_str();
     ui_info.pszCaptionText = caption.c_str();
 
@@ -836,7 +870,8 @@ void open_markdown_path(const std::filesystem::path& path) {
     try {
         content = read_text_file_utf8(path);
     } catch (const std::exception&) {
-        post_status(L"Markdownファイルを読み込めませんでした: " + path.filename().wstring());
+        post_status(tr(L"Markdownファイルを読み込めませんでした: ", L"Could not read the Markdown file: ") +
+                    path.filename().wstring());
         return;
     }
     g_current_markdown_path = path;
@@ -845,7 +880,7 @@ void open_markdown_path(const std::filesystem::path& path) {
                                    json_string(path.wstring()) + L",\"content\":" +
                                    json_string(utf8_to_wide(content)) + L"}";
     if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
-    post_status(L"Markdownを読み込みました: " + path.filename().wstring());
+    post_status(tr(L"Markdownを読み込みました: ", L"Loaded Markdown: ") + path.filename().wstring());
 }
 
 enum class DocumentOpenOutcome { Cancelled, RejectedMixed, OpenedMarkdown, OpenedPdf };
@@ -862,7 +897,7 @@ enum class DocumentOpenOutcome { Cancelled, RejectedMixed, OpenedMarkdown, Opene
 // both previously silent in this port.
 DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>& paths) {
     if (paths.empty()) {
-        post_status(L"ファイル選択をキャンセルしました");
+        post_status(tr(L"ファイル選択をキャンセルしました", L"File selection cancelled"));
         return DocumentOpenOutcome::Cancelled;
     }
 
@@ -881,23 +916,25 @@ DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>
     }
 
     if (has_markdown && has_pdf) {
-        const wchar_t* msg = L"Markdown と PDF の同時読み込みは未対応です。どちらか一方を選んでください。";
+        const wchar_t* msg = tr(L"Markdown と PDF の同時読み込みは未対応です。どちらか一方を選んでください。",
+                                 L"Loading Markdown and PDF together isn't supported. Please choose one or the other.");
         if (is_test_mode()) {
             post_status(msg);
         } else {
             force_foreground_window();
-            MessageBoxW(g_window, msg, L"読み込み方法", MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(g_window, msg, tr(L"読み込み方法", L"How to load"), MB_OK | MB_ICONINFORMATION);
         }
         return DocumentOpenOutcome::RejectedMixed;
     }
 
     if (markdown_count > 1) {
-        const wchar_t* msg = L"Markdown は1ファイルずつ表示します。先頭の1件を読み込みます。";
+        const wchar_t* msg = tr(L"Markdown は1ファイルずつ表示します。先頭の1件を読み込みます。",
+                                 L"Only one Markdown file can be shown at a time. Loading the first one.");
         if (is_test_mode()) {
             post_status(msg);
         } else {
             force_foreground_window();
-            MessageBoxW(g_window, msg, L"読み込み方法", MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(g_window, msg, tr(L"読み込み方法", L"How to load"), MB_OK | MB_ICONINFORMATION);
         }
     }
 
@@ -910,7 +947,8 @@ DocumentOpenOutcome open_document_paths(const std::vector<std::filesystem::path>
         // just the confirmation gate never having been wired up here.
         if (!confirm_discard_dirty_state(
                 is_test_mode() ? std::optional<bool>(true) : std::nullopt,
-                L"保存されていない変更があります。破棄してMarkdownを開きますか？")) {
+                tr(L"保存されていない変更があります。破棄してMarkdownを開きますか？",
+                   L"There are unsaved changes. Discard them and open the Markdown file?"))) {
             return DocumentOpenOutcome::Cancelled;
         }
         g_manager.close_all();
@@ -959,12 +997,14 @@ void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
             if (i > 0) names += L", ";
             names += std::filesystem::u8path(result.duplicate_files[i]).filename().wstring();
         }
-        const std::wstring msg = L"既に読み込み済みのため読み込みをスキップしました:\n" + names;
+        const std::wstring msg = tr(L"既に読み込み済みのため読み込みをスキップしました:\n",
+                                     L"Already loaded, so loading was skipped:\n") +
+                                  names;
         if (is_test_mode()) {
             post_status(msg);
         } else {
             force_foreground_window();
-            MessageBoxW(g_window, msg.c_str(), L"重複ファイル", MB_OK | MB_ICONINFORMATION);
+            MessageBoxW(g_window, msg.c_str(), tr(L"重複ファイル", L"Duplicate file"), MB_OK | MB_ICONINFORMATION);
         }
     }
 
@@ -1011,13 +1051,47 @@ void handle_render_page(const std::wstring& message) {
     }
 }
 
+// Selectable-text overlay for the preview pane (not sent for thumbnails --
+// app.js only requests this for the currently-shown preview page). Mirrors
+// handle_render_page's ref lookup and best-effort-per-page error handling;
+// a page with no extractable text (scanned image, or glyphs baked in as
+// vector paths) legitimately comes back with an empty `runs` array, which
+// is not an error case.
+void handle_get_text_layout(const std::wstring& message) {
+    const int page_index = extract_int(message, L"page_index", -1);
+    if (page_index < 0 || static_cast<std::size_t>(page_index) >= g_manager.get_page_count()) return;
+    const auto infos = g_manager.page_infos();
+    const auto& ref = infos[static_cast<std::size_t>(page_index)];
+    try {
+        const auto layout =
+            quickmarkpdf::PdfBackend::get_text_layout(ref.source_path, ref.original_page_index, ref.rotation);
+        std::wstring runs_json = L"[";
+        for (std::size_t i = 0; i < layout.runs.size(); ++i) {
+            if (i) runs_json += L",";
+            const auto& run = layout.runs[i];
+            runs_json += L"{\"x0\":" + std::to_wstring(run.x0) + L",\"y0\":" + std::to_wstring(run.y0) +
+                         L",\"x1\":" + std::to_wstring(run.x1) + L",\"y1\":" + std::to_wstring(run.y1) +
+                         L",\"text\":" + json_string(utf8_to_wide(run.text)) + L"}";
+        }
+        runs_json += L"]";
+        const std::wstring response = L"{\"type\":\"text_layout\",\"page_index\":" + std::to_wstring(page_index) +
+                                       L",\"page_width_pt\":" + std::to_wstring(layout.page_width_pt) +
+                                       L",\"page_height_pt\":" + std::to_wstring(layout.page_height_pt) +
+                                       L",\"runs\":" + runs_json + L"}";
+        g_webview->PostWebMessageAsString(response.c_str());
+    } catch (const std::exception&) {
+        // Best-effort, same as handle_render_page: leave that page without
+        // a text layer rather than surfacing a global error.
+    }
+}
+
 void handle_reorder_pages(const std::wstring& message) {
     try {
         g_manager.reorder_pages(extract_size_t_array(message, L"order"));
-        post_status(L"ページ順を更新しました");
+        post_status(tr(L"ページ順を更新しました", L"Page order updated"));
         post_document_state(L"document_state");
     } catch (const std::exception&) {
-        post_status(L"並べ替えに失敗しました");
+        post_status(tr(L"並べ替えに失敗しました", L"Failed to reorder pages"));
     }
 }
 
@@ -1027,13 +1101,16 @@ void handle_rotate_pages(const std::wstring& message) {
     try {
         g_manager.rotate_pages(indices, degrees);
         if (indices.size() > 1) {
-            post_status(std::to_wstring(indices.size()) + L"ページを" + std::to_wstring(degrees) + L"度回転しました");
+            post_status(tr(L"", L"Rotated ") + std::to_wstring(indices.size()) +
+                        tr(L"ページを", L" page(s) by ") + std::to_wstring(degrees) +
+                        tr(L"度回転しました", L" degree(s)"));
         } else {
-            post_status(L"ページを" + std::to_wstring(degrees) + L"度回転しました");
+            post_status(tr(L"ページを", L"Rotated the page by ") + std::to_wstring(degrees) +
+                        tr(L"度回転しました", L" degree(s)"));
         }
         post_document_state(L"document_state");
     } catch (const std::exception&) {
-        post_status(L"回転に失敗しました");
+        post_status(tr(L"回転に失敗しました", L"Failed to rotate"));
     }
 }
 
@@ -1041,18 +1118,18 @@ void handle_delete_pages(const std::wstring& message) {
     const auto indices = extract_size_t_array(message, L"indices");
     g_manager.delete_pages(indices);
     if (indices.size() > 1) {
-        post_status(std::to_wstring(indices.size()) + L"ページを削除しました");
+        post_status(tr(L"", L"Deleted ") + std::to_wstring(indices.size()) + tr(L"ページを削除しました", L" page(s)"));
     } else {
-        post_status(L"ページを削除しました");
+        post_status(tr(L"ページを削除しました", L"Deleted the page"));
     }
     post_document_state(L"document_state");
 }
 
 void handle_undo_edit() {
     if (g_manager.undo()) {
-        post_status(L"元に戻しました");
+        post_status(tr(L"元に戻しました", L"Undone"));
     } else {
-        post_status(L"元に戻す操作がありません");
+        post_status(tr(L"元に戻す操作がありません", L"Nothing to undo"));
     }
     post_document_state(L"document_state");
 }
@@ -1061,7 +1138,7 @@ void handle_close_document(const std::wstring& message) {
     const auto path = extract_string(message, L"path");
     const auto filename = std::filesystem::path(path).filename().wstring();
     if (g_manager.close_document(wide_to_utf8(path))) {
-        post_status(filename + L" を閉じました");
+        post_status(filename + tr(L" を閉じました", L" closed"));
         post_document_state(L"document_state");
     }
 }
@@ -1082,20 +1159,23 @@ void handle_close_document(const std::wstring& message) {
 void export_markdown_to_pdf(const std::filesystem::path& out_path,
                              std::function<void(bool)> on_complete = nullptr) {
     if (!g_webview) {
-        post_status(L"PDF変換に失敗しました(WebViewが初期化されていません)");
+        post_status(tr(L"PDF変換に失敗しました(WebViewが初期化されていません)",
+                        L"PDF conversion failed (WebView is not initialized)"));
         if (on_complete) on_complete(false);
         return;
     }
     ICoreWebView2_2* webview2 = nullptr;
     if (FAILED(g_webview->QueryInterface(IID_ICoreWebView2_2, reinterpret_cast<void**>(&webview2))) || !webview2) {
-        post_status(L"PDF変換に失敗しました(WebView2バージョンが対応していません)");
+        post_status(tr(L"PDF変換に失敗しました(WebView2バージョンが対応していません)",
+                        L"PDF conversion failed (unsupported WebView2 version)"));
         if (on_complete) on_complete(false);
         return;
     }
     ComPtr<ICoreWebView2_2> webview2_ptr(webview2);
     ICoreWebView2Environment* env_raw = nullptr;
     if (FAILED(webview2_ptr->get_Environment(&env_raw)) || !env_raw) {
-        post_status(L"PDF変換に失敗しました(Environment取得エラー)");
+        post_status(tr(L"PDF変換に失敗しました(Environment取得エラー)",
+                        L"PDF conversion failed (could not get Environment)"));
         if (on_complete) on_complete(false);
         return;
     }
@@ -1103,14 +1183,16 @@ void export_markdown_to_pdf(const std::filesystem::path& out_path,
     ICoreWebView2Environment6* env6_raw = nullptr;
     if (FAILED(env_ptr->QueryInterface(IID_ICoreWebView2Environment6, reinterpret_cast<void**>(&env6_raw))) ||
         !env6_raw) {
-        post_status(L"PDF変換に失敗しました(このWebView2バージョンはPDF出力に対応していません)");
+        post_status(tr(L"PDF変換に失敗しました(このWebView2バージョンはPDF出力に対応していません)",
+                        L"PDF conversion failed (this WebView2 version doesn't support PDF export)"));
         if (on_complete) on_complete(false);
         return;
     }
     ComPtr<ICoreWebView2Environment6> env6_ptr(env6_raw);
     ICoreWebView2PrintSettings* settings_raw = nullptr;
     if (FAILED(env6_ptr->CreatePrintSettings(&settings_raw)) || !settings_raw) {
-        post_status(L"PDF変換に失敗しました(PrintSettings作成エラー)");
+        post_status(tr(L"PDF変換に失敗しました(PrintSettings作成エラー)",
+                        L"PDF conversion failed (could not create PrintSettings)"));
         if (on_complete) on_complete(false);
         return;
     }
@@ -1128,7 +1210,8 @@ void export_markdown_to_pdf(const std::filesystem::path& out_path,
     ICoreWebView2_7* webview7_raw = nullptr;
     if (FAILED(g_webview->QueryInterface(IID_ICoreWebView2_7, reinterpret_cast<void**>(&webview7_raw))) ||
         !webview7_raw) {
-        post_status(L"PDF変換に失敗しました(このWebView2バージョンはPDF出力に対応していません)");
+        post_status(tr(L"PDF変換に失敗しました(このWebView2バージョンはPDF出力に対応していません)",
+                        L"PDF conversion failed (this WebView2 version doesn't support PDF export)"));
         if (on_complete) on_complete(false);
         return;
     }
@@ -1138,21 +1221,21 @@ void export_markdown_to_pdf(const std::filesystem::path& out_path,
         [out_path_w, on_complete](HRESULT errorCode, BOOL result) -> HRESULT {
             const bool ok = SUCCEEDED(errorCode) && result;
             if (ok) {
-                post_status(L"PDFを保存しました: " + out_path_w);
+                post_status(tr(L"PDFを保存しました: ", L"PDF saved: ") + out_path_w);
             } else {
-                post_status(L"PDF変換に失敗しました");
+                post_status(tr(L"PDF変換に失敗しました", L"PDF conversion failed"));
             }
             if (on_complete) on_complete(ok);
             return S_OK;
         });
     webview7->PrintToPdf(out_path_w.c_str(), settings.get(), handler);
     handler->Release();
-    post_status(L"Markdownを PDF に変換しています...");
+    post_status(tr(L"Markdownを PDF に変換しています...", L"Converting Markdown to PDF..."));
 }
 
 void handle_save_markdown_pdf() {
     if (g_current_markdown_path.empty()) {
-        post_status(L"保存するMarkdownがありません");
+        post_status(tr(L"保存するMarkdownがありません", L"No Markdown to save"));
         return;
     }
     const std::wstring default_name = g_current_markdown_path.stem().wstring() + L".pdf";
@@ -1209,16 +1292,17 @@ std::wstring ask_overwrite_or_save_as() {
     force_foreground_window();
 
     TASKDIALOG_BUTTON buttons[] = {
-        {101, L"上書き保存"},
-        {102, L"新規で保存"},
+        {101, tr(L"上書き保存", L"Overwrite")},
+        {102, tr(L"新規で保存", L"Save as new file")},
     };
     TASKDIALOGCONFIG config{};
     config.cbSize = sizeof(config);
     config.hwndParent = g_window;
     config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION;
-    config.pszWindowTitle = L"保存方法の選択";
-    config.pszMainInstruction = L"保存方法の選択";
-    config.pszContent = L"開いているファイルを上書き保存しますか？\nそれとも新しいファイルとして保存しますか？";
+    config.pszWindowTitle = tr(L"保存方法の選択", L"Choose how to save");
+    config.pszMainInstruction = tr(L"保存方法の選択", L"Choose how to save");
+    config.pszContent = tr(L"開いているファイルを上書き保存しますか？\nそれとも新しいファイルとして保存しますか？",
+                            L"Overwrite the currently open file?\nOr save it as a new file?");
     config.cButtons = ARRAYSIZE(buttons);
     config.pButtons = buttons;
     config.pszMainIcon = TD_INFORMATION_ICON;
@@ -1244,9 +1328,9 @@ void handle_save_pdf() {
 
     if (overwrite) {
         if (g_manager.overwrite_source()) {
-            post_status(L"上書き保存しました");
+            post_status(tr(L"上書き保存しました", L"Overwritten and saved"));
         } else {
-            post_status(L"上書き保存に失敗しました");
+            post_status(tr(L"上書き保存に失敗しました", L"Failed to overwrite and save"));
         }
         post_document_state(L"document_state");
         return;
@@ -1256,9 +1340,9 @@ void handle_save_pdf() {
     if (!picked) return;
     g_last_used_dir = picked->parent_path();
     if (g_manager.save_as(picked->u8string())) {
-        post_status(L"保存しました: " + picked->wstring());
+        post_status(tr(L"保存しました: ", L"Saved: ") + picked->wstring());
     } else {
-        post_status(L"保存に失敗しました");
+        post_status(tr(L"保存に失敗しました", L"Failed to save"));
     }
     post_document_state(L"document_state");
 }
@@ -1269,7 +1353,7 @@ void handle_save_pdf() {
 void handle_split_pdf(const std::wstring& message) {
     const auto indices = extract_size_t_array(message, L"indices");
     if (indices.empty() || g_manager.get_page_count() == 0) {
-        post_status(L"PDFを切り出したいページをサムネイルで選択してください");
+        post_status(tr(L"PDFを切り出したいページをサムネイルで選択してください", L"Select the pages to split out from the thumbnail panel"));
         return;
     }
     const auto default_name = suggest_export_basename(indices) + L".pdf";
@@ -1278,9 +1362,10 @@ void handle_split_pdf(const std::wstring& message) {
     if (!picked) return;
     g_last_used_dir = picked->parent_path();
     if (g_manager.save_selected_pages(indices, picked->u8string())) {
-        post_status(std::to_wstring(indices.size()) + L"ページを切り出しました: " + picked->wstring());
+        post_status(tr(L"", L"Split out ") + std::to_wstring(indices.size()) +
+                    tr(L"ページを切り出しました: ", L" page(s): ") + picked->wstring());
     } else {
-        post_status(L"PDFの切り出しに失敗しました");
+        post_status(tr(L"PDFの切り出しに失敗しました", L"Failed to split out the PDF"));
     }
 }
 
@@ -1312,8 +1397,8 @@ void handle_export_images(const std::wstring& message) {
     const auto result = g_manager.export_pages_to_images(indices, wide_to_utf8(output_dir), fmt, dpi, prefix, crop,
                                                            jpeg_quality);
     post_status(std::to_wstring(result.success) + L"/" + std::to_wstring(result.attempted) +
-                L" 件の画像を書き出しました（" + (fmt == "jpg" ? L"JPEG" : L"PNG") +
-                (crop ? L"、選択範囲でクロップ" : L"") + L"）");
+                tr(L" 件の画像を書き出しました（", L" image(s) exported (") + (fmt == "jpg" ? L"JPEG" : L"PNG") +
+                (crop ? tr(L"、選択範囲でクロップ", L", cropped to selection") : L"") + tr(L"）", L")"));
 }
 
 // Populates #export-overlay's フォルダ/接頭辞 fields once it's already open
@@ -1466,6 +1551,26 @@ std::wstring dispatch_test_command(const std::wstring& message) {
                 case DocumentOpenOutcome::Cancelled: outcome_name = L"cancelled"; break;
             }
             return L"{\"outcome\":\"" + std::wstring(outcome_name) + L"\",\"state\":" + get_test_state_json() + L"}";
+        } else if (type == L"get_text_layout") {
+            const int page_index = extract_int(message, L"page_index", -1);
+            if (page_index < 0 || static_cast<std::size_t>(page_index) >= g_manager.get_page_count()) {
+                return L"{\"error\":\"page index out of range\"}";
+            }
+            const auto infos = g_manager.page_infos();
+            const auto& ref = infos[static_cast<std::size_t>(page_index)];
+            const auto layout =
+                quickmarkpdf::PdfBackend::get_text_layout(ref.source_path, ref.original_page_index, ref.rotation);
+            std::wstring runs_json = L"[";
+            for (std::size_t i = 0; i < layout.runs.size(); ++i) {
+                if (i) runs_json += L",";
+                const auto& run = layout.runs[i];
+                runs_json += L"{\"x0\":" + std::to_wstring(run.x0) + L",\"y0\":" + std::to_wstring(run.y0) +
+                             L",\"x1\":" + std::to_wstring(run.x1) + L",\"y1\":" + std::to_wstring(run.y1) +
+                             L",\"text\":" + json_string(utf8_to_wide(run.text)) + L"}";
+            }
+            runs_json += L"]";
+            return L"{\"page_width_pt\":" + std::to_wstring(layout.page_width_pt) + L",\"page_height_pt\":" +
+                   std::to_wstring(layout.page_height_pt) + L",\"runs\":" + runs_json + L"}";
         } else if (type == L"export_pages_to_images") {
             const auto result = g_manager.export_pages_to_images(
                 extract_size_t_array(message, L"indices"), wide_to_utf8(extract_string(message, L"output_dir")),
@@ -1541,6 +1646,8 @@ void dispatch_message(const std::wstring& message) {
         post_document_state(L"document_state");
     } else if (type == L"render_page") {
         handle_render_page(message);
+    } else if (type == L"get_text_layout") {
+        handle_get_text_layout(message);
     } else if (type == L"reorder_pages") {
         handle_reorder_pages(message);
     } else if (type == L"rotate_pages") {
@@ -1563,6 +1670,9 @@ void dispatch_message(const std::wstring& message) {
         handle_save_markdown_pdf();
     } else if (type == L"split_pdf") {
         handle_split_pdf(message);
+    } else if (type == L"set_language") {
+        g_language = extract_string(message, L"lang") == L"en" ? Language::English : Language::Japanese;
+        save_language_setting(g_language);
     }
 }
 
@@ -1570,13 +1680,17 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
     const auto loader_path = executable_dir / L"WebView2Loader.dll";
     HMODULE loader = LoadLibraryW(loader_path.c_str());
     if (!loader) {
-        MessageBoxW(g_window, L"WebView2Loader.dll が見つかりません。\nQuickMarkPDF.exe と同じフォルダに配置してください。",
+        MessageBoxW(g_window,
+                    tr(L"WebView2Loader.dll が見つかりません。\nQuickMarkPDF.exe と同じフォルダに配置してください。",
+                       L"WebView2Loader.dll was not found.\nPlace it in the same folder as QuickMarkPDF.exe."),
                     L"QuickMarkPDF", MB_ICONERROR);
         return false;
     }
     auto create_environment = reinterpret_cast<CreateEnvFn>(GetProcAddress(loader, "CreateCoreWebView2EnvironmentWithOptions"));
     if (!create_environment) {
-        MessageBoxW(g_window, L"WebView2Loader.dll からCreateCoreWebView2EnvironmentWithOptionsを取得できませんでした。",
+        MessageBoxW(g_window,
+                    tr(L"WebView2Loader.dll からCreateCoreWebView2EnvironmentWithOptionsを取得できませんでした。",
+                       L"Could not get CreateCoreWebView2EnvironmentWithOptions from WebView2Loader.dll."),
                     L"QuickMarkPDF", MB_ICONERROR);
         return false;
     }
@@ -1591,8 +1705,10 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
         new EnvCompletedHandler([ui_path](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
             if (FAILED(result) || environment == nullptr) {
                 wchar_t msg[256]{};
-                swprintf_s(msg, L"WebView2環境の作成に失敗しました。WebView2 Runtimeが未インストールの可能性があります。\nHRESULT: 0x%08X",
-                            static_cast<unsigned>(result));
+                swprintf_s(msg,
+                           tr(L"WebView2環境の作成に失敗しました。WebView2 Runtimeが未インストールの可能性があります。\nHRESULT: 0x%08X",
+                              L"Failed to create the WebView2 environment. The WebView2 Runtime may not be installed.\nHRESULT: 0x%08X"),
+                           static_cast<unsigned>(result));
                 MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
                 return result;
             }
@@ -1601,8 +1717,10 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                                                                     ICoreWebView2Controller* controller) -> HRESULT {
                     if (FAILED(controller_result) || controller == nullptr) {
                         wchar_t msg[256]{};
-                        swprintf_s(msg, L"WebView2コントローラの作成に失敗しました。\nHRESULT: 0x%08X",
-                                    static_cast<unsigned>(controller_result));
+                        swprintf_s(msg,
+                                   tr(L"WebView2コントローラの作成に失敗しました。\nHRESULT: 0x%08X",
+                                      L"Failed to create the WebView2 controller.\nHRESULT: 0x%08X"),
+                                   static_cast<unsigned>(controller_result));
                         MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
                         return controller_result;
                     }
@@ -1611,7 +1729,8 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                     g_controller->AddRef();
                     g_controller->get_CoreWebView2(&g_webview);
                     if (!g_webview) {
-                        MessageBoxW(g_window, L"get_CoreWebView2に失敗しました。", L"QuickMarkPDF", MB_ICONERROR);
+                        MessageBoxW(g_window, tr(L"get_CoreWebView2に失敗しました。", L"get_CoreWebView2 failed."),
+                                     L"QuickMarkPDF", MB_ICONERROR);
                         return E_FAIL;
                     }
 
@@ -1629,8 +1748,10 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                         &message_token);
                     if (FAILED(add_result)) {
                         wchar_t msg[256]{};
-                        swprintf_s(msg, L"add_WebMessageReceivedに失敗しました。\nHRESULT: 0x%08X",
-                                    static_cast<unsigned>(add_result));
+                        swprintf_s(msg,
+                                   tr(L"add_WebMessageReceivedに失敗しました。\nHRESULT: 0x%08X",
+                                      L"add_WebMessageReceived failed.\nHRESULT: 0x%08X"),
+                                   static_cast<unsigned>(add_result));
                         MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
                     }
 
@@ -1656,24 +1777,29 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                     const HRESULT nav_result = g_webview->Navigate(file_url(ui_path).c_str());
                     if (FAILED(nav_result)) {
                         wchar_t msg[512]{};
-                        swprintf_s(msg, L"Navigateに失敗しました。\nHRESULT: 0x%08X\nパス: %s",
-                                    static_cast<unsigned>(nav_result), file_url(ui_path).c_str());
+                        swprintf_s(msg, tr(L"Navigateに失敗しました。\nHRESULT: 0x%08X\nパス: %s",
+                                            L"Navigate failed.\nHRESULT: 0x%08X\nPath: %s"),
+                                   static_cast<unsigned>(nav_result), file_url(ui_path).c_str());
                         MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
                     }
                     return S_OK;
                 }));
             if (FAILED(controller_request)) {
                 wchar_t msg[256]{};
-                swprintf_s(msg, L"CreateCoreWebView2Controllerの呼び出しに失敗しました。\nHRESULT: 0x%08X",
-                            static_cast<unsigned>(controller_request));
+                swprintf_s(msg,
+                           tr(L"CreateCoreWebView2Controllerの呼び出しに失敗しました。\nHRESULT: 0x%08X",
+                              L"The call to CreateCoreWebView2Controller failed.\nHRESULT: 0x%08X"),
+                           static_cast<unsigned>(controller_request));
                 MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
             }
             return S_OK;
         }));
     if (FAILED(create_result)) {
         wchar_t msg[256]{};
-        swprintf_s(msg, L"CreateCoreWebView2EnvironmentWithOptionsの呼び出しに失敗しました。\nHRESULT: 0x%08X",
-                    static_cast<unsigned>(create_result));
+        swprintf_s(msg,
+                   tr(L"CreateCoreWebView2EnvironmentWithOptionsの呼び出しに失敗しました。\nHRESULT: 0x%08X",
+                      L"The call to CreateCoreWebView2EnvironmentWithOptions failed.\nHRESULT: 0x%08X"),
+                   static_cast<unsigned>(create_result));
         MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
         return false;
     }
@@ -1750,6 +1876,7 @@ std::vector<std::wstring> parse_startup_document_args(PWSTR command_line) {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_command) {
+    g_language = load_language_setting();
     g_startup_paths = parse_startup_document_args(command_line);
 
     wchar_t executable_path[MAX_PATH]{};
