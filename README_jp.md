@@ -6,7 +6,7 @@
 
 無料、広告無し、寄付無し、課金無し。シンプルなWindowsデスクトップ向けPDFページ編集ツールです。分割・結合・並べ替え・回転・書き出しといった、必要最小限の編集に絞っています。おまけとして、Markdown（Mermaid図・数式（MathJax）対応）のプレビュー・PDF書き出しも備えています。
 
-**現在のバージョンは v1.2.1 です。** `core/native/`（C++17 + WebView2版）が製品として出荷される版です。`python/prototype/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、配布はされません。詳細は[`document/about_jp.md`](document/about_jp.md)・[`document/environment_jp.md`](document/environment_jp.md)を参照してください。
+**現在のバージョンは v2.2.1 です。** `core/native/`（C++17 + WebView2版）が製品として出荷される版です。`python/prototype/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、配布はされません。詳細は[`document/about_jp.md`](document/about_jp.md)・[`document/environment_jp.md`](document/environment_jp.md)を参照してください。
 
 画面は日本語／Englishを切替可能です（メニューバー右端のボタン）。英語版 README のスクリーンショットは同じウィンドウの日本語表示時のものです。
 
@@ -24,8 +24,8 @@
 実行だけなら GitHub Releases の ZIP を使います。`v*` タグで GitHub Actions が `QuickMarkPDF-binary.zip` を作ります。ZIP はリポジトリには置きません。
 
 - [最新版の配布ページ](https://github.com/maktak-105/QuickMarkPDF/releases)
-- [QuickMarkPDF v1.2.1](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v1.2.1)
-- [QuickMarkPDF-binary.zipを直接ダウンロード](https://github.com/maktak-105/QuickMarkPDF/releases/download/v1.2.1/QuickMarkPDF-binary.zip)
+- [QuickMarkPDF v2.2.1](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v2.2.1)
+- [QuickMarkPDF-binary.zipを直接ダウンロード](https://github.com/maktak-105/QuickMarkPDF/releases/download/v2.2.1/QuickMarkPDF-binary.zip)
 
 ZIPを展開すると、すべての配布ファイルが同じフォルダに入ります（`vendor/` は `index.html` の隣に置きます）。
 

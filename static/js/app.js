@@ -14,6 +14,7 @@
   const PREVIEW_RENDER_WIDTH = 900;  // base render resolution; on-screen size is scaled via currentZoom
 
   const statusEl = document.querySelector('#status');
+  const thumbnailPanel = document.querySelector('.thumbnail-panel');
   const pageList = document.querySelector('#page-list');
   const previewEl = document.querySelector('#preview');
   const pdfWorkspace = document.querySelector('#pdf-workspace');
@@ -395,6 +396,12 @@
 
   function selectPage(index, event) {
     if (index < 0 || index >= pages.length) return;
+    // クリックでの選択時、上下矢印キーでのページ切替(下のkeydownハンドラの
+    // target.closest('.thumbnail-panel')判定)が効くよう、明示的にパネルへ
+    // フォーカスする。以前は「クリックすればスクロールコンテナへブラウザが
+    // 暗黙的にフォーカスする」挙動に頼っていたが、それは保証された挙動では
+    // なく機能しなくなることがあったため、tabindex="-1"を付けて確実にする。
+    if (event && thumbnailPanel) thumbnailPanel.focus({ preventScroll: true });
     const ctrl = Boolean(event && (event.ctrlKey || event.metaKey));
     const shift = Boolean(event && event.shiftKey);
 
@@ -766,19 +773,13 @@
   }
 
   // ── 表示言語切替（日本語 / English） ──
-  // window.quickmarkpdfLang はi18n.jsのt()が参照する現在言語。localStorageで
-  // セッションをまたいで永続化し(サムネイルサイズと同じパターン)、C++側にも
-  // set_languageメッセージで通知して、ネイティブダイアログ・ステータス文言
-  // (webview_main.cppのtr())を同期させる -- 2つの言語状態は独立して保存されて
-  // いるので、この通知を送り忘れると起動直後は同期していても以後ズレる。
-  const langButtons = {
-    ja: document.querySelector('#lang-ja'),
-    en: document.querySelector('#lang-en'),
-  };
+  const langToggleBtn = document.querySelector('#lang-toggle');
+  const langTextEl = document.querySelector('#lang-text');
+
   function applyLanguage() {
     document.documentElement.lang = window.quickmarkpdfLang;
-    for (const [lang, btn] of Object.entries(langButtons)) {
-      if (btn) btn.classList.toggle('checked', lang === window.quickmarkpdfLang);
+    if (langTextEl) {
+      langTextEl.textContent = window.quickmarkpdfLang === 'ja' ? 'English' : '日本語';
     }
     document.querySelectorAll('[data-i18n]').forEach((el) => {
       el.innerHTML = t(el.dataset.i18n);
@@ -789,20 +790,16 @@
     document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
       el.placeholder = t(el.dataset.i18nPlaceholder);
     });
-    // export.scope.all/selectedはページ数を埋め込む動的ラベルなので、汎用の
-    // data-i18nループでは処理していない(see updateExportScopeLabels's comment)。
-    updateExportScopeLabels();
-    // ページ未読込のプレースホルダ(#page-list本文・welcome案内)はrenderPageList()が
-    // JSから動的に書き込む文字列で、data-i18n属性を持たない(サムネイル一覧・
-    // プレビュー画像で上書きされた後もdata-i18nが残っていると、その後の言語切替の
-    // たびにel.innerHTMLで実データが消し飛ぶため -- 消えるだけならまだしも、
-    // 見えている内容そのものが失われる)。ここで個別に再翻訳する。
+    if (typeof updateExportScopeLabels === 'function') {
+      updateExportScopeLabels();
+    }
     if (pages.length === 0) {
       pageList.textContent = t('pageList.empty');
       const welcomeBody = previewEl.querySelector('.welcome p');
       if (welcomeBody) welcomeBody.textContent = t('welcome.body');
     }
   }
+
   function setLanguage(lang, persist = true) {
     if (lang !== 'ja' && lang !== 'en') return;
     window.quickmarkpdfLang = lang;
@@ -811,16 +808,6 @@
       post({ type: 'set_language', lang });
     }
     applyLanguage();
-  }
-  if (langButtons.ja) langButtons.ja.addEventListener('click', () => setLanguage('ja'));
-  if (langButtons.en) langButtons.en.addEventListener('click', () => setLanguage('en'));
-  {
-    let savedLang = 'ja';
-    try { savedLang = localStorage.getItem('quickmarkpdf.lang') || 'ja'; } catch (e) { /* ignore */ }
-    // persist:false -- this just applies what's already stored, no need to
-    // re-save it or re-notify the C++ side of what it should already know
-    // from its own registry-backed copy (see g_language in webview_main.cpp).
-    setLanguage(savedLang === 'en' ? 'en' : 'ja', false);
   }
 
   // ── サムネイル欄・プレビュー欄の境界(QSplitter相当) ──
@@ -1109,7 +1096,16 @@
   function applyPreviewMode() {
     const layer = document.querySelector('#text-layer');
     if (layer) layer.style.pointerEvents = previewMode === 'text' ? 'auto' : 'none';
-    if (previewMode !== 'crop') clearCropSelection();
+    if (previewMode === 'crop') {
+      // テキスト選択モードから切り替わった際、ブラウザが保持しているテキスト
+      // 選択(ハイライト)は#text-layerのpointer-eventsをnoneにしても自動では
+      // 消えないため、明示的にクリアする(逆方向はclearCropSelection()が既に
+      // 同じ役割を果たしている)。
+      const selection = window.getSelection();
+      if (selection) selection.removeAllRanges();
+    } else {
+      clearCropSelection();
+    }
   }
   function togglePreviewMode() {
     previewMode = previewMode === 'crop' ? 'text' : 'crop';
@@ -1123,6 +1119,10 @@
       [label, togglePreviewMode],
     ]);
   }
+  previewEl.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    showPreviewContextMenu(event.clientX, event.clientY);
+  });
 
   // ── 「設定」メニュー & 環境設定モーダル ──
   const settingsMenu = document.querySelector('#settings-menu');
@@ -1499,4 +1499,20 @@
   } else {
     setStatus(t('status.bridgeDisconnected'));
   }
+
+  // Quickアプリ標準言語ピルボタンのイベントと初期言語適用
+  if (langToggleBtn) {
+    langToggleBtn.addEventListener('click', () => {
+      const nextLang = window.quickmarkpdfLang === 'ja' ? 'en' : 'ja';
+      setLanguage(nextLang);
+    });
+  }
+  {
+    let savedLang = 'ja';
+    try { savedLang = localStorage.getItem('quickmarkpdf.lang') || 'ja'; } catch (e) { /* ignore */ }
+    setLanguage(savedLang === 'en' ? 'en' : 'ja', false);
+  }
+
+  // 起動時の初期ドキュメント状態（CLI引数等で開かれたPDF）を要求
+  post({ type: 'get_state' });
 })();

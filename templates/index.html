@@ -21,10 +21,14 @@
         <button type="button" id="about-item" data-i18n="menu.help.about">バージョン情報...</button>
       </div>
     </div>
-    <div class="menu lang-menu" id="lang-menu">
-      <button type="button" id="lang-ja" class="size-btn" data-lang="ja">日本語</button>
-      <button type="button" id="lang-en" class="size-btn" data-lang="en">English</button>
-    </div>
+    <button type="button" id="lang-toggle" class="lang-pill-btn">
+      <svg class="lang-globe-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+      </svg>
+      <span id="lang-text">English</span>
+    </button>
   </header>
   <header class="toolbar">
     <button id="open-button" class="tool" data-i18n-title="toolbar.open.title" title="PDF または Markdown ファイルを開く"><img src="../resources/icons/open.png" alt=""><span data-i18n="toolbar.open">開く</span></button>
@@ -45,7 +49,7 @@
     <button type="button" id="thumb-size-large" class="size-btn" disabled data-i18n="sizeToolbar.large">大</button>
   </header>
   <main class="workspace" id="pdf-workspace">
-    <aside class="thumbnail-panel">
+    <aside class="thumbnail-panel" tabindex="-1">
       <div id="page-list" class="empty">PDFを開くとページ一覧を表示します。</div>
     </aside>
     <div class="panel-splitter" id="panel-splitter"></div>
@@ -175,7 +179,7 @@
   <div class="modal-overlay" id="about-overlay" hidden>
     <div class="modal about-modal">
       <h2>QuickMarkPDF</h2>
-      <p class="about-version">Ver. 1.2.1</p>
+      <p class="about-version">Ver. 2.2.1</p>
       <hr class="about-divider">
       <p data-i18n="about.desc">無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。</p>
       <h3 class="about-section-title" data-i18n="about.devEnv.title">[開発環境]</h3>

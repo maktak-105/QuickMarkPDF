@@ -23,20 +23,24 @@
   <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#bg)"/>
   <rect x="1.5" y="1.5" width="253" height="253" rx="54.5" fill="none" stroke="#ffffff" stroke-opacity="0.06"/>
 
-  <!-- page -->
+  <!-- page (最背面) -->
   <g filter="url(#pageShadow)">
     <path d="M74 52 H150 L182 84 V204 A8 8 0 0 1 174 212 H74 A8 8 0 0 1 66 204 V60 A8 8 0 0 1 74 52 Z" fill="#f5f7fa"/>
     <path d="M150 52 L182 84 H158 A8 8 0 0 1 150 76 Z" fill="#c9d3e0"/>
   </g>
 
-  <!-- accent title bar -->
-  <rect x="84" y="104" width="76" height="16" rx="8" fill="url(#bar)" filter="url(#glow)"/>
-
-  <!-- text lines -->
-  <rect x="84" y="134" width="82" height="7" rx="3.5" fill="#aeb8c6"/>
+  <!-- text lines (文書の飾り、Qの下) -->
   <rect x="84" y="150" width="82" height="7" rx="3.5" fill="#aeb8c6"/>
-  <rect x="84" y="166" width="52" height="7" rx="3.5" fill="#aeb8c6"/>
+  <rect x="84" y="166" width="82" height="7" rx="3.5" fill="#aeb8c6"/>
+  <rect x="84" y="182" width="52" height="7" rx="3.5" fill="#aeb8c6"/>
 
   <!-- split accent mark -->
   <path d="M182 150 l14 14 -14 14" fill="none" stroke="#00f0ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+
+  <!-- Quickシリーズ共通のQ。書類の上に重ねる。不透明・横広ストレッチ。 -->
+  <text x="128" y="152" font-family="Segoe UI, Arial, sans-serif" font-weight="900" font-size="190" fill="#00f0ff" text-anchor="middle" dominant-baseline="central" transform="translate(128,152) scale(1.5,1) translate(-128,-152)">Q</text>
+
+  <!-- PDFバー+文字。最前面。文字サイズは元(12)の6倍(72)。 -->
+  <rect x="38" y="45" width="180" height="100" rx="18" fill="url(#bar)" filter="url(#glow)"/>
+  <text x="128" y="97" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="72" letter-spacing="1" fill="#0a0e14" text-anchor="middle" dominant-baseline="central">PDF</text>
 </svg>

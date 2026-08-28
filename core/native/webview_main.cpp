@@ -1887,11 +1887,33 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     // to the exe, so there is no "ui/" subfolder to look for.
     const auto ui_path = std::filesystem::absolute(executable_dir / L"index.html");
 
-    WNDCLASSW window_class{};
+    // Resource ID 101 == IDI_ICON1 in QuickMarkPDF.rc ("IDI_ICON1 ICON
+    // "QuickMarkPDF.ico""). That .rc entry alone only supplies the icon
+    // Explorer shows for the .exe file itself -- it does NOT automatically
+    // become the window's own titlebar/taskbar icon; WNDCLASSW's hIcon/
+    // hIconSm must be loaded and set explicitly, or the window shows no
+    // icon at all even though the .exe's own icon looks correct.
+    // LoadImageW (not the simpler LoadIconW) is used so the system's actual
+    // large/small icon metrics pick the closest-matching frame out of the
+    // multi-size QuickMarkPDF.ico instead of always scaling a fixed size.
+    constexpr int kAppIconResourceId = 101;
+    HICON app_icon_large = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(kAppIconResourceId), IMAGE_ICON,
+                                                           GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+                                                           LR_DEFAULTCOLOR));
+    HICON app_icon_small = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(kAppIconResourceId), IMAGE_ICON,
+                                                           GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+                                                           LR_DEFAULTCOLOR));
+
+    // WNDCLASSEXW (not the plain WNDCLASSW) because hIconSm -- the
+    // titlebar/taskbar small icon -- only exists on the Ex variant.
+    WNDCLASSEXW window_class{};
+    window_class.cbSize = sizeof(window_class);
     window_class.hInstance = instance;
     window_class.lpfnWndProc = window_proc;
     window_class.lpszClassName = L"QuickMarkPDFWebViewHost";
-    RegisterClassW(&window_class);
+    window_class.hIcon = app_icon_large;
+    window_class.hIconSm = app_icon_small;
+    RegisterClassExW(&window_class);
 
     // QA/test runs (extract_cpp.py's Selenium attach, check_behaviors_cpp.py's
     // TCP API) set this so the window never becomes visible on a real
