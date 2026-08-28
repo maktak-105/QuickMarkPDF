@@ -64,6 +64,36 @@ body { display: flex; flex-direction: column; background: var(--bg-primary); col
 }
 .menu-dropdown button:hover { background: var(--bg-row-hover); }
 
+/* Quickアプリ標準：地球アイコン付き 暗色ピル型言語切替ボタン */
+.lang-pill-btn {
+  margin-left: auto;
+  margin-right: 8px;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color-strong);
+  color: var(--text-main);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.lang-pill-btn:hover {
+  background: var(--bg-row-hover);
+  border-color: var(--accent-cyan);
+  box-shadow: var(--glow-cyan);
+  color: #fff;
+}
+.lang-globe-icon {
+  color: var(--accent-cyan);
+  stroke: var(--accent-cyan);
+  opacity: 0.9;
+}
+
 /* ── ツールバー（共通）── */
 .toolbar {
   flex: 0 0 auto; display: flex; align-items: stretch; gap: 0;
@@ -139,6 +169,10 @@ button.tool:disabled { opacity: .32; cursor: default; }
   overflow-y: auto; background: var(--bg-card-solid); border-right: 1px solid var(--border-color);
   padding: 2px; display: flex; flex-direction: column;
 }
+/* tabindex="-1"はJS側(selectPage)がクリック時に上下矢印キー操作用のフォーカスを
+   確実に当てるためのもの(app.jsのthumbnailPanel.focus()コメント参照)。Tabキーで
+   到達できる場所ではないので、フォーカスリングは表示しない。 */
+.thumbnail-panel:focus { outline: none; }
 #page-list { flex: 1 1 auto; }
 .thumbnail-panel.empty, #page-list.empty {
   color: var(--text-dim); font-size: 13px; text-align: center; padding: 24px 8px;
@@ -188,6 +222,20 @@ button.tool:disabled { opacity: .32; cursor: default; }
   position: absolute; border: 1px solid var(--accent-cyan); background: rgba(0, 240, 255, .15);
   pointer-events: none;
 }
+/* テキスト選択レイヤー(app.jsのrenderTextLayer/positionTextLayer)。子要素の
+   spanはPDFポイント単位の座標のまま置き、#text-layer自体にtransform: scale
+   をかけて表示サイズへ拡大する(位置はimg.offsetLeft/Top基準、#crop-overlay
+   と同じ理由)。既定はpreviewMode==='text'でpointer-events: auto、右クリック
+   メニューから範囲選択(クロップ)モードに切り替えるとnoneになる。 */
+#text-layer {
+  position: absolute; top: 0; left: 0; transform-origin: top left;
+  pointer-events: auto; user-select: text;
+}
+#text-layer span {
+  position: absolute; display: inline-block; white-space: pre; transform-origin: left top;
+  color: transparent; cursor: text; line-height: 1;
+}
+#text-layer span::selection { background: rgba(0, 240, 255, .35); }
 .welcome { text-align: center; color: var(--text-dim); }
 .welcome h1 {
   font-size: 26px; margin: 0 0 10px; color: var(--text-main);

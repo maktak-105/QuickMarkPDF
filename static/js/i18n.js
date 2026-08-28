@@ -1,0 +1,241 @@
+// UI string dictionary for QuickMarkPDF's two supported display languages.
+// Mirrors the same key set as templates/index.html's data-i18n attributes,
+// plus keys for strings app.js builds dynamically (status bar messages,
+// the right-click menu, the export example line). The C++ side keeps its
+// own copy of the native-dialog/status strings (see webview_main.cpp's
+// tr()) and is kept in sync only via the "set_language" WebMessage --
+// there is no shared source of truth between the two, so a key added here
+// has no bearing on the C++ side and vice versa.
+(() => {
+  const STRINGS = {
+    ja: {
+      'menu.settings': '設定',
+      'menu.settings.preferences': '環境設定...',
+      'menu.help': 'ヘルプ',
+      'menu.help.usage': '使い方...',
+      'menu.help.about': 'バージョン情報...',
+
+      'toolbar.open': '開く',
+      'toolbar.open.title': 'PDF または Markdown ファイルを開く',
+      'toolbar.split': 'PDF切り出し',
+      'toolbar.split.title': '選択ページを新しいPDFとして保存（切り出し）',
+      'toolbar.export': '画像出力',
+      'toolbar.export.title': 'ページをPNG/JPG画像としてエクスポート',
+      'toolbar.rotateRight': '右90°',
+      'toolbar.rotateRight.title': '選択ページを右に90度回転',
+      'toolbar.rotateLeft': '左90°',
+      'toolbar.rotateLeft.title': '選択ページを左に90度回転',
+      'toolbar.rotate180': '180°',
+      'toolbar.rotate180.title': '選択ページを180度回転',
+      'toolbar.save': '保存',
+      'toolbar.save.title': 'PDF を保存',
+
+      'sizeToolbar.label': 'サムネ',
+      'sizeToolbar.small': '小',
+      'sizeToolbar.medium': '中',
+      'sizeToolbar.large': '大',
+
+      'pageList.empty': 'PDFを開くとページ一覧を表示します。',
+      'welcome.body': '「開く」からPDFまたはMarkdownファイルを選択してください。',
+
+      'export.title': '画像としてエクスポート',
+      'export.scope.legend': '出力対象',
+      'export.scope.all': 'すべてのページ（{count}ページ）',
+      'export.scope.selected': '選択中のページ（{count}ページ）',
+      'export.area.legend': '出力領域',
+      'export.area.all': 'ページ全体',
+      'export.area.crop': 'クロップした範囲',
+      'export.settings.legend': '画像設定',
+      'export.format.label': '形式:',
+      'export.format.png': 'PNG（可逆・高品質）',
+      'export.format.jpg': 'JPEG（圧縮）',
+      'export.dpi.label': '解像度 (DPI):',
+      'export.dpi.72': '72（画面・軽量）',
+      'export.dpi.150': '150（標準）',
+      'export.dpi.300': '300（印刷品質）',
+      'export.dpi.custom': 'カスタム...',
+      'export.quality.label': 'JPEG画質:',
+      'export.dest.legend': '保存先',
+      'export.dest.folder': 'フォルダ:',
+      'export.dest.browse': '参照...',
+      'export.dest.prefix': '接頭辞:',
+      'export.dest.prefixPlaceholder': 'page など',
+      'export.cancel': 'キャンセル',
+      'export.run': 'エクスポート実行',
+      'export.example': '出力例: {prefix}_0001.{fmt}  {prefix}_0002.{fmt}  ...',
+
+      'prefs.title': '環境設定',
+      'prefs.wheel.legend': 'プレビューでのマウスホイール操作',
+      'prefs.wheel.zoom': '拡大・縮小（既定）　※右ドラッグでパン',
+      'prefs.wheel.scroll': '縦スクロール　※右ドラッグで拡大・縮小（下=拡大／上=縮小）',
+      'prefs.cancel': 'キャンセル',
+      'prefs.ok': 'OK',
+
+      'help.title': 'QuickMarkPDF の使い方',
+      'help.basic.title': '基本操作',
+      'help.basic.open': '<strong>開く</strong>: PDFまたはMarkdown（.md）ファイルを選択します。複数のPDFを同時に開くと、ページ一覧に連結して表示されます。',
+      'help.basic.select': '<strong>ページ選択</strong>: サムネイルをクリックで単一選択、Ctrl+クリックで複数選択、Shift+クリックで範囲選択できます。',
+      'help.basic.reorder': '<strong>並べ替え</strong>: サムネイルをドラッグ&ドロップすると順序を変更できます。複数ファイルを開いている場合はファイルをまたいだ移動もできます。',
+      'help.basic.rotateDelete': '<strong>回転・削除</strong>: 選択したページをツールバーまたは右クリックメニューから右90°／左90°／180°回転、削除できます。',
+      'help.basic.undo': '<strong>元に戻す</strong>: 直前の操作を取り消します（Ctrl+Z）。',
+      'help.basic.save': '<strong>保存</strong>: 「保存」（Ctrl+S）で編集内容を保存します。開いているファイルが<u>1つだけ</u>のときは「上書き保存」か「名前を付けて保存」かを選べます。<u>複数のPDFファイルを同時に開いているとき</u>は上書き保存はできず、常に名前を付けて保存になります——このとき、開いている全ファイルのページがひとつに<strong>連結された新しいPDF</strong>として書き出されます（元のファイルはどれも変更されません）。',
+      'help.export.title': '書き出し',
+      'help.export.split': '<strong>PDF切り出し</strong>: 選択したページだけを新しいPDFファイルとして保存します（元のファイルは変更されません）。',
+      'help.export.image': '<strong>画像出力</strong>: 選択ページまたは全ページをPNG/JPEGとして書き出せます。解像度（DPI）・JPEG画質・出力範囲（クロップ）を指定できます。',
+      'help.markdown.title': 'Markdownモード',
+      'help.markdown.body': '.md ファイルを開くと、PDF編集の代わりにMarkdownプレビューが表示されます。見出し・リスト・表・コードブロックに加えて、Mermaid記法の図（<code>```mermaid</code>）と、$記法（<code>$...$</code> / <code>$$...$$</code>）による数式（MathJax）に対応しています。設定メニューはこの間も利用できます。',
+      'help.shortcuts.title': 'キーボードショートカット',
+      'help.shortcuts.open': 'ファイルを開く',
+      'help.shortcuts.delete': '選択ページを削除',
+      'help.shortcuts.undo': '元に戻す',
+      'help.shortcuts.save': '上書き保存',
+      'help.shortcuts.arrows': 'サムネイルパネルにフォーカス時、前後のページを選択',
+      'help.close': '閉じる',
+
+      'about.desc': '無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。',
+      'about.devEnv.title': '[開発環境]',
+      'about.author.title': '[制作者]',
+      'about.close': '閉じる',
+
+      'status.ready': '準備完了',
+      'status.bridgeDisconnected': 'WebView2ブリッジ未接続（ブラウザプレビュー）',
+      'status.connecting': 'PDFバックエンドへ接続中…',
+      'status.thumbSizeChanged': 'サムネイルサイズを「{sizeName}」に変更しました',
+      'status.filesLoaded': '{loaded}件のファイルを読み込みました（{pages}ページ）',
+      'status.filesFailed': ' / 読み込めなかったファイル: {names}',
+
+      'ctxMenu.rotateRight': '右90°回転',
+      'ctxMenu.rotateLeft': '左90°回転',
+      'ctxMenu.rotate180': '180°回転',
+      'ctxMenu.split': 'PDF切り出し...',
+      'ctxMenu.export': '画像を切り出し (PNG/JPG)...',
+      'ctxMenu.delete': 'ページを削除',
+      'ctxMenu.closeFile': 'このファイルを閉じる',
+      'ctxMenu.switchToCrop': '範囲選択(画像切り出し)に切り替え',
+      'ctxMenu.switchToText': 'テキスト選択に戻す',
+    },
+    en: {
+      'menu.settings': 'Settings',
+      'menu.settings.preferences': 'Preferences...',
+      'menu.help': 'Help',
+      'menu.help.usage': 'Usage...',
+      'menu.help.about': 'About...',
+
+      'toolbar.open': 'Open',
+      'toolbar.open.title': 'Open a PDF or Markdown file',
+      'toolbar.split': 'Split PDF',
+      'toolbar.split.title': 'Save the selected pages as a new PDF (split)',
+      'toolbar.export': 'Export images',
+      'toolbar.export.title': 'Export pages as PNG/JPG images',
+      'toolbar.rotateRight': 'Right 90°',
+      'toolbar.rotateRight.title': 'Rotate the selected pages right by 90 degrees',
+      'toolbar.rotateLeft': 'Left 90°',
+      'toolbar.rotateLeft.title': 'Rotate the selected pages left by 90 degrees',
+      'toolbar.rotate180': '180°',
+      'toolbar.rotate180.title': 'Rotate the selected pages by 180 degrees',
+      'toolbar.save': 'Save',
+      'toolbar.save.title': 'Save the PDF',
+
+      'sizeToolbar.label': 'Thumbnails',
+      'sizeToolbar.small': 'S',
+      'sizeToolbar.medium': 'M',
+      'sizeToolbar.large': 'L',
+
+      'pageList.empty': 'Open a PDF to see its page list here.',
+      'welcome.body': 'Choose a PDF or Markdown file from "Open".',
+
+      'export.title': 'Export as images',
+      'export.scope.legend': 'Pages to export',
+      'export.scope.all': 'All pages ({count})',
+      'export.scope.selected': 'Selected pages ({count})',
+      'export.area.legend': 'Export area',
+      'export.area.all': 'Whole page',
+      'export.area.crop': 'Cropped area',
+      'export.settings.legend': 'Image settings',
+      'export.format.label': 'Format:',
+      'export.format.png': 'PNG (lossless, high quality)',
+      'export.format.jpg': 'JPEG (compressed)',
+      'export.dpi.label': 'Resolution (DPI):',
+      'export.dpi.72': '72 (screen, small file)',
+      'export.dpi.150': '150 (standard)',
+      'export.dpi.300': '300 (print quality)',
+      'export.dpi.custom': 'Custom...',
+      'export.quality.label': 'JPEG quality:',
+      'export.dest.legend': 'Destination',
+      'export.dest.folder': 'Folder:',
+      'export.dest.browse': 'Browse...',
+      'export.dest.prefix': 'Prefix:',
+      'export.dest.prefixPlaceholder': 'e.g. page',
+      'export.cancel': 'Cancel',
+      'export.run': 'Export',
+      'export.example': 'Example: {prefix}_0001.{fmt}  {prefix}_0002.{fmt}  ...',
+
+      'prefs.title': 'Preferences',
+      'prefs.wheel.legend': 'Mouse wheel behavior in the preview',
+      'prefs.wheel.zoom': 'Zoom (default) — right-drag pans',
+      'prefs.wheel.scroll': 'Vertical scroll — right-drag zooms (down = in, up = out)',
+      'prefs.cancel': 'Cancel',
+      'prefs.ok': 'OK',
+
+      'help.title': 'How to use QuickMarkPDF',
+      'help.basic.title': 'Basic operations',
+      'help.basic.open': '<strong>Open</strong>: Choose a PDF or Markdown (.md) file. Opening multiple PDFs at once concatenates them into one page list.',
+      'help.basic.select': '<strong>Page selection</strong>: Click a thumbnail to select it, Ctrl+click to multi-select, Shift+click to select a range.',
+      'help.basic.reorder': '<strong>Reorder</strong>: Drag and drop thumbnails to change their order. With multiple files open, you can move pages across files too.',
+      'help.basic.rotateDelete': '<strong>Rotate/delete</strong>: Rotate the selected pages right 90°/left 90°/180°, or delete them, from the toolbar or the right-click menu.',
+      'help.basic.undo': '<strong>Undo</strong>: Reverts the most recent action (Ctrl+Z).',
+      'help.basic.save': '<strong>Save</strong>: "Save" (Ctrl+S) saves your edits. When only <u>one</u> file is open, you can choose to overwrite it or save it as a new file. When <u>multiple PDF files are open at once</u>, overwriting isn\'t possible — it always saves as a new file, merging every open file\'s pages into one <strong>new, concatenated PDF</strong> (none of the original files are changed).',
+      'help.export.title': 'Export',
+      'help.export.split': '<strong>Split PDF</strong>: Saves only the selected pages as a new PDF file (the original file is unchanged).',
+      'help.export.image': '<strong>Export images</strong>: Export the selected pages or all pages as PNG/JPEG. You can set the resolution (DPI), JPEG quality, and export area (crop).',
+      'help.markdown.title': 'Markdown mode',
+      'help.markdown.body': 'Opening a .md file shows a Markdown preview instead of PDF editing. In addition to headings, lists, tables, and code blocks, it supports Mermaid diagrams (<code>```mermaid</code>) and math (MathJax) via <code>$...$</code> / <code>$$...$$</code> notation. The Settings menu remains available while in this mode.',
+      'help.shortcuts.title': 'Keyboard shortcuts',
+      'help.shortcuts.open': 'Open a file',
+      'help.shortcuts.delete': 'Delete selected pages',
+      'help.shortcuts.undo': 'Undo',
+      'help.shortcuts.save': 'Overwrite save',
+      'help.shortcuts.arrows': 'When the thumbnail panel has focus, selects the previous/next page',
+      'help.close': 'Close',
+
+      'about.desc': 'Free, no ads, no donation requests, no paid features. A simple PDF page editor. As a bonus, it also exports Markdown (with Mermaid diagrams and math) to PDF.',
+      'about.devEnv.title': '[Development environment]',
+      'about.author.title': '[Author]',
+      'about.close': 'Close',
+
+      'status.ready': 'Ready',
+      'status.bridgeDisconnected': 'WebView2 bridge not connected (browser preview)',
+      'status.connecting': 'Connecting to the PDF backend…',
+      'status.thumbSizeChanged': 'Thumbnail size changed to "{sizeName}"',
+      'status.filesLoaded': 'Loaded {loaded} file(s) ({pages} page(s))',
+      'status.filesFailed': ' / Files that failed to load: {names}',
+
+      'ctxMenu.rotateRight': 'Rotate right 90°',
+      'ctxMenu.rotateLeft': 'Rotate left 90°',
+      'ctxMenu.rotate180': 'Rotate 180°',
+      'ctxMenu.split': 'Split PDF...',
+      'ctxMenu.export': 'Export image (PNG/JPG)...',
+      'ctxMenu.delete': 'Delete page',
+      'ctxMenu.closeFile': 'Close this file',
+      'ctxMenu.switchToCrop': 'Switch to crop-area selection',
+      'ctxMenu.switchToText': 'Switch back to text selection',
+    },
+  };
+
+  // `params`: {key: value} substituted into `{key}` placeholders in the
+  // string. Falls back to the Japanese string (and finally the bare key)
+  // if a key is missing from the requested language, so a translation gap
+  // degrades to visible-but-wrong-language text rather than "undefined".
+  function t(key, params) {
+    const lang = window.quickmarkpdfLang || 'ja';
+    let str = (STRINGS[lang] && STRINGS[lang][key]) ?? STRINGS.ja[key] ?? key;
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        str = str.replaceAll(`{${k}}`, String(v));
+      }
+    }
+    return str;
+  }
+
+  window.quickmarkpdfI18n = { t, STRINGS };
+})();

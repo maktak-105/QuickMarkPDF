@@ -1,4 +1,6 @@
 (() => {
+  const { t } = window.quickmarkpdfI18n;
+
   // Mirrors thumbnail_panel.py's per-size (w, h) body dimensions -- see
   // _apply_size(). NUM_GUTTER_W/TAG_H/TEXT_H match its module constants.
   const NUM_GUTTER_W = 28;
@@ -12,6 +14,7 @@
   const PREVIEW_RENDER_WIDTH = 900;  // base render resolution; on-screen size is scaled via currentZoom
 
   const statusEl = document.querySelector('#status');
+  const thumbnailPanel = document.querySelector('.thumbnail-panel');
   const pageList = document.querySelector('#page-list');
   const previewEl = document.querySelector('#preview');
   const pdfWorkspace = document.querySelector('#pdf-workspace');
@@ -77,6 +80,23 @@
   let cropDragging = false;
   let cropDragOriginX = 0;
   let cropDragOriginY = 0;
+
+  // ── プレビューのテキスト選択 / 範囲選択(クロップ)モード切替 ──
+  // 既定はテキスト選択(左ドラッグでブラウザ標準のテキスト選択)。右クリックの
+  // 単発クリック(ドラッグなし)でメニューを出し、「範囲選択に切り替え」を選ぶと
+  // previewMode='crop'になり、既存のクロップ左ドラッグが有効になる。ページを
+  // 開き直すたびテキスト選択優先の既定に戻す(localStorageへの永続化はしない)。
+  let previewMode = 'text';  // 'text' | 'crop'
+  // render_pageへ最後にリクエストしたプレビュー用の幅。page_renderedのwidthと
+  // 突き合わせて、それがサムネイル用でなくプレビュー用の応答であることを判定する
+  // (プレビューは常にサムネイルよりずっと大きい値になるので実質的に衝突しない)。
+  let previewRequestedWidth = 0;
+  // true の間に届く page_rendered は「ズームに応じた高解像度の再取得」であり、
+  // 初回表示(ページ切り替え)のような zoomのリセット・クロップ選択のクリアは
+  // 行わない -- 表示中の見た目(スクロール位置・ズーム倍率)を保ったまま画像だけ
+  // 差し替える。
+  let previewHighResPending = false;
+  let previewRerenderTimer = null;
 
   const hasBridge = () => Boolean(window.chrome?.webview);
   const post = (payload) => {
@@ -376,6 +396,12 @@
 
   function selectPage(index, event) {
     if (index < 0 || index >= pages.length) return;
+    // クリックでの選択時、上下矢印キーでのページ切替(下のkeydownハンドラの
+    // target.closest('.thumbnail-panel')判定)が効くよう、明示的にパネルへ
+    // フォーカスする。以前は「クリックすればスクロールコンテナへブラウザが
+    // 暗黙的にフォーカスする」挙動に頼っていたが、それは保証された挙動では
+    // なく機能しなくなることがあったため、tabindex="-1"を付けて確実にする。
+    if (event && thumbnailPanel) thumbnailPanel.focus({ preventScroll: true });
     const ctrl = Boolean(event && (event.ctrlKey || event.metaKey));
     const shift = Boolean(event && event.shiftKey);
 
@@ -406,8 +432,25 @@
     applySelectionToDom();
     updateToolbarEnabled();
     if (primaryIndex >= 0 && primaryIndex < pages.length) {
-      post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_RENDER_WIDTH });
+      requestPreviewRender(PREVIEW_RENDER_WIDTH, { highRes: false });
     }
+  }
+
+  // Requests a render of the current preview page at `width` px. `highRes:
+  // true` marks this as a zoom-driven upgrade of an already-shown page (see
+  // previewHighResPending) rather than a fresh page being opened.
+  function requestPreviewRender(width, { highRes = false } = {}) {
+    if (primaryIndex < 0) return;
+    previewRequestedWidth = Math.round(width);
+    previewHighResPending = highRes;
+    // A non-highRes request means a different page is about to be shown --
+    // always start it back in text-selection mode (see previewMode's
+    // declaration for why this isn't persisted across pages).
+    if (!highRes) {
+      previewMode = 'text';
+      applyPreviewMode();
+    }
+    post({ type: 'render_page', page_index: primaryIndex, width: previewRequestedWidth });
   }
 
   function paintImage(target, message) {
@@ -437,7 +480,29 @@
       contextMenuEl = null;
     }
   }
-  function showContextMenu(x, y, sourcePath) {
+  // Shared by the thumbnail panel's right-click menu and the preview pane's
+  // (see showPreviewContextMenu) -- same rotate/split/export/delete/close
+  // actions regardless of which one the user right-clicked from, acting on
+  // whatever page is currently selected. `sourcePath` is that page's own
+  // file (for "close this file"), which for the thumbnail case is the
+  // page's own `page.path` and for the preview case is the source of
+  // `pages[primaryIndex]`.
+  function buildPageActionMenuItems(sourcePath) {
+    return [
+      [t('ctxMenu.rotateRight'), () => doRotate(90)],
+      [t('ctxMenu.rotateLeft'), () => doRotate(-90)],
+      [t('ctxMenu.rotate180'), () => doRotate(180)],
+      [t('ctxMenu.split'), doSplit],
+      [t('ctxMenu.export'), () => doExport(selectedIndicesSorted())],
+      [t('ctxMenu.delete'), doDelete],
+      [t('ctxMenu.closeFile'), () => post({ type: 'close_document', path: sourcePath })],
+    ];
+  }
+  // `items`: [[label, handler], ...] -- caller supplies the menu content, so
+  // this same builder serves both the thumbnail panel's menu and the
+  // preview pane's menu (rotate/split/export/delete/close plus the
+  // text-select vs. crop mode toggle, see showPreviewContextMenu).
+  function showContextMenu(x, y, items) {
     closeContextMenu();
     const menu = document.createElement('div');
     menu.className = 'context-menu';
@@ -451,15 +516,6 @@
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
 
-    const items = [
-      ['右90°回転', () => doRotate(90)],
-      ['左90°回転', () => doRotate(-90)],
-      ['180°回転', () => doRotate(180)],
-      ['PDF切り出し...', doSplit],
-      ['画像を切り出し (PNG/JPG)...', () => doExport(selectedIndicesSorted())],
-      ['ページを削除', doDelete],
-      ['このファイルを閉じる', () => post({ type: 'close_document', path: sourcePath })],
-    ];
     items.forEach(([label, handler]) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -553,7 +609,7 @@
     item.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       if (!selectedIndices.has(index)) selectPage(index, event);
-      showContextMenu(event.clientX, event.clientY, page.path);
+      showContextMenu(event.clientX, event.clientY, buildPageActionMenuItems(page.path));
     });
 
     item.addEventListener('dragstart', (event) => {
@@ -643,14 +699,14 @@
     if (pages.length === 0) {
       pageList.className = 'empty';
       pageList.replaceChildren();
-      pageList.textContent = 'PDFを開くとページ一覧を表示します。';
+      pageList.textContent = t('pageList.empty');
       selectedIndices = new Set();
       primaryIndex = -1;
       anchorIndex = -1;
       previewEl.replaceChildren();
       const welcome = document.createElement('div');
       welcome.className = 'welcome';
-      welcome.innerHTML = '<h1>QuickMarkPDF</h1><p>「開く」からPDFを選択してください。</p>';
+      welcome.innerHTML = `<h1>QuickMarkPDF</h1><p>${t('welcome.body')}</p>`;
       previewEl.appendChild(welcome);
       updateToolbarEnabled();
       return;
@@ -674,7 +730,7 @@
     if (selectedIndices.size === 0) selectedIndices.add(primaryIndex);
     applySelectionToDom();
     updateToolbarEnabled();
-    post({ type: 'render_page', page_index: primaryIndex, width: PREVIEW_RENDER_WIDTH });
+    requestPreviewRender(PREVIEW_RENDER_WIDTH, { highRes: false });
   }
 
   // ── サムネイルサイズ切替（ツールバー2段目） ──
@@ -703,8 +759,8 @@
         post({ type: 'render_page', page_index: index, width: NUM_GUTTER_W + thumbWidth });
       });
     }
-    const sizeName = { small: '小', medium: '中', large: '大' }[size];
-    setStatus(`サムネイルサイズを「${sizeName}」に変更しました`);
+    const sizeName = t(`sizeToolbar.${size}`);
+    setStatus(t('status.thumbSizeChanged', { sizeName }));
   }
   thumbSizeButtons.small.addEventListener('click', () => setThumbSize('small'));
   thumbSizeButtons.medium.addEventListener('click', () => setThumbSize('medium'));
@@ -714,6 +770,44 @@
     try { savedThumbSize = localStorage.getItem('quickmarkpdf.thumbSize') || 'medium'; } catch (e) { /* ignore */ }
     currentThumbSize = null;  // force setThumbSize to actually apply, even if savedThumbSize === 'medium'
     setThumbSize(savedThumbSize in THUMB_SIZES ? savedThumbSize : 'medium', false);
+  }
+
+  // ── 表示言語切替（日本語 / English） ──
+  const langToggleBtn = document.querySelector('#lang-toggle');
+  const langTextEl = document.querySelector('#lang-text');
+
+  function applyLanguage() {
+    document.documentElement.lang = window.quickmarkpdfLang;
+    if (langTextEl) {
+      langTextEl.textContent = window.quickmarkpdfLang === 'ja' ? 'English' : '日本語';
+    }
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      el.innerHTML = t(el.dataset.i18n);
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+      el.title = t(el.dataset.i18nTitle);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+      el.placeholder = t(el.dataset.i18nPlaceholder);
+    });
+    if (typeof updateExportScopeLabels === 'function') {
+      updateExportScopeLabels();
+    }
+    if (pages.length === 0) {
+      pageList.textContent = t('pageList.empty');
+      const welcomeBody = previewEl.querySelector('.welcome p');
+      if (welcomeBody) welcomeBody.textContent = t('welcome.body');
+    }
+  }
+
+  function setLanguage(lang, persist = true) {
+    if (lang !== 'ja' && lang !== 'en') return;
+    window.quickmarkpdfLang = lang;
+    if (persist) {
+      try { localStorage.setItem('quickmarkpdf.lang', lang); } catch (e) { /* ignore */ }
+      post({ type: 'set_language', lang });
+    }
+    applyLanguage();
   }
 
   // ── サムネイル欄・プレビュー欄の境界(QSplitter相当) ──
@@ -766,6 +860,26 @@
     // overflows to match that behavior instead of CSS's default centering.
     previewEl.style.alignItems = h > previewEl.clientHeight ? 'flex-start' : 'center';
     previewEl.style.justifyContent = w > previewEl.clientWidth ? 'flex-start' : 'center';
+    positionTextLayer();
+    scheduleHighResPreviewRerender();
+  }
+
+  // ズーム操作は連打(wheel/mousemove)されるため、ここでrender_pageを都度撃つと
+  // IPC/レンダリングが暴走する。落ち着いてから(250ms操作が無ければ)、実際の
+  // 表示ピクセル数(natural幅 * ズーム倍率、端末のdevicePixelRatioも考慮)相当の
+  // 解像度で1回だけ再取得する。PREVIEW_RENDER_WIDTHより小さくはならず、極端な
+  // ズームでも青天井にならないよう上限も設ける。
+  const PREVIEW_MAX_RENDER_WIDTH = 4000;
+  function scheduleHighResPreviewRerender() {
+    if (currentMode !== 'pdf' || !previewNaturalWidth) return;
+    clearTimeout(previewRerenderTimer);
+    previewRerenderTimer = setTimeout(() => {
+      const dpr = window.devicePixelRatio || 1;
+      const targetWidth = Math.round(previewNaturalWidth * currentZoom * dpr);
+      const width = Math.min(Math.max(targetWidth, PREVIEW_RENDER_WIDTH), PREVIEW_MAX_RENDER_WIDTH);
+      if (Math.abs(width - previewRequestedWidth) < 2) return;  // already at (about) this resolution
+      requestPreviewRender(width, { highRes: true });
+    }, 250);
   }
 
   function fitPreviewToWidth() {
@@ -821,6 +935,15 @@
     if (event.button !== 2 || !panning) return;
     panning = false;
     previewEl.style.cursor = '';
+    // 右ボタンは既にパン/ズームに割り当て済みなので、右クリックメニューは
+    // 「ドラッグせずクリックだけした」場合(mousedown〜mouseup間の移動量が
+    // 小さい)にだけ出す -- クロップドラッグの5px閾値(下記mouseupハンドラ)
+    // と同じ基準。
+    const dx = event.clientX - panStartX;
+    const dy = event.clientY - panStartY;
+    if (currentMode === 'pdf' && Math.hypot(dx, dy) <= 5) {
+      showPreviewContextMenu(event.clientX, event.clientY);
+    }
   });
   previewEl.addEventListener('contextmenu', (event) => event.preventDefault());
 
@@ -853,7 +976,7 @@
   // オーバーレイの位置は「imgの左上からのnatural(ズーム前)座標」で管理し、img自体を
   // 親要素として使う(previewEl直下だとスクロール位置分のズレが出るため)。
   previewEl.addEventListener('mousedown', (event) => {
-    if (event.button !== 0 || currentMode !== 'pdf' || !previewNaturalWidth) return;
+    if (previewMode !== 'crop' || event.button !== 0 || currentMode !== 'pdf' || !previewNaturalWidth) return;
     const img = previewEl.querySelector('img');
     if (!img) return;
     const rect = img.getBoundingClientRect();
@@ -903,6 +1026,102 @@
     } else {
       clearCropSelection();
     }
+  });
+
+  // ── プレビューのテキスト選択レイヤー ──
+  // 画像(pdfiumのビットマップ)自体はそのまま見た目として使い、その上に
+  // get_text_layoutで取得した行矩形ごとに透明なspanを重ねて、ブラウザ標準の
+  // ドラッグ選択・コピーを可能にする(Acrobat/Chrome内蔵PDFビューア/pdf.jsと
+  // 同じ「画像+透明テキストレイヤー」の二層構成)。
+  //
+  // layer内の各spanはPDFポイント単位の座標(1pt=1px)にそのまま固定し、
+  // layer自体をtransform: scaleで実際の表示サイズへ拡大する一段構成にする。
+  // こうすることで、ズーム操作やscheduleHighResPreviewRerenderによる
+  // previewNaturalWidthの変化があっても、layerのtransformを再計算する
+  // だけでよく(positionTextLayer)、get_text_layoutの再取得やspanの再配置
+  // は不要 -- テキストの矩形自体はページのPDFポイント座標そのものであり、
+  // レンダリング解像度に依存しないため。
+  let textLayerPageWidthPt = 0;
+  let textLayerPageHeightPt = 0;
+
+  function positionTextLayer() {
+    const img = previewEl.querySelector('img');
+    const layer = document.querySelector('#text-layer');
+    if (!img || !layer || !textLayerPageWidthPt || !previewNaturalWidth) return;
+    // #crop-overlayと同じ理由でimg.offsetLeft/Topを基準にする(スクロール
+    // 位置に依存しない)。
+    const scale = (previewNaturalWidth / textLayerPageWidthPt) * currentZoom;
+    layer.style.left = `${img.offsetLeft}px`;
+    layer.style.top = `${img.offsetTop}px`;
+    layer.style.width = `${textLayerPageWidthPt}px`;
+    layer.style.height = `${textLayerPageHeightPt}px`;
+    layer.style.transform = `scale(${scale})`;
+  }
+
+  function renderTextLayer(data) {
+    let layer = document.querySelector('#text-layer');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.id = 'text-layer';
+      previewEl.appendChild(layer);
+    }
+    layer.replaceChildren();
+    textLayerPageWidthPt = data.page_width_pt || 0;
+    textLayerPageHeightPt = data.page_height_pt || 0;
+    if (!textLayerPageWidthPt) return;
+    (data.runs || []).forEach((run) => {
+      const width = run.x1 - run.x0;
+      const height = run.y1 - run.y0;
+      if (width <= 0 || height <= 0 || !run.text) return;
+      const span = document.createElement('span');
+      span.textContent = run.text;
+      span.style.left = `${run.x0}px`;
+      span.style.top = `${run.y0}px`;
+      span.style.height = `${height}px`;
+      span.style.fontSize = `${height}px`;
+      layer.appendChild(span);
+      // pdf.jsのtextLayerと同じ手法: 矩形の高さでフォントサイズを決めた後、
+      // 実際に描画された幅と矩形の幅がズレる分をtransform: scaleXで補正して
+      // 見た目の文字と選択範囲の位置を合わせる。この時点ではlayerにまだ
+      // transformを適用していない(1px=1pt)ので、測定値をそのまま使える。
+      const measuredWidth = span.getBoundingClientRect().width;
+      if (measuredWidth > 0) {
+        span.style.width = `${measuredWidth}px`;
+        span.style.transform = `scaleX(${width / measuredWidth})`;
+      }
+    });
+    positionTextLayer();
+  }
+
+  function applyPreviewMode() {
+    const layer = document.querySelector('#text-layer');
+    if (layer) layer.style.pointerEvents = previewMode === 'text' ? 'auto' : 'none';
+    if (previewMode === 'crop') {
+      // テキスト選択モードから切り替わった際、ブラウザが保持しているテキスト
+      // 選択(ハイライト)は#text-layerのpointer-eventsをnoneにしても自動では
+      // 消えないため、明示的にクリアする(逆方向はclearCropSelection()が既に
+      // 同じ役割を果たしている)。
+      const selection = window.getSelection();
+      if (selection) selection.removeAllRanges();
+    } else {
+      clearCropSelection();
+    }
+  }
+  function togglePreviewMode() {
+    previewMode = previewMode === 'crop' ? 'text' : 'crop';
+    applyPreviewMode();
+  }
+  function showPreviewContextMenu(x, y) {
+    if (!previewNaturalWidth || primaryIndex < 0 || primaryIndex >= pages.length) return;
+    const label = t(previewMode === 'crop' ? 'ctxMenu.switchToText' : 'ctxMenu.switchToCrop');
+    showContextMenu(x, y, [
+      ...buildPageActionMenuItems(pages[primaryIndex].path),
+      [label, togglePreviewMode],
+    ]);
+  }
+  previewEl.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    showPreviewContextMenu(event.clientX, event.clientY);
   });
 
   // ── 「設定」メニュー & 環境設定モーダル ──
@@ -967,10 +1186,10 @@
 
   function doOpen() {
     if (!hasBridge()) {
-      setStatus('WebView2ブリッジ未接続（ブラウザプレビュー）');
+      setStatus(t('status.bridgeDisconnected'));
       return;
     }
-    setStatus('PDFバックエンドへ接続中…');
+    setStatus(t('status.connecting'));
     post({ type: 'open_pdf' });
   }
   function doRotate(degrees) {
@@ -992,8 +1211,17 @@
   const exportOverlay = document.querySelector('#export-overlay');
   const exportScopeAll = document.querySelector('#export-scope-all');
   const exportScopeSelected = document.querySelector('#export-scope-selected');
-  const exportTotalCount = document.querySelector('#export-total-count');
-  const exportSelectedCount = document.querySelector('#export-selected-count');
+  // export.scope.all/selectedのラベルは、選択ページ数を{count}として埋め込む
+  // テンプレート文字列(i18n.js)なので、applyLanguage()の汎用data-i18nループ
+  // では処理せず、updateExportScopeLabels()で現在の件数を保持したまま個別に
+  // 再構築する(そうしないと、単純にinnerHTMLへt(key)を代入する処理では
+  // 件数が"{count}"のプレースホルダのまま、あるいは直近の件数が失われる)。
+  const exportScopeAllLabel = document.querySelector('#export-scope-all-label');
+  const exportScopeSelectedLabel = document.querySelector('#export-scope-selected-label');
+  function updateExportScopeLabels() {
+    exportScopeAllLabel.textContent = t('export.scope.all', { count: pages.length });
+    exportScopeSelectedLabel.textContent = t('export.scope.selected', { count: exportPendingIndices.length });
+  }
   const exportAreaAll = document.querySelector('#export-area-all');
   const exportAreaCrop = document.querySelector('#export-area-crop');
   const exportFormat = document.querySelector('#export-format');
@@ -1014,7 +1242,7 @@
   function updateExportExample() {
     const prefix = exportPrefix.value.trim() || 'page';
     const fmt = exportFormat.value === 'jpg' ? 'jpg' : 'png';
-    exportExample.textContent = `出力例: ${prefix}_0001.${fmt}  ${prefix}_0002.${fmt}  ...`;
+    exportExample.textContent = t('export.example', { prefix, fmt });
   }
   function onExportFormatChanged() {
     const isJpg = exportFormat.value === 'jpg';
@@ -1073,8 +1301,7 @@
     const sel = indices && indices.length ? indices : selectedIndicesSorted();
     exportPendingIndices = sel;
 
-    exportTotalCount.textContent = String(pages.length);
-    exportSelectedCount.textContent = String(sel.length);
+    updateExportScopeLabels();
     exportScopeSelected.disabled = sel.length === 0;
     if (sel.length > 0) { exportScopeSelected.checked = true; } else { exportScopeAll.checked = true; }
 
@@ -1185,9 +1412,9 @@
 
       if (data.type === 'pdf_opened') {
         if (typeof data.loaded_files === 'number') {
-          let message = `${data.loaded_files}件のファイルを読み込みました（${data.page_count}ページ）`;
+          let message = t('status.filesLoaded', { loaded: data.loaded_files, pages: data.page_count });
           if (data.failed_files && data.failed_files.length > 0) {
-            message += ` / 読み込めなかったファイル: ${data.failed_files.join(', ')}`;
+            message += t('status.filesFailed', { names: data.failed_files.join(', ') });
           }
           setStatus(message);
         }
@@ -1218,35 +1445,74 @@
       }
 
       if (data.type === 'page_rendered') {
-        if (data.width === PREVIEW_RENDER_WIDTH) {
+        // previewRequestedWidthとの一致で「これはプレビュー用の応答」と
+        // 判定する(サムネイル用リクエストの幅は常にずっと小さい値なので
+        // 実質衝突しない)。page_indexも合わせて見ることで、ページ切り替え
+        // 直後に届く古いページの遅延レスポンスを弾く。
+        if (data.page_index === primaryIndex && data.width === previewRequestedWidth) {
+          const isHighRes = previewHighResPending;
+          previewHighResPending = false;
           let img = previewEl.querySelector('img');
           if (!img) {
             previewEl.replaceChildren();
             img = document.createElement('img');
             previewEl.appendChild(img);
           }
+          // 高解像度への差し替えでは、画面上の表示px(natural幅 * ズーム倍率)
+          // を保ったままnatural側だけ差し替える -- そうしないと画像が急に
+          // 拡大/縮小して見える。
+          const displayedWidthPx = isHighRes && previewNaturalWidth ? previewNaturalWidth * currentZoom : 0;
           paintImage(img, data);
           previewNaturalWidth = data.width;
           previewNaturalHeight = data.height;
           pageWidthPt = data.page_width_pt || 0;
           pageHeightPt = data.page_height_pt || 0;
-          // Matches PreviewLabel.set_base_pixmap: a freshly displayed page
-          // (even if it's the same page re-rendered after rotate/undo)
-          // clears any crop selection from before.
-          clearCropSelection();
-          fitPreviewToWidth();
-          // A fresh page should always open showing its top, not wherever
-          // the previous page happened to be scrolled to.
-          previewEl.scrollTop = 0;
-          previewEl.scrollLeft = 0;
+          if (displayedWidthPx > 0) currentZoom = displayedWidthPx / data.width;
+          if (isHighRes) {
+            applyPreviewZoom();
+          } else {
+            // Matches PreviewLabel.set_base_pixmap: a freshly displayed page
+            // (even if it's the same page re-rendered after rotate/undo)
+            // clears any crop selection from before.
+            clearCropSelection();
+            fitPreviewToWidth();
+            // A fresh page should always open showing its top, not wherever
+            // the previous page happened to be scrolled to.
+            previewEl.scrollTop = 0;
+            previewEl.scrollLeft = 0;
+            // テキストレイアウトはPDFポイント座標なので解像度に依存しない --
+            // 新しいページを開いた時だけ取得すればよく、高解像度への差し替え
+            // では再取得不要(positionTextLayerがscaleを再計算するだけ)。
+            post({ type: 'get_text_layout', page_index: primaryIndex });
+          }
         } else {
           const canvas = pageList.querySelector(`canvas[data-page-index="${data.page_index}"]`) ||
             pageList.querySelector(`.page-item[data-page-index="${data.page_index}"] canvas`);
           if (canvas) paintImage(canvas, data);
         }
       }
+
+      if (data.type === 'text_layout' && data.page_index === primaryIndex) {
+        renderTextLayer(data);
+      }
     });
   } else {
-    setStatus('WebView2ブリッジ未接続（ブラウザプレビュー）');
+    setStatus(t('status.bridgeDisconnected'));
   }
+
+  // Quickアプリ標準言語ピルボタンのイベントと初期言語適用
+  if (langToggleBtn) {
+    langToggleBtn.addEventListener('click', () => {
+      const nextLang = window.quickmarkpdfLang === 'ja' ? 'en' : 'ja';
+      setLanguage(nextLang);
+    });
+  }
+  {
+    let savedLang = 'ja';
+    try { savedLang = localStorage.getItem('quickmarkpdf.lang') || 'ja'; } catch (e) { /* ignore */ }
+    setLanguage(savedLang === 'en' ? 'en' : 'ja', false);
+  }
+
+  // 起動時の初期ドキュメント状態（CLI引数等で開かれたPDF）を要求
+  post({ type: 'get_state' });
 })();

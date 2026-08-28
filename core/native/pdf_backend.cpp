@@ -16,6 +16,7 @@
 #include "fpdf_edit.h"
 #include "fpdf_ppo.h"
 #include "fpdf_save.h"
+#include "fpdf_text.h"
 #include "fpdfview.h"
 
 namespace quickmarkpdf {
@@ -46,6 +47,14 @@ using FPDF_RenderPageBitmap_t = void(FPDF_CALLCONV*)(FPDF_BITMAP, FPDF_PAGE, int
 using FPDFBitmap_GetBuffer_t = void*(FPDF_CALLCONV*)(FPDF_BITMAP);
 using FPDFBitmap_GetStride_t = int(FPDF_CALLCONV*)(FPDF_BITMAP);
 using FPDFBitmap_Destroy_t = void(FPDF_CALLCONV*)(FPDF_BITMAP);
+using FPDFText_LoadPage_t = FPDF_TEXTPAGE(FPDF_CALLCONV*)(FPDF_PAGE);
+using FPDFText_ClosePage_t = void(FPDF_CALLCONV*)(FPDF_TEXTPAGE);
+using FPDFText_CountChars_t = int(FPDF_CALLCONV*)(FPDF_TEXTPAGE);
+using FPDFText_CountRects_t = int(FPDF_CALLCONV*)(FPDF_TEXTPAGE, int, int);
+using FPDFText_GetRect_t =
+    FPDF_BOOL(FPDF_CALLCONV*)(FPDF_TEXTPAGE, int, double*, double*, double*, double*);
+using FPDFText_GetBoundedText_t =
+    int(FPDF_CALLCONV*)(FPDF_TEXTPAGE, double, double, double, double, unsigned short*, int);
 
 struct PdfiumApi {
     FPDF_InitLibrary_t InitLibrary = nullptr;
@@ -68,6 +77,12 @@ struct PdfiumApi {
     FPDFBitmap_GetBuffer_t BitmapGetBuffer = nullptr;
     FPDFBitmap_GetStride_t BitmapGetStride = nullptr;
     FPDFBitmap_Destroy_t BitmapDestroy = nullptr;
+    FPDFText_LoadPage_t TextLoadPage = nullptr;
+    FPDFText_ClosePage_t TextClosePage = nullptr;
+    FPDFText_CountChars_t TextCountChars = nullptr;
+    FPDFText_CountRects_t TextCountRects = nullptr;
+    FPDFText_GetRect_t TextGetRect = nullptr;
+    FPDFText_GetBoundedText_t TextGetBoundedText = nullptr;
 };
 
 template <typename Fn>
@@ -106,6 +121,13 @@ const PdfiumApi& pdfium() {
         loaded.BitmapGetBuffer = load_symbol<FPDFBitmap_GetBuffer_t>(module, "FPDFBitmap_GetBuffer");
         loaded.BitmapGetStride = load_symbol<FPDFBitmap_GetStride_t>(module, "FPDFBitmap_GetStride");
         loaded.BitmapDestroy = load_symbol<FPDFBitmap_Destroy_t>(module, "FPDFBitmap_Destroy");
+        loaded.TextLoadPage = load_symbol<FPDFText_LoadPage_t>(module, "FPDFText_LoadPage");
+        loaded.TextClosePage = load_symbol<FPDFText_ClosePage_t>(module, "FPDFText_ClosePage");
+        loaded.TextCountChars = load_symbol<FPDFText_CountChars_t>(module, "FPDFText_CountChars");
+        loaded.TextCountRects = load_symbol<FPDFText_CountRects_t>(module, "FPDFText_CountRects");
+        loaded.TextGetRect = load_symbol<FPDFText_GetRect_t>(module, "FPDFText_GetRect");
+        loaded.TextGetBoundedText =
+            load_symbol<FPDFText_GetBoundedText_t>(module, "FPDFText_GetBoundedText");
         loaded.InitLibrary();
         return loaded;
     }();
@@ -214,6 +236,20 @@ struct FileWriter : FPDF_FILEWRITE {
         return writer->stream->good() ? 1 : 0;
     }
 };
+
+// `units` is UTF-16 (wchar_t and pdfium's unsigned short share the same
+// 16-bit-code-unit layout on Windows), possibly with a trailing NUL from
+// FPDFText_GetBoundedText -- trimmed by the caller before this is invoked.
+std::string utf16_units_to_utf8(const std::vector<unsigned short>& units) {
+    if (units.empty()) return {};
+    const auto* wide = reinterpret_cast<const wchar_t*>(units.data());
+    const int wide_len = static_cast<int>(units.size());
+    const int needed = ::WideCharToMultiByte(CP_UTF8, 0, wide, wide_len, nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) return {};
+    std::string out(static_cast<std::size_t>(needed), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, wide, wide_len, out.data(), needed, nullptr, nullptr);
+    return out;
+}
 
 }  // namespace
 
@@ -411,6 +447,70 @@ void PdfBackend::save(const WorkingDocument& document, const std::string& output
         throw;
     }
     close_all();
+}
+
+TextLayout PdfBackend::get_text_layout(const std::string& path, std::size_t page_index, int rotation,
+                                        const std::string& password) {
+    const auto& api = pdfium();
+    FPDF_DOCUMENT document = open_source_cached(api, path, password);
+
+    FPDF_PAGE page = api.LoadPage(document, static_cast<int>(page_index));
+    if (!page) {
+        throw std::runtime_error("page not found: " + path + " page " + std::to_string(page_index));
+    }
+
+    // Same rotation-before-size-query ordering as render_page(), so the two
+    // stay in the same coordinate system (see render_page's comment).
+    api.SetPageRotation(page, ((rotation / 90) % 4 + 4) % 4);
+    const float page_width = api.GetPageWidthF(page);
+    const float page_height = api.GetPageHeightF(page);
+
+    TextLayout layout;
+    layout.page_width_pt = page_width;
+    layout.page_height_pt = page_height;
+
+    FPDF_TEXTPAGE text_page = api.TextLoadPage(page);
+    if (!text_page) {
+        // No extractable text (scanned image, or a page whose glyphs were
+        // baked in as vector paths rather than text objects) -- an empty
+        // run list, not an error; the caller just won't get a text layer.
+        api.ClosePage(page);
+        return layout;
+    }
+
+    const int char_count = api.TextCountChars(text_page);
+    if (char_count > 0) {
+        const int rect_count = api.TextCountRects(text_page, 0, char_count);
+        layout.runs.reserve(static_cast<std::size_t>(std::max(rect_count, 0)));
+        for (int i = 0; i < rect_count; ++i) {
+            double left = 0, top = 0, right = 0, bottom = 0;
+            if (!api.TextGetRect(text_page, i, &left, &top, &right, &bottom)) continue;
+
+            const int needed = api.TextGetBoundedText(text_page, left, top, right, bottom, nullptr, 0);
+            if (needed <= 0) continue;
+            std::vector<unsigned short> buffer(static_cast<std::size_t>(needed) + 1, 0);
+            const int written = api.TextGetBoundedText(text_page, left, top, right, bottom, buffer.data(),
+                                                         static_cast<int>(buffer.size()));
+            if (written <= 0) continue;
+            buffer.resize(static_cast<std::size_t>(written));
+            while (!buffer.empty() && buffer.back() == 0) buffer.pop_back();  // trailing NUL, if any
+
+            TextRun run;
+            run.x0 = left;
+            run.x1 = right;
+            // FPDFText_GetRect's top/bottom are PDF user-space (Y-up, after
+            // the SetPageRotation above); flip to top-left origin to match
+            // render_page's RGBA bitmap and RenderedPage::page_*_pt.
+            run.y0 = page_height - top;
+            run.y1 = page_height - bottom;
+            run.text = utf16_units_to_utf8(buffer);
+            if (!run.text.empty()) layout.runs.push_back(std::move(run));
+        }
+    }
+
+    api.TextClosePage(text_page);
+    api.ClosePage(page);
+    return layout;
 }
 
 }  // namespace quickmarkpdf

@@ -8,6 +8,27 @@ This file records the major changes in each public version.
 - Second digit (for example, `1.0.0` to `1.1.0`): bug fixes
 - Third digit (for example, `1.1.0` to `1.1.1`): other changes, such as documentation updates
 
+## v2.2.1 (2026-08-28)
+
+### Features
+
+- Added text selection and copy on the PDF preview: a transparent text layer, built from line-level bounding boxes pdfium's text-extraction API returns, is overlaid on the rendered page image, enabling standard browser drag-selection and Ctrl+C copy. Enabled by default; a "Switch to crop-area selection" item on the right-click menu switches the left-drag back to the existing crop-selection behavior (reverts to text-selection whenever a page is reopened). MathJax equations and scanned-image PDFs have no selectable text where no text objects exist.
+- Added a Japanese/English UI language toggle button at the right end of the menu bar. Every UI string — toolbar, menus, modals, status messages — as well as native dialogs on the C++ side (save confirmation, password prompt, etc.) now switch language. The JS side persists to `localStorage` and the C++ side to the registry, independently, kept in sync via a dedicated message on every toggle.
+
+### Performance
+
+- Made the preview's render resolution dynamic instead of a fixed 900px width: a page opens at 900px right away for responsiveness, then re-renders at the actual on-screen pixel count once zooming settles, fixing blurry text at high zoom levels.
+
+### Bug fixes
+
+- Fixed switching between text-selection and crop-selection mode leaving the previous mode's selection (a text highlight, or a crop rectangle) visible on screen.
+- Fixed the thumbnail panel's Up/Down arrow-key page switching no longer working when the panel had focus. It relied on an unguaranteed browser behavior (implicitly focusing a scroll container on click); a thumbnail click now explicitly focuses the panel instead.
+- Fixed the app icon not appearing in the window's titlebar/taskbar. The window class registration never set `hIcon`/`hIconSm` — the icon embedded in the .exe's own resources (what Explorer shows) is a separate thing from the running window's own icon, which must be loaded and set explicitly.
+
+### Design
+
+- Refreshed the app icon: a large "PDF" label in front, with a "Q" (the Quick app series' shared motif) overlaid on the document icon.
+
 ## v1.2.1 (2026-08-27)
 
 ### Features

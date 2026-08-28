@@ -7,8 +7,8 @@
 - **Target OS**: Windows 10 / 11 (64-bit)
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
 - **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
-- **UI language**: Japanese only (no language toggle)
-- **Version**: v1.2.1
+- **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
+- **Version**: v2.2.1
 
 `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
@@ -34,7 +34,7 @@ not shipped.
 | Main toolbar | Open / Split PDF / Export images / Rotate right 90° / Rotate left 90° / 180° / Save |
 | Thumbnail-size toolbar | Small / Medium / Large thumbnail size toggle |
 | Thumbnail panel (left) | Page list with a filename tag and page numbers (post-edit position vs. original in-file index) |
-| Preview (right) | Enlarged view of the selected page. Wheel zooms or scrolls (mode set in preferences), right-drag pans or zooms, left-drag selects a crop area |
+| Preview (right) | Enlarged view of the selected page. Wheel zooms or scrolls (mode set in preferences), right-drag pans or zooms. By default, left-drag selects text to copy; right-click (a click, not a drag) opens a menu to switch left-drag to crop-area selection instead (reverts to text-selection whenever a page is (re)opened) |
 | Markdown workspace | Shown instead of the PDF workspace when a `.md` file is open |
 | Status bar | The result/progress of the most recent action |
 
@@ -56,13 +56,15 @@ not shipped.
 | 12 | Preview interaction | Wheel zooms (default) or scrolls; right-drag pans or zooms (mode set in preferences). |
 | 13 | Crop area selection | Left-drag on the preview to define the crop region used by image export. |
 | 14 | Unsaved-change confirmation | Confirms before an action that would discard unsaved edits. |
-| 15 | Right-click menu | Rotate right/left/180°, split PDF, export image, delete page, close this file. |
+| 15 | Right-click menu | Rotate right/left/180°, split PDF, export image, delete page, close this file. Right-clicking either the thumbnail panel or the preview shows the same items (the preview also adds "Switch to crop-area selection" / "Switch back to text selection"). |
 | 16 | Keyboard shortcuts | Ctrl+O / Delete / Ctrl+Z / Ctrl+S (see section 7). |
 | 17 | Markdown preview | Headings, bold/italic, inline code, code blocks, blockquotes, lists, links, images, horizontal rules, GFM tables. |
 | 18 | Mermaid diagrams | ` ```mermaid ` fenced blocks are rendered with Mermaid.js. |
 | 19 | Math | `$...$` (inline) / `$$...$$` (display) notation is rendered with MathJax. |
 | 20 | Markdown-to-PDF export | Uses `ICoreWebView2_7::PrintToPdf` on the Markdown preview (UI chrome is excluded via `@media print`). |
 | 21 | Preferences | Toggles the preview mouse-wheel mode (zoom/scroll), persisted to `localStorage`. |
+| 22 | Text selection & copy | Overlays a transparent text layer on the preview, built from line-level bounding boxes pdfium's text-extraction API returns, enabling standard browser drag-selection and Ctrl+C copy. Enabled by default. MathJax equations (baked into the PDF as vector paths with no text objects) and scanned-image PDFs (no text layer to begin with) have no selectable text for that content. |
+| 23 | UI language toggle | "日本語"/"English" buttons at the right end of the menu bar switch the whole UI (toolbar, menus, modals, status messages, native dialogs). The JS side persists to `localStorage`, the C++ side to the registry, independently, kept in sync via the `set_language` message. |
 
 ## 5. WebMessage protocol
 
@@ -72,7 +74,8 @@ not shipped.
 | --- | --- | --- |
 | `open_pdf` | none | Opens the file picker and loads PDF/Markdown |
 | `get_state` | none | Re-fetches the current document state |
-| `render_page` | `page_index` | Renders a page, returned via `page_rendered` |
+| `render_page` | `page_index`, `width` | Renders a page at the given width, returned via `page_rendered` |
+| `get_text_layout` | `page_index` | Gets the page's selectable text (line boxes + strings), returned via `text_layout` |
 | `reorder_pages` | `order` | Applies a new page order |
 | `rotate_pages` | `indices`, `degrees` | Rotates the given pages |
 | `delete_pages` | `indices` | Deletes the given pages |
@@ -84,6 +87,7 @@ not shipped.
 | `save_pdf` | none | Overwrite-saves (or "save as" when not possible) |
 | `split_pdf` | `indices` | Saves the selected pages as a new PDF |
 | `save_markdown_pdf` | optional `output_path` | Exports the Markdown preview to PDF. Omitted `output_path` opens a save dialog; tests may pass a path to skip the dialog |
+| `set_language` | `lang` (`"ja"` / `"en"`) | Switches the UI language. Updates the C++ side's `g_language` and persists it to the registry |
 
 ### native -> JS
 
@@ -92,6 +96,7 @@ not shipped.
 | `pdf_opened` | `loaded_files`, `failed_files` | Result of loading PDFs |
 | `markdown_opened` | `path`, `content` | Markdown file loaded, body content sent |
 | `page_rendered` | `page_index`, image data | Rendered page image |
+| `text_layout` | `page_index`, `page_width_pt`, `page_height_pt`, `runs` (each with `x0`/`y0`/`x1`/`y1`/`text`) | Text-layer data for the page; `runs` are top-left-origin line boxes in PDF points |
 | `document_state` | page list, selection state, etc. | Re-sent after each operation |
 | `backend_status` | `message` | Backend connection status |
 | `export_defaults` | `output_dir`, etc. | Defaults for the export dialog |
@@ -128,6 +133,18 @@ not shipped.
 Page rendering and export are currently synchronous. Parallel rendering of
 a large page count is not implemented.
 
+### Preview dynamic resolution
+
+The preview first shows a fast 900px-wide render (`PREVIEW_RENDER_WIDTH`)
+right after page selection, then re-requests `render_page` once zoom
+activity has been idle for 250ms, sized to the actual on-screen pixel count
+(natural width x zoom x `devicePixelRatio`, capped at 4000px) and swaps in
+the higher-resolution image (`app.js`'s `scheduleHighResPreviewRerender`).
+This debounce avoids re-rendering on every wheel/drag event. The text
+layer's boxes stay in PDF-point coordinates throughout, so a resolution
+swap only needs to recompute `#text-layer`'s `transform: scale` -- no
+re-fetch of the text layout is needed.
+
 ### Caching
 
 `PdfBackend` keeps up to 4 recently-used source documents open (keyed by
@@ -141,4 +158,4 @@ overwrite-save is always reflected in the next render.
 - Support nested lists in Markdown.
 - Parallel page rendering / export for large page counts.
 - A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
-- Publish a GitHub Release (v1.2.1 is not tagged yet; v1.1.0 has been published).
+- Publish a GitHub Release (v2.2.1 is not tagged yet; v1.1.0 has been published).

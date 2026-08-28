@@ -23,6 +23,21 @@ struct PdfDocumentInfo {
     std::vector<int> page_rotations;
 };
 
+// One line (or line-segment) of selectable text on a page, in top-left-
+// origin PDF points -- the same coordinate convention RenderedPage's
+// page_width_pt/page_height_pt use, so a caller can place it directly over
+// a rendered bitmap without a separate axis flip.
+struct TextRun {
+    double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    std::string text;  // UTF-8
+};
+
+struct TextLayout {
+    double page_width_pt = 0;
+    double page_height_pt = 0;
+    std::vector<TextRun> runs;
+};
+
 // A page rasterized to top-left-origin, row-major RGBA8 pixels (no stride
 // padding: each row is exactly width * 4 bytes), ready to hand to an HTML
 // canvas via ImageData.
@@ -86,6 +101,17 @@ public:
     static RenderedPage render_page_at_dpi(const std::string& path, std::size_t page_index, int dpi,
                                             int rotation, const std::string& password = "",
                                             const std::optional<ClipRectPt>& clip = std::nullopt);
+
+    // Extracts the page's selectable text as a list of line-level runs, each
+    // with its bounding box in top-left-origin PDF points (see TextRun) --
+    // for overlaying a transparent, selectable text layer on top of a
+    // render_page bitmap. `rotation` must match the same PageRef rotation
+    // passed to render_page for the two coordinate systems to line up.
+    // Pages with no extractable text (scanned images, or text baked in as
+    // vector paths e.g. MathJax's SVG output) yield an empty `runs` list,
+    // not an error.
+    static TextLayout get_text_layout(const std::string& path, std::size_t page_index, int rotation,
+                                       const std::string& password = "");
 };
 
 }  // namespace quickmarkpdf

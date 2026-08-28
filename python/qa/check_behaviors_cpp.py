@@ -293,6 +293,25 @@ def main():
                 f"実際に破棄されページ数が{r_yes['state']['page_count']}になった"
             )
         check("unsaved_changes_confirmation", _unsaved_confirm)
+
+        def _text_layout():
+            client.send({"type": "close_all", "confirm": True})
+            client.send({"type": "load_pdfs", "paths": [str(pdf_path)]})
+            r = client.send({"type": "get_text_layout", "page_index": 0})
+            runs = r.get("runs", [])
+            combined = "".join(run["text"] for run in runs)
+            bbox_ok = all(
+                0 <= run["x0"] <= run["x1"] and 0 <= run["y0"] <= run["y1"]
+                for run in runs
+            )
+            ok = len(runs) > 0 and "Test page 1" in combined and bbox_ok
+            return f"runs={len(runs)}", f"combined_text={combined!r} bbox_ok={bbox_ok}", ok, (
+                f"1ページ目のget_text_layoutを呼んだところ{len(runs)}件の行矩形が返り、"
+                f"結合したテキストは{combined!r}(埋め込みテキスト「Test page 1」を"
+                f"{'含む' if 'Test page 1' in combined else '含まない'}、"
+                f"全矩形の座標は{'妥当' if bbox_ok else '不正'})"
+            )
+        check("get_text_layout_extracts_page_text", _text_layout)
         not_implemented("preview_wheel_zoom_default_mode", "プレビューのホイールズームが未実装(<img>を置くだけ、UI層のみでPdfManager経由では検証不可)")
         not_implemented("preview_right_drag_pan_zoom_mode", "プレビューの右ドラッグパンが未実装(同上)")
         not_implemented("preview_wheel_mode_setting_switches_behavior", "環境設定ダイアログ・ホイールモード切替が未実装(同上)")
