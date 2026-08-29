@@ -26,14 +26,18 @@ jobs:
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run tests
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
           $env:PYTHONPATH = 'python/prototype'
-          python -m unittest discover -s python/tests -v
+          # pytest, not unittest discover: test_dialog_guard.py and
+          # test_main_window_flows.py are pytest-fixture-based (dialog_responses,
+          # main_window, etc. from conftest.py) and are silently skipped rather
+          # than actually run under plain unittest discovery.
+          python -m pytest python/tests -v
           # PySide6 may return an access-violation code during Qt teardown
-          # after all unittest cases have passed on Windows.
+          # after all test cases have passed on Windows.
           if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1073741819) { throw "Tests failed with exit code $LASTEXITCODE" }
