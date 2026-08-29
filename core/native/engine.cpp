@@ -1,8 +1,11 @@
 #include "engine.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
@@ -22,6 +25,111 @@ int normalize_rotation(int degrees) {
     return value;
 }
 }  // namespace
+
+namespace detail {
+std::string flatten_text_layout(const TextLayout& layout) {
+    if (layout.runs.empty()) return {};
+
+    // Stable sort by y0 first: runs already in reading order (the common
+    // case for pdfium's own char/rect order) keep their relative order
+    // within a row, and the row-local sort below re-orders by x0 anyway.
+    std::vector<TextRun> runs = layout.runs;
+    std::stable_sort(runs.begin(), runs.end(),
+                      [](const TextRun& a, const TextRun& b) { return a.y0 < b.y0; });
+
+    std::string out;
+    std::optional<double> prev_bottom;
+    std::optional<double> prev_height;
+
+    std::size_t row_start = 0;
+    while (row_start < runs.size()) {
+        // A row is anchored by its first (topmost-remaining) run; every
+        // subsequent run whose vertical center falls inside that anchor's
+        // [y0, y1] band joins the same row. Anchoring on the first run
+        // rather than an accumulating band avoids the band drifting downward
+        // as more runs are folded in.
+        const double anchor_top = runs[row_start].y0;
+        const double anchor_bottom = runs[row_start].y1;
+
+        std::size_t row_end = row_start + 1;
+        while (row_end < runs.size()) {
+            const double center = (runs[row_end].y0 + runs[row_end].y1) / 2.0;
+            if (center < anchor_top || center > anchor_bottom) break;
+            ++row_end;
+        }
+
+        std::vector<TextRun> row(runs.begin() + static_cast<std::ptrdiff_t>(row_start),
+                                  runs.begin() + static_cast<std::ptrdiff_t>(row_end));
+        std::sort(row.begin(), row.end(),
+                  [](const TextRun& a, const TextRun& b) { return a.x0 < b.x0; });
+
+        // pdfium's TextCountRects/TextGetRect occasionally emits a short
+        // duplicate rect covering just a line's opening character(s) (e.g.
+        // "Te") alongside the full-line rect that already contains them
+        // (e.g. "Test Document") -- observed with large/bold heading fonts.
+        // Drop a run when it's an x-overlapping prefix of the very next run,
+        // so those characters aren't emitted twice.
+        std::vector<TextRun> deduped;
+        deduped.reserve(row.size());
+        for (std::size_t i = 0; i < row.size(); ++i) {
+            if (i + 1 < row.size()) {
+                const auto& cur = row[i];
+                const auto& next = row[i + 1];
+                const bool overlaps_x = cur.x1 > next.x0;
+                const bool is_prefix =
+                    next.text.size() > cur.text.size() && next.text.compare(0, cur.text.size(), cur.text) == 0;
+                if (overlaps_x && is_prefix) continue;
+            }
+            deduped.push_back(std::move(row[i]));
+        }
+        row = std::move(deduped);
+
+        const double row_height = anchor_bottom - anchor_top;
+        std::string line;
+        for (std::size_t i = 0; i < row.size(); ++i) {
+            if (i > 0) {
+                const auto& prev = row[i - 1];
+                const auto& cur = row[i];
+                const bool prev_ends_space =
+                    !prev.text.empty() && std::isspace(static_cast<unsigned char>(prev.text.back()));
+                const bool cur_starts_space =
+                    !cur.text.empty() && std::isspace(static_cast<unsigned char>(cur.text.front()));
+                if (!prev_ends_space && !cur_starts_space) {
+                    // pdfium's TextCountRects/TextGetRect frequently splits a
+                    // single run mid-word -- around a hyphen, at a kerning or
+                    // font-metric discontinuity, or (observed with CJK text)
+                    // seemingly arbitrarily every few characters -- with only
+                    // a point or two of horizontal gap between the pieces.
+                    // Inserting a space there would fragment ordinary words
+                    // ("auto-X" -> "aut o-X") and CJK sentences (which have
+                    // no inter-character spacing of their own) into
+                    // unreadable letter-by-letter runs. A real inter-word
+                    // space is normally a much larger fraction of the line's
+                    // own height, so only treat a gap that size (or bigger)
+                    // as a word boundary; anything smaller is glued together
+                    // with no space, same as the source text would read.
+                    const double gap = cur.x0 - prev.x1;
+                    if (row_height > 0 && gap > row_height * 0.3) line += ' ';
+                }
+            }
+            line += row[i].text;
+        }
+
+        if (!out.empty()) {
+            // A gap noticeably larger than the previous row's own height
+            // reads as a paragraph break rather than ordinary line spacing.
+            const double gap = anchor_top - *prev_bottom;
+            out += (prev_height && gap > *prev_height * 1.5) ? "\n\n" : "\n";
+        }
+        out += line;
+
+        prev_bottom = anchor_bottom;
+        prev_height = anchor_bottom - anchor_top;
+        row_start = row_end;
+    }
+    return out;
+}
+}  // namespace detail
 
 std::size_t WorkingDocument::page_count() const noexcept {
     return pages_.size();
@@ -394,6 +502,50 @@ PdfManager::ExportResult PdfManager::export_pages_to_images(
             } else {
                 write_png_rgb(out_file.u8string(), rendered.width, rendered.height, rendered.rgba);
             }
+            result.success += 1;
+        } catch (const std::exception& e) {
+            result.errors.push_back("page " + std::to_string(index) + ": " + e.what());
+        }
+    }
+    return result;
+}
+
+PdfManager::ExportResult PdfManager::extract_text_to_file(const std::vector<std::size_t>& indices,
+                                                            const std::string& output_path) {
+    ExportResult result;
+
+    std::vector<std::size_t> targets = indices;
+    if (targets.empty()) {
+        targets.resize(document_.page_count());
+        for (std::size_t i = 0; i < targets.size(); ++i) targets[i] = i;
+    }
+
+    std::ofstream out(std::filesystem::u8path(output_path), std::ios::binary | std::ios::trunc);
+    if (!out) {
+        result.attempted = static_cast<int>(targets.size());
+        result.errors.push_back("cannot open output path for writing: " + output_path);
+        return result;
+    }
+
+    for (const auto index : targets) {
+        result.attempted += 1;
+
+        if (index >= document_.page_count()) {
+            result.errors.push_back("page index out of range: " + std::to_string(index));
+            continue;
+        }
+
+        const auto& ref = document_.page(index);
+        try {
+            std::string password;
+            if (auto it = known_passwords_.find(ref.source_path); it != known_passwords_.end()) {
+                password = it->second;
+            }
+
+            const auto layout = PdfBackend::get_text_layout(ref.source_path, ref.source_page, ref.rotation, password);
+            if (targets.size() > 1) out << "===== Page " << (index + 1) << " =====\n";
+            out << detail::flatten_text_layout(layout) << "\n";
+            if (targets.size() > 1) out << "\n";
             result.success += 1;
         } catch (const std::exception& e) {
             result.errors.push_back("page " + std::to_string(index) + ": " + e.what());

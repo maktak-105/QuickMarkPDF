@@ -8,6 +8,12 @@ This file records the major changes in each public version.
 - Second digit (for example, `1.0.0` to `1.1.0`): bug fixes
 - Third digit (for example, `1.1.0` to `1.1.1`): other changes, such as documentation updates
 
+## v3.0.0 (2026-08-29)
+
+### Features
+
+- Added a "Extract text" right-click menu item: choose all pages, a typed page range (e.g. "1,3,5-8"), or the page currently shown in the preview, then save the extracted text as a .txt file via a "Save As" dialog. Text is read in top-left-to-bottom-right order, reusing the existing pdfium-based line-box text extraction (`PdfBackend::get_text_layout`) that already backs the preview's text-selection layer; runs on the same visual row are grouped and joined left-to-right so bullet/numbered-list markers stay attached to their line where the source PDF exposes them as real text objects.
+
 ## v2.2.1 (2026-08-28)
 
 ### Features

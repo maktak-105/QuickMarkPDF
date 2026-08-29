@@ -9,6 +9,21 @@
 
 namespace quickmarkpdf {
 
+struct TextLayout;
+
+namespace detail {
+// Flattens a page's line-level text runs (see pdf_backend.h's TextLayout)
+// into a single reading-order string. Row-groups runs using each row's own
+// anchor run's [y0, y1] band (not an accumulating band, to avoid drift as
+// more runs join a row), then joins same-row runs left-to-right (sorted by
+// x0, space-separated) and rows top-to-bottom (newline-separated; a vertical
+// gap over 1.5x the row's own height gets a blank line instead, as a weak
+// paragraph-break heuristic). Exposed here (rather than kept file-local in
+// engine.cpp) so engine_tests.cpp can exercise the row/column grouping
+// directly with a hand-built TextLayout, without needing a real PDF.
+std::string flatten_text_layout(const TextLayout& layout);
+}  // namespace detail
+
 struct PageRef {
     std::string source_path;
     std::size_t source_page = 0;
@@ -162,6 +177,17 @@ public:
                                          const std::string& fmt, int dpi, const std::string& prefix,
                                          const std::optional<std::array<double, 4>>& clip = std::nullopt,
                                          int jpeg_quality = 90);
+
+    // Extracts each target page's selectable text (via PdfBackend::get_text_layout
+    // -- a page with no extractable text, e.g. a scanned image, contributes an
+    // empty body rather than an error) and writes it, in reading order, to a
+    // UTF-8 plain-text file at `output_path`. `indices` empty means every page
+    // (same contract as export_pages_to_images). When more than one page is
+    // requested, each page's body is preceded by a "===== Page N =====" header,
+    // N being the page's 1-based position in the CURRENT working document (the
+    // same number the thumbnail panel's gutter shows), not its
+    // original_page_index within its source file.
+    ExportResult extract_text_to_file(const std::vector<std::size_t>& indices, const std::string& output_path);
 
     // Removes every page whose source is `path` (compared via
     // std::filesystem::absolute, matching load_pdfs's dedup comparison), as

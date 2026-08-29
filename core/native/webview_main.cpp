@@ -601,8 +601,21 @@ std::wstring pages_json() {
     return pages;
 }
 
+// Reflects PdfManager::is_dirty() in the title bar ("QuickMarkPDF *") so an
+// unsaved edit is visible without switching to the app. PDF mode only --
+// Markdown mode sets its own title (open_markdown_path) and has no
+// corresponding "unsaved" concept, since there is no in-place Markdown
+// editing, only a one-shot PDF export.
+void update_window_title() {
+    if (!g_window || g_manager.get_page_count() == 0) return;
+    std::wstring title = L"QuickMarkPDF";
+    if (g_manager.is_dirty()) title += L" *";
+    SetWindowTextW(g_window, title.c_str());
+}
+
 void post_document_state(const wchar_t* message_type) {
     if (!g_webview) return;
+    update_window_title();
     const std::wstring response = std::wstring(L"{\"type\":\"") + message_type + L"\",\"page_count\":" +
                                    std::to_wstring(g_manager.get_page_count()) + L",\"can_undo\":" +
                                    (g_manager.can_undo() ? L"true" : L"false") + L",\"can_overwrite\":" +
@@ -766,6 +779,32 @@ std::optional<std::filesystem::path> prompt_save_pdf(const std::wstring& default
     dialog.lpstrFile = selected;
     dialog.nMaxFile = MAX_PATH;
     dialog.lpstrDefExt = L"pdf";
+    std::wstring dir_buf;
+    if (!default_dir.empty() && std::filesystem::exists(default_dir)) {
+        dir_buf = default_dir.wstring();
+        dialog.lpstrInitialDir = dir_buf.c_str();
+    }
+    dialog.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+    force_foreground_window();
+    if (!GetSaveFileNameW(&dialog)) return std::nullopt;
+    return std::filesystem::path(selected);
+}
+
+// Same shape as prompt_save_pdf, just a .txt filter/default extension --
+// used by handle_extract_text.
+std::optional<std::filesystem::path> prompt_save_text(const std::wstring& default_name = L"",
+                                                        const std::filesystem::path& default_dir = {}) {
+    wchar_t selected[MAX_PATH]{};
+    if (!default_name.empty()) {
+        wcsncpy_s(selected, MAX_PATH, default_name.c_str(), _TRUNCATE);
+    }
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = g_window;
+    dialog.lpstrFilter = L"Text files (*.txt)\0*.txt\0\0";
+    dialog.lpstrFile = selected;
+    dialog.nMaxFile = MAX_PATH;
+    dialog.lpstrDefExt = L"txt";
     std::wstring dir_buf;
     if (!default_dir.empty() && std::filesystem::exists(default_dir)) {
         dir_buf = default_dir.wstring();
@@ -990,7 +1029,7 @@ void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
     }
 
     const int total_loaded = result.loaded_count + extra_loaded;
-    if (total_loaded > 0 && g_window) SetWindowTextW(g_window, L"QuickMarkPDF");
+    if (total_loaded > 0) update_window_title();
     if (!result.duplicate_files.empty()) {
         std::wstring names;
         for (std::size_t i = 0; i < result.duplicate_files.size(); ++i) {
@@ -1369,6 +1408,30 @@ void handle_split_pdf(const std::wstring& message) {
     }
 }
 
+// "テキスト抽出": writes the requested pages' text out as a plain-text file.
+// Mirrors handle_split_pdf's shape (indices -> default name/dir via the same
+// suggest_export_basename/source_dir_for_pages helpers -> save dialog ->
+// engine call -> status).
+void handle_extract_text(const std::wstring& message) {
+    const auto indices = extract_size_t_array(message, L"indices");
+    if (indices.empty() || g_manager.get_page_count() == 0) {
+        post_status(tr(L"テキストを抽出したいページを選択してください", L"Select the pages to extract text from"));
+        return;
+    }
+    const auto default_name = suggest_export_basename(indices) + L".txt";
+    const auto default_dir = source_dir_for_pages(indices);
+    const auto picked = prompt_save_text(default_name, default_dir);
+    if (!picked) return;
+    g_last_used_dir = picked->parent_path();
+    const auto result = g_manager.extract_text_to_file(indices, picked->u8string());
+    if (result.success > 0) {
+        post_status(std::to_wstring(result.success) + L"/" + std::to_wstring(result.attempted) +
+                    tr(L" ページのテキストを書き出しました: ", L" page(s) of text exported: ") + picked->wstring());
+    } else {
+        post_status(tr(L"テキストの抽出に失敗しました", L"Failed to extract text"));
+    }
+}
+
 // #export-overlay (templates/index.html) now supplies every field
 // Python's ExportDialog does -- scope/area handled client-side (indices/
 // crop already reflect the user's scope+area choice by the time this
@@ -1580,6 +1643,11 @@ std::wstring dispatch_test_command(const std::wstring& message) {
                 extract_int(message, L"jpeg_quality", 90));
             return L"{\"success\":" + std::to_wstring(result.success) + L",\"attempted\":" +
                    std::to_wstring(result.attempted) + L",\"errors\":" + json_string_array(result.errors) + L"}";
+        } else if (type == L"extract_text_to_file") {
+            const auto result = g_manager.extract_text_to_file(
+                extract_size_t_array(message, L"indices"), wide_to_utf8(extract_string(message, L"output_path")));
+            return L"{\"success\":" + std::to_wstring(result.success) + L",\"attempted\":" +
+                   std::to_wstring(result.attempted) + L",\"errors\":" + json_string_array(result.errors) + L"}";
         }
         return L"{\"error\":\"unknown command\"}";
     } catch (const std::exception& ex) {
@@ -1670,6 +1738,8 @@ void dispatch_message(const std::wstring& message) {
         handle_save_markdown_pdf();
     } else if (type == L"split_pdf") {
         handle_split_pdf(message);
+    } else if (type == L"extract_text") {
+        handle_extract_text(message);
     } else if (type == L"set_language") {
         g_language = extract_string(message, L"lang") == L"en" ? Language::English : Language::Japanese;
         save_language_setting(g_language);

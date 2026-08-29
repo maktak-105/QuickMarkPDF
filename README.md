@@ -6,7 +6,7 @@
 
 A simple Windows desktop PDF page editor — free, no ads, no donation requests, no paid features. Just the split / merge / reorder / rotate / export you actually need. As a bonus, it also renders and exports Markdown to PDF, with Mermaid diagrams and math (MathJax).
 
-**Current version: v2.2.1.** `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
+**Current version: v3.0.0.** `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
 
 The UI can switch between Japanese and English (toggle button at the right end of the menu bar). The English and Japanese README screenshots show the same window in each language.
 
@@ -16,6 +16,7 @@ The UI can switch between Japanese and English (toggle button at the right end o
 - Drag-and-drop page reordering, including moving pages between files
 - Text selection and copy in the preview (on by default; switch to crop-area selection from the right-click menu)
 - Export selected/all pages to PDF (split) or PNG/JPEG (DPI, quality, and crop)
+- Extract selectable text from all pages, a typed page range, or the currently previewed page, and save it as a .txt file
 - Undo and unsaved-change protection
 - Markdown preview with Mermaid diagrams and math, exportable to PDF
 
@@ -24,8 +25,8 @@ The UI can switch between Japanese and English (toggle button at the right end o
 If you only want to run the app, download the ZIP from GitHub Releases. GitHub Actions builds `QuickMarkPDF-binary.zip` on a `v*` tag; the ZIP is not stored in this repository.
 
 - [Latest releases](https://github.com/maktak-105/QuickMarkPDF/releases)
-- [QuickMarkPDF v2.2.1](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v2.2.1)
-- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v2.2.1/QuickMarkPDF-binary.zip)
+- [QuickMarkPDF v3.0.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v3.0.0)
+- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v3.0.0/QuickMarkPDF-binary.zip)
 
 The ZIP contains all distribution files in one flat folder (`vendor/` stays next to `index.html`).
 
@@ -47,7 +48,7 @@ Run `QuickMarkPDF.exe` for the GUI. Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebV
 
 1. Click **開く** (Open) to load one or more PDFs, or a single Markdown (`.md`) file. PDF and Markdown cannot be mixed in one selection.
 2. Select pages in the left thumbnail panel (click / Ctrl+click / Shift+click). Drag thumbnails to reorder, including across files.
-3. Rotate, delete, split to a new PDF, or export images from the toolbar or the right-click menu.
+3. Rotate, delete, split to a new PDF, or export images from the toolbar or the right-click menu; the right-click menu also has extract text.
 4. **Save** with one PDF open can overwrite or save as. With multiple PDFs open, Save always uses Save As and merges every open file's pages into one new PDF (originals are left unmodified). That is also how you merge PDFs.
 5. Opening a `.md` file switches to Markdown preview (Mermaid and MathJax work offline). Save then exports the preview to PDF.
 6. **ヘルプ** (Help) has a usage guide and keyboard shortcuts; **設定** (Settings) controls preview wheel mode.

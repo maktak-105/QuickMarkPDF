@@ -8,7 +8,7 @@
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
 - **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
 - **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
-- **Version**: v2.2.1
+- **Version**: v3.0.0
 
 `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
@@ -20,7 +20,7 @@ not shipped.
 [HTML/CSS/JS (WebView2)]  <-WebMessage(JSON)->  [webview_main.cpp]  <-direct call->  [engine.cpp (PdfManager)]
 ```
 
-- `engine.cpp` (`PdfManager`): handles PDF loading, rotation, deletion, reordering, undo, saving, page splitting, and image export. GUI-independent, shared by the CLI build and automated tests.
+- `engine.cpp` (`PdfManager`): handles PDF loading, rotation, deletion, reordering, undo, saving, page splitting, image export, and text extraction. GUI-independent, shared by the CLI build and automated tests.
 - `pdf_backend.cpp`: PDFium wrapper for page rendering/editing.
 - `image_io.cpp`: a hand-written PNG encoder plus JPEG encoding via the Windows Imaging Component.
 - `webview_main.cpp`: creates the Win32 window, initializes WebView2, relays JSON messages, and drives file dialogs (`IFileDialog`/`GetOpenFileNameW`/`GetSaveFileNameW`).
@@ -65,6 +65,7 @@ not shipped.
 | 21 | Preferences | Toggles the preview mouse-wheel mode (zoom/scroll), persisted to `localStorage`. |
 | 22 | Text selection & copy | Overlays a transparent text layer on the preview, built from line-level bounding boxes pdfium's text-extraction API returns, enabling standard browser drag-selection and Ctrl+C copy. Enabled by default. MathJax equations (baked into the PDF as vector paths with no text objects) and scanned-image PDFs (no text layer to begin with) have no selectable text for that content. |
 | 23 | UI language toggle | "日本語"/"English" buttons at the right end of the menu bar switch the whole UI (toolbar, menus, modals, status messages, native dialogs). The JS side persists to `localStorage`, the C++ side to the registry, independently, kept in sync via the `set_language` message. |
+| 24 | Extract text | Right-click menu opens a dialog to pick all pages / a typed page range ("1,3,5-8") / the page currently shown in the preview, then saves the extracted text as a .txt file via a "Save As" dialog. Text is read top-left to bottom-right (line-level runs from `PdfBackend::get_text_layout` are grouped into rows and re-joined left-to-right); bullet/numbered-list markers are preserved where the source PDF exposes them as real text objects. |
 
 ## 5. WebMessage protocol
 
@@ -86,6 +87,7 @@ not shipped.
 | `browse_export_folder` | none | Opens a folder picker for the export destination |
 | `save_pdf` | none | Overwrite-saves (or "save as" when not possible) |
 | `split_pdf` | `indices` | Saves the selected pages as a new PDF |
+| `extract_text` | `indices` | Extracts the given pages' text and opens a save dialog for a .txt file |
 | `save_markdown_pdf` | optional `output_path` | Exports the Markdown preview to PDF. Omitted `output_path` opens a save dialog; tests may pass a path to skip the dialog |
 | `set_language` | `lang` (`"ja"` / `"en"`) | Switches the UI language. Updates the C++ side's `g_language` and persists it to the registry |
 
@@ -158,4 +160,4 @@ overwrite-save is always reflected in the next render.
 - Support nested lists in Markdown.
 - Parallel page rendering / export for large page counts.
 - A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
-- Publish a GitHub Release (v2.2.1 is not tagged yet; v1.1.0 has been published).
+- Publish a GitHub Release (v3.0.0 is not tagged yet; v1.1.0 has been published).
