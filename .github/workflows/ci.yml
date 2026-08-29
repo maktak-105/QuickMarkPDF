@@ -37,7 +37,27 @@ jobs:
           # test_main_window_flows.py are pytest-fixture-based (dialog_responses,
           # main_window, etc. from conftest.py) and are silently skipped rather
           # than actually run under plain unittest discovery.
-          python -m pytest python/tests -v
-          # PySide6 may return an access-violation code during Qt teardown
-          # after all test cases have passed on Windows.
-          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1073741819) { throw "Tests failed with exit code $LASTEXITCODE" }
+          $junitPath = 'pytest-results.xml'
+          python -m pytest python/tests -v "--junitxml=$junitPath"
+          $exitCode = $LASTEXITCODE
+
+          # PySide6/Qt can crash during interpreter teardown on Windows after
+          # every test has already passed, and the exit code that crash
+          # surfaces as is NOT consistent across environments -- observed
+          # -1073741819 (0xC0000005, STATUS_ACCESS_VIOLATION) locally but a
+          # plain 1 (pytest's own "tests failed" code) on GitHub Actions'
+          # windows-latest runner, so exit-code allowlisting can't tell a
+          # real failure from teardown noise. The JUnit XML is written before
+          # teardown runs, so trust its failure/error counts instead.
+          [xml]$results = Get-Content $junitPath
+          $suite = if ($results.DocumentElement.Name -eq 'testsuite') { $results.DocumentElement } else { $results.testsuites.testsuite }
+          $failures = [int]$suite.failures
+          $errors = [int]$suite.errors
+
+          if ($failures -eq 0 -and $errors -eq 0) {
+            if ($exitCode -ne 0) {
+              Write-Output "All $($suite.tests) tests passed per JUnit XML (0 failures/errors); ignoring exit code $exitCode from a post-test Qt teardown crash."
+            }
+            exit 0
+          }
+          throw "Tests failed: $failures failures, $errors errors (exit code $exitCode) -- see $junitPath"
