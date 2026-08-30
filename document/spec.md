@@ -8,7 +8,7 @@
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
 - **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
 - **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
-- **Version**: v3.1.0
+- **Version**: v3.2.0
 
 `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
@@ -42,8 +42,8 @@ not shipped.
 
 | # | Feature | Description |
 | --- | --- | --- |
-| 1 | Open PDF | Loads and concatenates multiple PDFs at once. Password-protected files get up to 3 retries. Duplicate files are detected and skipped. |
-| 2 | Open Markdown | Opens `.md`/`.markdown` and switches to Markdown preview mode. Mixing PDF and Markdown in one selection is rejected with a warning. |
+| 1 | Open PDF | Loads and concatenates multiple PDFs at once, via the file dialog or by dragging file(s) in from Explorer (works whether or not a document is already open). Password-protected files get up to 3 retries. Duplicate files are detected and skipped. |
+| 2 | Open Markdown | Opens `.md`/`.markdown` (file dialog or drag-and-drop) and switches to Markdown preview mode. Mixing PDF and Markdown in one selection is rejected with a warning. |
 | 3 | Page selection | Click (single) / Ctrl+click (multi) / Shift+click (range). |
 | 4 | Reorder | Drag-and-drop thumbnails, including across multiple open files. |
 | 5 | Rotate | Right 90° / left 90° / 180°, multi-select capable, also available from the right-click menu. |
@@ -160,4 +160,4 @@ overwrite-save is always reflected in the next render.
 - Support nested lists in Markdown.
 - Parallel page rendering / export for large page counts.
 - A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
-- Publish a GitHub Release (v3.1.0 is not tagged yet; v1.1.0 has been published).
+- Publish a GitHub Release (v3.2.0 is not tagged yet; v1.1.0 has been published).

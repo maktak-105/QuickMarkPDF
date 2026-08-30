@@ -230,6 +230,16 @@ class ThumbnailPanel(QListWidget):
     # visual, but deliberately do NOT call `super().dropEvent()`.
 
     def dragEnterEvent(self, event):
+        # An external drag (e.g. a PDF/Markdown file dropped from Explorer)
+        # carries URLs and no internal reorder state -- ignore it here so Qt
+        # bubbles the event up to MainWindow's own dragEnterEvent, instead of
+        # this InternalMove-configured list mistaking it for a reorder drag
+        # just because a page happens to be selected underneath the drop.
+        if event.mimeData().hasUrls():
+            self._dragged_indices = []
+            event.ignore()
+            return
+
         # Drag whatever is currently selected (supports multi-select drags).
         self._dragged_indices = sorted(set(self.get_selected_page_indices()))
         if not self._dragged_indices:

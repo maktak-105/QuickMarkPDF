@@ -158,25 +158,25 @@
     {
       "name": "preview_wheel_zoom_default_mode",
       "pass": true,
-      "before": "1051",
-      "after": "1208.640625",
-      "behavior": "環境設定が既定の「ズーム」モードの状態でプレビュー上にホイールイベント(deltaY=-300)を送ったところ、表示幅が1051.0px→1208.6pxに変化した(拡大された)",
+      "before": "795",
+      "after": "914.234375",
+      "behavior": "環境設定が既定の「ズーム」モードの状態でプレビュー上にホイールイベント(deltaY=-300)を送ったところ、表示幅が795.0px→914.2pxに変化した(拡大された)",
       "error": null
     },
     {
       "name": "preview_right_drag_pan_zoom_mode",
       "pass": true,
       "before": "0",
-      "after": "100",
-      "behavior": "「ズーム」モードで右ボタンドラッグ(x: 400→300)したところ、scrollLeftが0→100に変化した(パン動作)",
+      "after": "89",
+      "behavior": "「ズーム」モードで右ボタンドラッグ(x: 400→300)したところ、scrollLeftが0→89に変化した(パン動作)",
       "error": null
     },
     {
       "name": "preview_wheel_mode_setting_switches_behavior",
       "pass": true,
-      "before": "1208.640625",
-      "after": "733.984375",
-      "behavior": "環境設定を「スクロール」モードに切り替えた状態で右ドラッグしたところ、(パンではなく)表示幅が1208.6px→734.0pxに変化した(モード切替が実際に効いている)",
+      "before": "914.234375",
+      "after": "555.203125",
+      "behavior": "環境設定を「スクロール」モードに切り替えた状態で右ドラッグしたところ、(パンではなく)表示幅が914.2px→555.2pxに変化した(モード切替が実際に効いている)",
       "error": null
     },
     {

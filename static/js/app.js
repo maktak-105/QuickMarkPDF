@@ -1218,6 +1218,37 @@
     setStatus(t('status.connecting'));
     post({ type: 'open_pdf' });
   }
+
+  // ── 外部(エクスプローラー等)からのPDF/Markdownファイルのドラッグ&ドロップで
+  //    開く。読み込み済みかどうかによらず常に有効(メニューの「開く」と同じ
+  //    扱い)。既存のサムネイル並べ替えドラッグは dataTransfer に Files が乗ら
+  //    ないため 'Files' の有無で確実に区別できる -- ThumbnailPanel の各アイテム
+  //    の dragover/drop ハンドラは event.preventDefault() のみでバブリングは
+  //    止めていないので、外部ファイルドロップは(サムネイル上に落としても)常に
+  //    document までバブルしてここに届く。
+  function isDroppableFileName(name) {
+    const lower = name.toLowerCase();
+    return lower.endsWith('.pdf') || lower.endsWith('.md') || lower.endsWith('.markdown');
+  }
+  document.addEventListener('dragover', (event) => {
+    if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+  });
+  document.addEventListener('drop', (event) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+    event.preventDefault();
+    if (!hasBridge()) {
+      setStatus(t('status.bridgeDisconnected'));
+      return;
+    }
+    const files = Array.from(event.dataTransfer.files).filter((f) => isDroppableFileName(f.name));
+    if (files.length === 0) return;
+    // Web標準のFile APIは絶対パスを公開しないため、実パスはWebView2固有の
+    // postMessageWithAdditionalObjects経由でネイティブ側に渡し、C++の
+    // ICoreWebView2File::get_Pathで取得する(dispatch_message()の通常の文字列
+    // メッセージには含めない)。
+    window.chrome.webview.postMessageWithAdditionalObjects(JSON.stringify({ type: 'drop_files' }), files);
+  });
+
   function doRotate(degrees) {
     if (selectedIndices.size === 0) return;
     post({ type: 'rotate_pages', indices: selectedIndicesSorted(), degrees });
