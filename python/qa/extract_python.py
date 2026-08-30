@@ -25,7 +25,7 @@ from pathlib import Path
 # appearing on screen during capture.
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "python"))
+sys.path.insert(0, str(REPO_ROOT / "prototype"))
 sys.path.insert(0, str(REPO_ROOT / "qa"))
 
 from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
@@ -80,7 +80,7 @@ def main():
     from src.pdf_editor.ui.main_window import MainWindow  # noqa: E402
 
     window = MainWindow()
-    window.resize(1280, 820)
+    window.resize(1024, 768)
     window.show()
     for _ in range(10):
         app.processEvents()

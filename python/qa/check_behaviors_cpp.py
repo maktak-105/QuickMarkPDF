@@ -34,7 +34,7 @@ sys.path.insert(0, str(REPO_ROOT / "qa"))
 from test_api_client import connect, disconnect  # noqa: E402
 import db  # noqa: E402
 
-EXE_PATH = REPO_ROOT / "dist" / "binary" / "QuickMarkPDF.exe"
+EXE_PATH = REPO_ROOT.parent / "dist" / "binary" / "QuickMarkPDF.exe"
 
 results = []
 

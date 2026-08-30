@@ -25,7 +25,7 @@ from unittest.mock import patch
 logging.basicConfig(level=logging.DEBUG, stream=sys.stderr, format="  [app-log] %(message)s")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "python"))
+sys.path.insert(0, str(REPO_ROOT / "prototype"))
 sys.path.insert(0, str(REPO_ROOT / "qa"))
 import db  # noqa: E402
 
@@ -154,7 +154,7 @@ def main():
     md_path.write_text("# Title\n\nHello **world**.", encoding="utf-8")
 
     window = MainWindow()
-    window.resize(1280, 820)
+    window.resize(1024, 768)
     window.show()
     for _ in range(5):
         app.processEvents()

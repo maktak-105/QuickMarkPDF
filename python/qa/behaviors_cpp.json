@@ -1,7 +1,7 @@
 {
   "source": "cpp",
-  "total": 27,
-  "passed": 27,
+  "total": 28,
+  "passed": 28,
   "results": [
     {
       "name": "open_pdf",
@@ -145,6 +145,14 @@
       "before": "dirty=True",
       "after": "confirm=False→ok=False,pages=3 / confirm=True→ok=True,pages=0",
       "behavior": "1ページ回転後(dirty=true)にclose_allをconfirm=falseで送ったところ実際に拒否されページ数3のまま維持された。次にconfirm=trueで送ったところ実際に破棄されページ数が0になった",
+      "error": null
+    },
+    {
+      "name": "get_text_layout_extracts_page_text",
+      "pass": true,
+      "before": "runs=1",
+      "after": "combined_text='Test page 1' bbox_ok=True",
+      "behavior": "1ページ目のget_text_layoutを呼んだところ1件の行矩形が返り、結合したテキストは'Test page 1'(埋め込みテキスト「Test page 1」を含む、全矩形の座標は妥当)",
       "error": null
     },
     {

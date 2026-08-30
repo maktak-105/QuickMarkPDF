@@ -8,7 +8,7 @@
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
 - **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
 - **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
-- **Version**: v3.0.0
+- **Version**: v3.1.0
 
 `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
@@ -160,4 +160,4 @@ overwrite-save is always reflected in the next render.
 - Support nested lists in Markdown.
 - Parallel page rendering / export for large page counts.
 - A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
-- Publish a GitHub Release (v3.0.0 is not tagged yet; v1.1.0 has been published).
+- Publish a GitHub Release (v3.1.0 is not tagged yet; v1.1.0 has been published).

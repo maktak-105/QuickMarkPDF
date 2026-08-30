@@ -171,7 +171,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("QuickMarkPDF")
-        self.resize(1280, 820)
+        self.resize(1024, 768)
         self.setMinimumSize(900, 600)  # Allow reasonable resizing
 
         self.pdf_manager = PDFManager()

@@ -32,7 +32,7 @@ from selenium_client import connect, disconnect  # noqa: E402
 from color_utils import representative_hsv  # noqa: E402
 import db  # noqa: E402
 
-EXE_PATH = REPO_ROOT / "dist" / "binary" / "QuickMarkPDF.exe"
+EXE_PATH = REPO_ROOT.parent / "dist" / "binary" / "QuickMarkPDF.exe"
 
 # Structurally the DOM equivalent of extract_python.py's findChildren(QWidget)
 # walk: every visible element's window-relative rect, tag/id/class, and (for
