@@ -165,32 +165,6 @@ PyInstaller onedir（配布しない）:
 .venv\Scripts\python.exe -m pytest python/tests/test_pdf_manager.py -v
 ```
 
-## QA パリティダッシュボード（Python 対 C++）
-
-`qa/` は、C++ 版がプロトタイプと**ページ編集の挙動**で一致しているかを測ります。
-ダークテーマ化以降、Python UI とのピクセル/HSV 一致は目標ではありません。
-
-```powershell
-.venv\Scripts\python.exe qa\extract_python.py          # -> qa/baseline.json
-.venv\Scripts\python.exe qa\check_behaviors_python.py  # -> qa/behaviors.json
-.venv\Scripts\python.exe qa\check_behaviors_cpp.py     # -> qa/behaviors_cpp.json（TCP API）
-.venv\Scripts\python.exe qa\check_ui_behaviors_cpp.py  # WebDriver による UI 層
-.venv\Scripts\python.exe qa\dashboard.py               # -> qa/dashboard.html
-```
-
-2026-08-21 時点:
-
-- `check_behaviors_cpp.py`: 18/26 PASS。残りはプレビューのズーム/パン、サムネイルサイズ、
-  環境設定など、TCP 経由の `PdfManager` では観測できない UI 層専用項目。
-- `check_ui_behaviors_cpp.py`: 9/9 PASS。
-- マージ後の `qa/behaviors_cpp.json`: **27/27 PASS**。
-- `qa/extract_cpp.py`（Edge WebDriver による DOM 座標・色）は **Known-unstable**。
-  `execute_script` を約 1 秒より速くポーリングすると WebView2 レンダラが飢餓する。
-  新規の `qa/baseline_cpp.json` はまだ再現性が保証できない。
-
-C++ 側の計測ツールは `QUICKMARKPDF_OFFSCREEN=1`（`WS_EX_LAYERED` + アルファ 0）で
-exe を起動します。画面に出してはいけない計測では、このフラグ無しで起動しないでください。
-
 TCP 制御チャネル（`core/native/test_api_server.cpp`）は `QUICKMARKPDF_TEST_PORT` が
 無いと何もしません。ここのコマンド名（`load_pdfs`、`undo`、`save_as` など）は
 テスト専用であり、[`spec_jp.md`](spec_jp.md) の GUI WebMessage とは別物です。
@@ -203,7 +177,6 @@ TCP 制御チャネル（`core/native/test_api_server.cpp`）は `QUICKMARKPDF_T
 
 Python 試作 / テスト: `requirements.txt`（PyMuPDF、PySide6、Pillow、Markdown、PyInstaller）と
 `requirements-dev.txt`（pytest、pytest-qt、pytest-timeout、pytest-cov）。
-QA 追加: `python/qa/requirements-qa.txt`。
 
 ## ファイル構成（出荷レイアウト）
 
@@ -215,7 +188,6 @@ QuickMarkPDF/
 ├── static/                開発用 CSS/JS
 ├── python/prototype/      評価用プロトタイプ（配布しない）
 ├── python/tests/          Python 試作のテスト
-├── python/qa/             Python 対 C++ の挙動ダッシュボード
 ├── python/tools/          補助スクリプト
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
 ├── resources/vendor/      dist/binary/vendor/ へコピーする Mermaid / MathJax

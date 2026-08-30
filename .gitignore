@@ -81,13 +81,3 @@ python/tests/reports/
 .pytest_cache/
 .coverage
 htmlcov/
-
-# python/qa/: downloaded WebDriver and per-run temp artifacts are not tracked.
-# python/qa/*.json baselines ARE tracked.
-python/qa/tools/
-python/qa/_tmp/
-python/qa/_tmp_cpp/
-python/qa/_tmp_dashboard_stripped.html
-python/qa/__pycache__/
-python/qa/dashboard.html
-python/qa/qa_history.db

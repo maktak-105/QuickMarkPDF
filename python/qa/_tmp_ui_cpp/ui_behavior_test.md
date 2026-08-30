@@ -1,3 +1,0 @@
-# UI Behavior Test
-
-body

@@ -172,36 +172,6 @@ regressions, not real Japanese rendering.
 .venv\Scripts\python.exe -m pytest tests/test_pdf_manager.py -v
 ```
 
-## QA parity dashboard (Python vs C++)
-
-`qa/` measures whether the C++ build still matches the prototype on
-**page-editing behavior**. Pixel/HSV match with the Python UI is no longer
-a goal after the dark-theme switch.
-
-```powershell
-.venv\Scripts\python.exe qa\extract_python.py          # -> qa/baseline.json
-.venv\Scripts\python.exe qa\check_behaviors_python.py  # -> qa/behaviors.json
-.venv\Scripts\python.exe qa\check_behaviors_cpp.py     # -> qa/behaviors_cpp.json (TCP API)
-.venv\Scripts\python.exe qa\check_ui_behaviors_cpp.py  # UI-layer checks via WebDriver
-.venv\Scripts\python.exe qa\dashboard.py               # -> qa/dashboard.html
-```
-
-As of 2026-08-21:
-
-- `check_behaviors_cpp.py`: 18/26 pass. The rest are UI-layer-only (preview
-  zoom/pan, thumbnail-size buttons, preferences) that `PdfManager` cannot
-  observe over TCP.
-- `check_ui_behaviors_cpp.py`: 9/9 pass.
-- Merged `qa/behaviors_cpp.json`: **27/27 pass**.
-- `qa/extract_cpp.py` (DOM coordinates/colors via Edge WebDriver) remains
-  **known-unstable**. Polling `execute_script` faster than about once a
-  second can starve the WebView2 renderer. Treat a fresh
-  `qa/baseline_cpp.json` as not yet reliably reproducible.
-
-C++ measurement tools launch the exe with `QUICKMARKPDF_OFFSCREEN=1`
-(`WS_EX_LAYERED` + alpha 0). **Never launch the exe for QA without this
-flag** if the window must stay invisible.
-
 The TCP control channel (`core/native/test_api_server.cpp`) is gated on
 `QUICKMARKPDF_TEST_PORT`. It is a no-op if unset. Command names there
 (`load_pdfs`, `undo`, `save_as`, …) are test-only and are not the GUI
@@ -215,7 +185,7 @@ under `vendor/` for Markdown preview.
 
 Python prototype / tests: `requirements.txt` (PyMuPDF, PySide6, Pillow,
 Markdown, PyInstaller) and `requirements-dev.txt` (pytest, pytest-qt,
-pytest-timeout, pytest-cov). QA extras: `python/qa/requirements-qa.txt`.
+pytest-timeout, pytest-cov).
 
 ## File structure (shipped layout)
 
@@ -227,7 +197,6 @@ QuickMarkPDF/
 ├── static/                development CSS/JS
 ├── python/prototype/      evaluation prototype (not shipped)
 ├── python/tests/          Python prototype tests
-├── python/qa/             Python vs C++ behavior dashboard
 ├── python/tools/          helper scripts
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
 ├── resources/vendor/      Mermaid / MathJax source copied to dist/binary/vendor/

@@ -1,6 +1,0 @@
-# Dependencies for qa/ (the Python-vs-C++ parity dashboard), on top of
-# requirements.txt (the app itself, which qa/extract_python.py and
-# qa/check_behaviors_python.py import and drive directly).
-#   pip install -r requirements.txt -r qa/requirements-qa.txt
-selenium>=4.20          # qa/selenium_client.py: WebDriver attach to the running WebView2 instance
-PyYAML>=6.0             # qa/part_mapping.yaml: Python-widget-path <-> C++-DOM-path table
