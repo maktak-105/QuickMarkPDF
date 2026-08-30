@@ -1,5 +1,5 @@
 QuickMarkPDF - Simple PDF page editor
-Distribution package  v1.2.1
+Distribution package  v3.0.0
 
 Free. No ads, no donation requests, no paid features.
 
@@ -92,11 +92,20 @@ Split PDF and image export
   restrict the output to a cropped area -- drag on the preview (left mouse
   button) to define that crop area before opening the export dialog.
 
+Extracting text
+----------------
+"Extract text" (right-click menu) opens a dialog to choose which pages to
+pull text from: all pages, a typed page range (e.g. "1,3,5-8"), or just the
+page currently shown in the preview (regardless of which thumbnail you
+right-clicked). Text is read top-left to bottom-right, and bullet/numbered
+list markers are kept where the source PDF exposes them as real text. Pick
+a destination in the following "Save As" dialog to write a .txt file.
+
 Right-click menu
 -----------------
 Right-clicking a page thumbnail (auto-selecting it if it wasn't already
 selected) opens a menu with: rotate right 90, rotate left 90, rotate 180,
-split PDF, export image, delete page, and close this file.
+split PDF, export image, extract text, delete page, and close this file.
 
 Keyboard shortcuts
 -------------------

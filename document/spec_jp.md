@@ -8,7 +8,7 @@
 - **実装**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/バニラJS
 - **配布形態**: GitHub Releases の ZIP（フラット構成。Release は未公開）
 - **表示言語**: 日本語 / English（メニューバー右端のボタンで切替、`localStorage`とレジストリに永続化）
-- **バージョン**: v2.2.1
+- **バージョン**: v3.0.0
 
 製品として出荷されるのは`core/native/`（C++17 + WebView2版）である。`python/prototype/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。
 
@@ -18,7 +18,7 @@
 [HTML/CSS/JS (WebView2)]  ←WebMessage(JSON)→  [webview_main.cpp]  ←直接呼出→  [engine.cpp (PdfManager)]
 ```
 
-- `engine.cpp` (`PdfManager`): PDFの読み込み・回転・削除・並べ替え・Undo・保存・切り出し・画像書き出しを担当。GUI非依存で、CLI版・自動テストからも同じAPIを呼ぶ
+- `engine.cpp` (`PdfManager`): PDFの読み込み・回転・削除・並べ替え・Undo・保存・切り出し・画像書き出し・テキスト抽出を担当。GUI非依存で、CLI版・自動テストからも同じAPIを呼ぶ
 - `pdf_backend.cpp`: PDFiumを使ったページ描画・編集のラッパー
 - `image_io.cpp`: PNG書き出し（自前実装）とJPEG書き出し（Windows Imaging Component経由）
 - `webview_main.cpp`: Win32ウィンドウ生成、WebView2初期化、JSONメッセージの受け渡し、`IFileDialog`/`GetOpenFileNameW`/`GetSaveFileNameW`によるファイル選択・保存ダイアログ
@@ -63,6 +63,7 @@
 | 21 | 環境設定 | プレビューのマウスホイール操作モード（ズーム/スクロール）を切替、`localStorage`に保存 |
 | 22 | テキスト選択・コピー | プレビュー上のPDFテキストを、pdfiumのテキスト抽出APIで取得した行矩形をもとに透明なテキストレイヤーとして重ね、ブラウザ標準のドラッグ選択・Ctrl+Cコピーを可能にする。既定で有効。MathJaxの数式（SVGのベクターパスとして焼き込まれテキストオブジェクトを持たない）やスキャン画像PDF（元からテキストレイヤーを持たない）は選択対象の文字が無く、その部分だけ選択できない |
 | 23 | 表示言語切替 | メニューバー右端の「日本語」／「English」ボタンでUI全体（ツールバー・メニュー・モーダル・ステータスメッセージ・ネイティブダイアログ）の言語を切替。JS側は`localStorage`、C++側はレジストリに独立して保存し、`set_language`メッセージで両者を同期する |
+| 24 | テキスト抽出 | 右クリックメニューからダイアログを開き、全ページ／ページ番号を指定（例:「1,3,5-8」）／現在プレビュー表示中のページのいずれかを選び、「名前を付けて保存」ダイアログで.txtファイルとして書き出す。テキストは左上から右下へ読む順で抽出する（`PdfBackend::get_text_layout`が返す行矩形を行ごとにグループ化し、左から右へ再連結する）。段落番号・箇条書きマーカーは、元のPDFがそれらを実テキストとして持つ場合に限り保持される |
 
 ## 5. WebMessage プロトコル
 
@@ -84,6 +85,7 @@
 | `browse_export_folder` | なし | 出力先フォルダ選択ダイアログを開く |
 | `save_pdf` | なし | 上書き保存（不可の場合は名前を付けて保存） |
 | `split_pdf` | `indices` | 選択ページをPDF切り出し |
+| `extract_text` | `indices` | 指定ページのテキストを抽出し、.txt保存ダイアログを開く |
 | `save_markdown_pdf` | 任意の `output_path` | MarkdownプレビューをPDFへ書き出す。`output_path` を省略すると保存ダイアログ。テストはパスを渡してダイアログを省略できる |
 | `set_language` | `lang`（`"ja"` / `"en"`） | 表示言語を切替。C++側の`g_language`を更新しレジストリへ保存する |
 
@@ -143,4 +145,4 @@
 - Markdown のネストしたリストへの対応
 - 大量ページの並列描画・書き出し
 - 製品級の CLI（現状の `QuickMarkPDF_cli.exe` はページモデルのデモ）
-- GitHub Release の公開（v2.2.1 は未タグ。v1.1.0 は公開済み）
+- GitHub Release の公開（v3.0.0 は未タグ。v1.1.0 は公開済み）

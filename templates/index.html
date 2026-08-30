@@ -120,6 +120,26 @@
       </div>
     </div>
   </div>
+  <div class="modal-overlay" id="extract-text-overlay" hidden>
+    <div class="modal export-modal">
+      <h2 data-i18n="extractText.title">テキストを抽出</h2>
+      <fieldset class="modal-group">
+        <legend data-i18n="extractText.scope.legend">抽出対象</legend>
+        <label class="radio-row"><input type="radio" name="extract-text-scope" value="all" id="extract-text-scope-all" checked><span data-i18n="extractText.scope.all">すべてのページ</span></label>
+        <label class="radio-row">
+          <input type="radio" name="extract-text-scope" value="range" id="extract-text-scope-range">
+          <span data-i18n="extractText.scope.range">ページ番号を指定:</span>
+          <input type="text" id="extract-text-range-input" data-i18n-placeholder="extractText.scope.rangePlaceholder" placeholder="例: 1,3,5-8" disabled>
+        </label>
+        <label class="radio-row"><input type="radio" name="extract-text-scope" value="current" id="extract-text-scope-current"><span id="extract-text-scope-current-label">現在のページ</span></label>
+      </fieldset>
+      <div class="modal-example" id="extract-text-range-error" hidden></div>
+      <div class="modal-buttons">
+        <button type="button" id="extract-text-cancel" data-i18n="extractText.cancel">キャンセル</button>
+        <button type="button" id="extract-text-run" class="primary" data-i18n="extractText.run">抽出して保存...</button>
+      </div>
+    </div>
+  </div>
   <div class="modal-overlay" id="preferences-overlay" hidden>
     <div class="modal preferences-modal">
       <h2 data-i18n="prefs.title">環境設定</h2>
@@ -154,6 +174,7 @@
           <ul>
             <li data-i18n="help.export.split"><strong>PDF切り出し</strong>: 選択したページだけを新しいPDFファイルとして保存します（元のファイルは変更されません）。</li>
             <li data-i18n="help.export.image"><strong>画像出力</strong>: 選択ページまたは全ページをPNG/JPEGとして書き出せます。解像度（DPI）・JPEG画質・出力範囲（クロップ）を指定できます。</li>
+            <li data-i18n="help.export.extractText"><strong>テキスト抽出</strong>: 右クリックメニューから、すべてのページ／ページ番号を指定／現在プレビュー表示中のページのいずれかを選び、抽出したテキストを.txtファイルとして保存します。テキストは左上から右下へ読む順で抽出され、元のPDFが箇条書き・番号付きリストのマーカーを実テキストとして持つ場合は保持されます。</li>
           </ul>
         </section>
         <section>
@@ -179,7 +200,7 @@
   <div class="modal-overlay" id="about-overlay" hidden>
     <div class="modal about-modal">
       <h2>QuickMarkPDF</h2>
-      <p class="about-version">Ver. 2.2.1</p>
+      <p class="about-version">Ver. 3.0.0</p>
       <hr class="about-divider">
       <p data-i18n="about.desc">無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。</p>
       <h3 class="about-section-title" data-i18n="about.devEnv.title">[開発環境]</h3>

@@ -854,6 +854,131 @@ void test_manager_export_images_as_jpeg() {
     std::remove(p1.c_str());
 }
 
+void test_manager_extract_text_single_page() {
+    const auto path = std::string("quickmarkpdf_test_extract_single.pdf");
+    write_text_pdf(path, "Hello QuickMarkPDF", /*text_x=*/20, /*text_y=*/150);
+    const auto out_path = std::string("quickmarkpdf_test_extract_single.txt");
+
+    PdfManager mgr;
+    mgr.load_pdfs({path});
+    const auto result = mgr.extract_text_to_file({0}, out_path);
+    assert(result.success == 1);
+    assert(result.attempted == 1);
+    assert(result.errors.empty());
+
+    std::ifstream in(out_path, std::ios::binary);
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    assert(content.find("Hello QuickMarkPDF") != std::string::npos);
+    // A single-page extraction gets no "===== Page" header.
+    assert(content.find("=====") == std::string::npos);
+
+    std::remove(out_path.c_str());
+    std::remove(path.c_str());
+}
+
+void test_manager_extract_text_multi_page_all() {
+    const auto p1 = std::string("quickmarkpdf_test_extract_multi_p1.pdf");
+    const auto p2 = std::string("quickmarkpdf_test_extract_multi_p2.pdf");
+    write_text_pdf(p1, "FirstPageText", /*text_x=*/20, /*text_y=*/150);
+    write_text_pdf(p2, "SecondPageText", /*text_x=*/20, /*text_y=*/150);
+    const auto out_path = std::string("quickmarkpdf_test_extract_multi.txt");
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1, p2});
+    const auto result = mgr.extract_text_to_file({}, out_path);  // empty = every page
+    assert(result.success == 2);
+    assert(result.attempted == 2);
+    assert(result.errors.empty());
+
+    std::ifstream in(out_path, std::ios::binary);
+    const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    const auto page1_header = content.find("===== Page 1 =====");
+    const auto page2_header = content.find("===== Page 2 =====");
+    const auto first_text = content.find("FirstPageText");
+    const auto second_text = content.find("SecondPageText");
+    assert(page1_header != std::string::npos && page2_header != std::string::npos);
+    assert(first_text != std::string::npos && second_text != std::string::npos);
+    assert(page1_header < first_text);
+    assert(first_text < page2_header);
+    assert(page2_header < second_text);
+
+    std::remove(out_path.c_str());
+    std::remove(p1.c_str());
+    std::remove(p2.c_str());
+}
+
+void test_manager_extract_text_empty_page_no_error() {
+    const auto path = std::string("quickmarkpdf_test_extract_blank.pdf");
+    write_min_pdf(path, 1);
+    const auto out_path = std::string("quickmarkpdf_test_extract_blank.txt");
+
+    PdfManager mgr;
+    mgr.load_pdfs({path});
+    const auto result = mgr.extract_text_to_file({0}, out_path);
+    assert(result.success == 1);
+    assert(result.errors.empty());
+
+    std::remove(out_path.c_str());
+    std::remove(path.c_str());
+}
+
+void test_manager_extract_text_out_of_range_index() {
+    const auto path = std::string("quickmarkpdf_test_extract_oor.pdf");
+    write_min_pdf(path, 1);
+    const auto out_path = std::string("quickmarkpdf_test_extract_oor.txt");
+
+    PdfManager mgr;
+    mgr.load_pdfs({path});
+    const auto result = mgr.extract_text_to_file({5}, out_path);
+    assert(result.success == 0);
+    assert(result.attempted == 1);
+    assert(!result.errors.empty());
+
+    std::remove(out_path.c_str());
+    std::remove(path.c_str());
+}
+
+void test_flatten_text_layout_groups_rows_and_sorts_columns() {
+    quickmarkpdf::TextLayout layout;
+    layout.page_width_pt = 200;
+    layout.page_height_pt = 100;
+    // Same row (y0/y1 overlap the anchor's band), deliberately out of x-order.
+    layout.runs.push_back(quickmarkpdf::TextRun{60, 10, 100, 22, "World"});
+    layout.runs.push_back(quickmarkpdf::TextRun{10, 10, 50, 22, "Hello"});
+    // Second row, further down -- outside the first row's [10, 22] band.
+    layout.runs.push_back(quickmarkpdf::TextRun{10, 40, 80, 52, "Second line"});
+
+    const auto flat = quickmarkpdf::detail::flatten_text_layout(layout);
+    const auto hello_pos = flat.find("Hello");
+    const auto world_pos = flat.find("World");
+    const auto second_pos = flat.find("Second line");
+    assert(hello_pos != std::string::npos);
+    assert(world_pos != std::string::npos);
+    assert(second_pos != std::string::npos);
+    assert(hello_pos < world_pos);
+    assert(world_pos < second_pos);
+}
+
+void test_flatten_text_layout_small_gap_no_space_large_gap_space() {
+    // Row height here is 22-10=12pt, so the 0.3x word-boundary threshold is
+    // 3.6pt. Regression test for pdfium splitting a single word mid-run
+    // (e.g. around a hyphen) with only a point or two of gap -- that must
+    // NOT become a space, or CJK sentences and hyphenated words come out
+    // fragmented letter-by-letter (see the "auto-X" -> "aut o-X" bug).
+    quickmarkpdf::TextLayout layout;
+    layout.page_width_pt = 200;
+    layout.page_height_pt = 100;
+    layout.runs.push_back(quickmarkpdf::TextRun{10, 10, 40, 22, "aut"});
+    layout.runs.push_back(quickmarkpdf::TextRun{41.5, 10, 60, 22, "o-X"});   // 1.5pt gap: mid-word
+    layout.runs.push_back(quickmarkpdf::TextRun{70, 10, 90, 22, "Next"});    // 10pt gap: real word break
+
+    const auto flat = quickmarkpdf::detail::flatten_text_layout(layout);
+    assert(flat.find("aut o-X") == std::string::npos);
+    assert(flat.find("auto-X Next") != std::string::npos);
+}
+
 void test_manager_password_flow() {
     const auto path = std::string("quickmarkpdf_test_mgr_password.pdf");
     write_encrypted_fixture_pdf(path);
@@ -999,6 +1124,12 @@ int main() {
     test_manager_save_selected_pages_rejects_empty_selection();
     test_manager_export_images_with_clip();
     test_manager_export_images_as_jpeg();
+    test_manager_extract_text_single_page();
+    test_manager_extract_text_multi_page_all();
+    test_manager_extract_text_empty_page_no_error();
+    test_manager_extract_text_out_of_range_index();
+    test_flatten_text_layout_groups_rows_and_sorts_columns();
+    test_flatten_text_layout_small_gap_no_space_large_gap_space();
     test_manager_password_flow();
     test_manager_undo_reorder_and_rotate_and_delete();
     test_manager_close_document_removes_only_its_pages_and_is_undoable();

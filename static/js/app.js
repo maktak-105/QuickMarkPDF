@@ -358,6 +358,31 @@
     return Array.from(selectedIndices).sort((a, b) => a - b);
   }
 
+  // Parses a user-typed page range like "1,3,5-8" into a deduped, sorted
+  // array of 0-based indices, clamped to [1, pageCount]. Page numbers are
+  // 1-based positions in the CURRENTLY DISPLAYED (possibly merged/reordered)
+  // document -- the same numbering the thumbnail gutter shows -- not each
+  // page's original_page_index within its own source file. Returns [] if no
+  // token parsed to a valid in-range number.
+  function parsePageRangeInput(text, pageCount) {
+    const result = new Set();
+    for (let raw of String(text).split(',')) {
+      raw = raw.trim();
+      if (!raw) continue;
+      const range = raw.match(/^(\d+)\s*-\s*(\d+)$/);
+      if (range) {
+        let a = parseInt(range[1], 10);
+        let b = parseInt(range[2], 10);
+        if (a > b) { const tmp = a; a = b; b = tmp; }
+        for (let n = Math.max(1, a); n <= Math.min(pageCount, b); n++) result.add(n - 1);
+      } else if (/^\d+$/.test(raw)) {
+        const n = parseInt(raw, 10);
+        if (n >= 1 && n <= pageCount) result.add(n - 1);
+      }
+    }
+    return Array.from(result).sort((a, b) => a - b);
+  }
+
   function updateToolbarEnabled() {
     // Rotate/split/export/save are PDF-only -- in Markdown mode there is no
     // page selection at all, so these are simply unusable (matches the
@@ -494,6 +519,7 @@
       [t('ctxMenu.rotate180'), () => doRotate(180)],
       [t('ctxMenu.split'), doSplit],
       [t('ctxMenu.export'), () => doExport(selectedIndicesSorted())],
+      [t('ctxMenu.extractText'), () => doExtractText()],
       [t('ctxMenu.delete'), doDelete],
       [t('ctxMenu.closeFile'), () => post({ type: 'close_document', path: sourcePath })],
     ];
@@ -1333,6 +1359,56 @@
     // 'export_defaults' message handler below.
     post({ type: 'get_export_defaults', indices: sel.length > 0 ? sel : pages.map((_p, i) => i) });
   }
+
+  // ── テキスト抽出 ダイアログ ──
+  const extractTextOverlay = document.querySelector('#extract-text-overlay');
+  const extractTextScopeAll = document.querySelector('#extract-text-scope-all');
+  const extractTextScopeRange = document.querySelector('#extract-text-scope-range');
+  const extractTextScopeCurrent = document.querySelector('#extract-text-scope-current');
+  const extractTextRangeInput = document.querySelector('#extract-text-range-input');
+  const extractTextRangeError = document.querySelector('#extract-text-range-error');
+  const extractTextScopeCurrentLabel = document.querySelector('#extract-text-scope-current-label');
+
+  // Always targets the page currently shown in the PREVIEW (primaryIndex),
+  // regardless of which thumbnail was right-clicked to open this menu --
+  // matches doExport's dedicated "export selection" concept but for the
+  // single "current page" case.
+  function doExtractText() {
+    if (pages.length === 0) return;
+    extractTextScopeAll.checked = true;
+    extractTextRangeInput.value = '';
+    extractTextRangeInput.disabled = true;
+    extractTextRangeError.hidden = true;
+    const shownPage = primaryIndex >= 0 ? primaryIndex + 1 : 1;
+    extractTextScopeCurrentLabel.textContent = t('extractText.scope.current', { page: shownPage });
+    extractTextOverlay.hidden = false;
+  }
+  document.querySelectorAll('input[name="extract-text-scope"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      extractTextRangeInput.disabled = !extractTextScopeRange.checked;
+      if (extractTextScopeRange.checked) extractTextRangeInput.focus();
+    });
+  });
+  document.querySelector('#extract-text-cancel').addEventListener('click', () => { extractTextOverlay.hidden = true; });
+  document.querySelector('#extract-text-run').addEventListener('click', () => {
+    let indices;
+    if (extractTextScopeCurrent.checked) {
+      if (primaryIndex < 0 || primaryIndex >= pages.length) return;
+      indices = [primaryIndex];
+    } else if (extractTextScopeRange.checked) {
+      indices = parsePageRangeInput(extractTextRangeInput.value, pages.length);
+      if (indices.length === 0) {
+        extractTextRangeError.textContent = t('extractText.scope.rangeError');
+        extractTextRangeError.hidden = false;
+        return;
+      }
+    } else {
+      indices = pages.map((_p, i) => i);
+    }
+    extractTextOverlay.hidden = true;
+    post({ type: 'extract_text', indices });
+  });
+
   function doSave() {
     if (currentMode === 'markdown') {
       post({ type: 'save_markdown_pdf' });
@@ -1358,6 +1434,24 @@
   // (none exist in this UI today, but this is cheap insurance against a
   // future one swallowing Delete/typed text).
   document.addEventListener('keydown', (event) => {
+    // Checked before the "typing" guard below, so Escape still works while
+    // focus is inside a modal's text input (e.g. the extract-text page-range
+    // field) -- every other shortcut here is meant to be ignored while typing.
+    if (event.key === 'Escape') {
+      const openOverlay = [exportOverlay, extractTextOverlay, preferencesOverlay, helpOverlay, aboutOverlay]
+        .find((overlay) => overlay && !overlay.hidden);
+      if (openOverlay) {
+        event.preventDefault();
+        openOverlay.hidden = true;
+        return;
+      }
+      if (contextMenuEl) {
+        event.preventDefault();
+        closeContextMenu();
+        return;
+      }
+    }
+
     const target = event.target;
     const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
     if (typing) return;
