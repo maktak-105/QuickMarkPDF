@@ -8,6 +8,13 @@ This file records the major changes in each public version.
 - Second digit (for example, `1.0.0` to `1.1.0`): bug fixes
 - Third digit (for example, `1.1.0` to `1.1.1`): other changes, such as documentation updates
 
+## v3.1.0 (2026-08-30)
+
+### Bug fixes
+
+- Fixed the main window failing to reappear on the primary monitor after being moved to a second display that was later disconnected: the saved window position was restored unconditionally, even when it no longer intersected any currently connected monitor, leaving the window running (visible in the taskbar) but off every live desktop. The saved position is now discarded in favor of the default when this happens.
+- Reduced the default window size from 1280x820 to 1024x768 so it fits comfortably on smaller displays out of the box.
+
 ## v3.0.0 (2026-08-29)
 
 ### Features

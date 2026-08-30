@@ -213,7 +213,7 @@ std::filesystem::path g_last_used_dir;
 // survive an app restart there; this port previously reset all of that on
 // every launch). Deliberately skipped entirely when QUICKMARKPDF_OFFSCREEN
 // is set: qa/extract_cpp.py's dashboard measurements depend on the window
-// always being exactly 1280x820 at a fixed position, and a QA run must
+// always being exactly 1024x768 at a fixed position, and a QA run must
 // never read stray values from -- or write over -- a real user's saved
 // settings.
 // =====================
@@ -324,7 +324,7 @@ bool is_test_mode() {
 // Called once at startup, before the window is created -- window
 // position/size need to be known before CreateWindowExW.
 struct SavedWindowGeometry {
-    int x = CW_USEDEFAULT, y = CW_USEDEFAULT, width = 1280, height = 820;
+    int x = CW_USEDEFAULT, y = CW_USEDEFAULT, width = 1024, height = 768;
 };
 
 SavedWindowGeometry load_window_geometry() {
@@ -334,6 +334,20 @@ SavedWindowGeometry load_window_geometry() {
     if (auto v = load_dword_setting(L"WindowY")) geo.y = static_cast<int>(*v);
     if (auto v = load_dword_setting(L"WindowWidth")) geo.width = std::max(900, static_cast<int>(*v));
     if (auto v = load_dword_setting(L"WindowHeight")) geo.height = std::max(600, static_cast<int>(*v));
+
+    // A saved position can point at a monitor that's no longer connected
+    // (e.g. the window was last closed on a second display that was since
+    // unplugged) -- CreateWindowExW accepts any coordinates unconditionally,
+    // so the window would be created fully off every live desktop: still
+    // running (taskbar icon present) but genuinely invisible. Fall back to
+    // the OS default position when the saved rect doesn't intersect any
+    // currently attached monitor.
+    if (geo.x != CW_USEDEFAULT) {
+        RECT rect{geo.x, geo.y, geo.x + geo.width, geo.y + geo.height};
+        if (MonitorFromRect(&rect, MONITOR_DEFAULTTONULL) == nullptr) {
+            geo = SavedWindowGeometry{};
+        }
+    }
     return geo;
 }
 
@@ -1998,18 +2012,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     const bool offscreen = GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
 
     // CreateWindowExW's width/height are the OUTER window size, but the
-    // Python spec's MainWindow.resize(1280, 820) sets its CLIENT area (what
-    // extract_python.py measures via geometry()). Passing 1280x820 straight
-    // through under-sizes the WebView2 content area by the title
-    // bar/border chrome (measured 1264x821 instead of 1280x820).
-    // AdjustWindowRectEx inflates a desired client rect to the outer size
-    // needed for this window's style, so the client area actually ends up
-    // 1280x820 regardless of the current DPI/theme's border metrics.
+    // Python spec's MainWindow.resize(1024, 768) sets its CLIENT area (what
+    // extract_python.py measures via geometry()). Passing the client size
+    // straight through under-sizes the WebView2 content area by the title
+    // bar/border chrome. AdjustWindowRectEx inflates a desired client rect
+    // to the outer size needed for this window's style, so the client area
+    // actually ends up 1024x768 regardless of the current DPI/theme's
+    // border metrics.
     const DWORD window_style = WS_OVERLAPPEDWINDOW;
     const DWORD window_ex_style = offscreen ? WS_EX_LAYERED : 0;
 
     // A saved geometry (previous session's GetWindowRect, i.e. already the
-    // OUTER rect) is used as-is; falling back to the 1280x820 CLIENT default
+    // OUTER rect) is used as-is; falling back to the 1024x768 CLIENT default
     // goes through AdjustWindowRectEx same as before. Never loaded/applied
     // in offscreen (QA) mode -- see load_window_geometry's doc comment.
     const auto saved_geo = load_window_geometry();

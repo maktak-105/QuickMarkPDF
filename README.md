@@ -6,7 +6,7 @@
 
 A simple Windows desktop PDF page editor — free, no ads, no donation requests, no paid features. Just the split / merge / reorder / rotate / export you actually need. As a bonus, it also renders and exports Markdown to PDF, with Mermaid diagrams and math (MathJax).
 
-**Current version: v3.0.0.** `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
+**Current version: v3.1.0.** `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
 
 The UI can switch between Japanese and English (toggle button at the right end of the menu bar). The English and Japanese README screenshots show the same window in each language.
 
@@ -25,8 +25,8 @@ The UI can switch between Japanese and English (toggle button at the right end o
 If you only want to run the app, download the ZIP from GitHub Releases. GitHub Actions builds `QuickMarkPDF-binary.zip` on a `v*` tag; the ZIP is not stored in this repository.
 
 - [Latest releases](https://github.com/maktak-105/QuickMarkPDF/releases)
-- [QuickMarkPDF v3.0.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v3.0.0)
-- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v3.0.0/QuickMarkPDF-binary.zip)
+- [QuickMarkPDF v3.1.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v3.1.0)
+- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v3.1.0/QuickMarkPDF-binary.zip)
 
 The ZIP contains all distribution files in one flat folder (`vendor/` stays next to `index.html`).
 

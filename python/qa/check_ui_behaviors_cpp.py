@@ -28,7 +28,7 @@ sys.path.insert(0, str(REPO_ROOT / "qa"))
 from selenium_client import connect, disconnect, post_message  # noqa: E402
 import db  # noqa: E402
 
-EXE_PATH = REPO_ROOT / "dist" / "binary" / "QuickMarkPDF.exe"
+EXE_PATH = REPO_ROOT.parent / "dist" / "binary" / "QuickMarkPDF.exe"
 
 results = []
 
@@ -175,6 +175,22 @@ def main():
             )
         check("preview_wheel_mode_setting_switches_behavior", _wheel_mode_setting)
 
+        def _toggle_preview_mode_via_context_menu():
+            # previewMode ('text' | 'crop') was introduced by app.js's text-
+            # selection feature (commit 7830db5, after crop-selection was
+            # first implemented) and defaults to 'text' -- the mousedown
+            # handler that starts a crop drag now early-returns unless the
+            # user has switched to 'crop' mode first via the preview's
+            # right-click context menu (togglePreviewMode is always the
+            # LAST menu item, appended after the page-action items).
+            fire(driver, "#preview", "contextmenu", 100, 100)
+            time.sleep(0.3)
+            driver.execute_script("""
+                const buttons = document.querySelectorAll('.context-menu button');
+                if (buttons.length) buttons[buttons.length - 1].click();
+            """)
+            time.sleep(0.2)
+
         def _crop_selection():
             # Earlier checks in this same session zoomed/panned the preview,
             # so the image's on-screen box has moved -- click a fresh page
@@ -184,6 +200,7 @@ def main():
             driver.execute_script("document.querySelectorAll('.page-item')[1]?.click()")
             time.sleep(0.8)
             driver.execute_script("document.querySelector('#crop-overlay')?.remove()")
+            _toggle_preview_mode_via_context_menu()  # 'text' -> 'crop'
             fire(driver, "#preview", "mousedown", 50, 50, button=0)
             fire(driver, "body", "mousemove", 120, 120, button=0, base_selector="#preview")
             fire(driver, "body", "mousemove", 250, 200, button=0, base_selector="#preview")
@@ -193,6 +210,7 @@ def main():
                 return el ? {w: parseFloat(el.style.width), h: parseFloat(el.style.height)} : null;
             """)
             ok = bool(overlay and overlay["w"] > 5 and overlay["h"] > 5)
+            _toggle_preview_mode_via_context_menu()  # 'crop' -> 'text', don't leak into later checks
             return "選択なし", overlay, ok, (
                 f"プレビュー上で(50,50)から(250,200)へ左ドラッグしたところ、"
                 f"実際に#crop-overlayが生成され、サイズは{overlay}だった"
