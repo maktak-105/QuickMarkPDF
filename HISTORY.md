@@ -8,6 +8,12 @@ This file records the major changes in each public version.
 - Second digit (for example, `1.0.0` to `1.1.0`): bug fixes
 - Third digit (for example, `1.1.0` to `1.1.1`): other changes, such as documentation updates
 
+## v3.2.0 (2026-08-30)
+
+### Features
+
+- Added drag-and-drop opening: dropping a PDF or Markdown file from Explorer onto the window opens it, whether or not a document is already open (an already-open session appends the dropped file, matching the menu's "Open" behavior exactly). Dropping onto the thumbnail list no longer conflicts with the existing thumbnail-reorder drag.
+
 ## v3.1.0 (2026-08-30)
 
 ### Bug fixes

@@ -1080,6 +1080,52 @@ void handle_open_documents() {
     open_document_paths(prompt_open_documents());
 }
 
+// Handles app.js's postMessageWithAdditionalObjects("drop_files", files) --
+// files dropped from Explorer onto the WebView2 window. The dropped File
+// objects' real paths aren't reachable through the JSON message body (the
+// standard Web File API never exposes an absolute path); WebView2 instead
+// surfaces each one as an ICoreWebView2File, retrievable only via this
+// event args' AdditionalObjects collection at the moment the message
+// arrives -- see https://learn.microsoft.com/microsoft-edge/webview2/reference/win32/icorewebview2file.
+// Enabled by "always" scope per product decision: works whether or not a
+// document is already open, matching the menu's "Open" behavior exactly
+// (open_document_paths already does the append/mixed-type/duplicate
+// handling shared with that path).
+void handle_drop_files(ICoreWebView2WebMessageReceivedEventArgs* args) {
+    std::vector<std::filesystem::path> paths;
+
+    ICoreWebView2WebMessageReceivedEventArgs2* args2 = nullptr;
+    if (SUCCEEDED(args->QueryInterface(IID_ICoreWebView2WebMessageReceivedEventArgs2,
+                                        reinterpret_cast<void**>(&args2))) &&
+        args2) {
+        ICoreWebView2ObjectCollectionView* objects = nullptr;
+        if (SUCCEEDED(args2->get_AdditionalObjects(&objects)) && objects) {
+            UINT32 count = 0;
+            objects->get_Count(&count);
+            for (UINT32 i = 0; i < count; ++i) {
+                IUnknown* object = nullptr;
+                if (SUCCEEDED(objects->GetValueAtIndex(i, &object)) && object) {
+                    ICoreWebView2File* file = nullptr;
+                    if (SUCCEEDED(object->QueryInterface(IID_ICoreWebView2File, reinterpret_cast<void**>(&file))) &&
+                        file) {
+                        LPWSTR path = nullptr;
+                        if (SUCCEEDED(file->get_Path(&path)) && path) {
+                            paths.emplace_back(path);
+                            CoTaskMemFree(path);
+                        }
+                        file->Release();
+                    }
+                    object->Release();
+                }
+            }
+            objects->Release();
+        }
+        args2->Release();
+    }
+
+    if (!paths.empty()) open_document_paths(paths);
+}
+
 void handle_render_page(const std::wstring& message) {
     const int page_index = extract_int(message, L"page_index", -1);
     const int width = extract_int(message, L"width", 160);
@@ -1826,6 +1872,17 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                                 if (FAILED(args->TryGetWebMessageAsString(&raw_message))) return S_OK;
                                 const std::wstring message(raw_message);
                                 CoTaskMemFree(raw_message);
+
+                                if (extract_type(message) == L"drop_files") {
+                                    // app.js sends this via postMessageWithAdditionalObjects
+                                    // instead of the normal postMessage, since the dropped
+                                    // File objects' absolute paths aren't exposed through the
+                                    // standard Web File API -- ICoreWebView2File::get_Path is
+                                    // the WebView2-specific way to recover them.
+                                    handle_drop_files(args);
+                                    return S_OK;
+                                }
+
                                 dispatch_message(message);
                                 return S_OK;
                             }),

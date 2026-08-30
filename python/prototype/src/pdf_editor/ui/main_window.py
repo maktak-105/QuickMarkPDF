@@ -173,6 +173,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("QuickMarkPDF")
         self.resize(1024, 768)
         self.setMinimumSize(900, 600)  # Allow reasonable resizing
+        self.setAcceptDrops(True)
 
         self.pdf_manager = PDFManager()
         self.markdown_manager = MarkdownManager()
@@ -632,6 +633,36 @@ class MainWindow(QMainWindow):
         self.large_action.triggered.connect(lambda: self.set_thumbnail_size("large"))
         self._thumbnail_size_group.addAction(self.large_action)
         size_toolbar.addAction(self.large_action)
+
+    def _droppable_paths(self, mime_data):
+        """Local .pdf/.md/.markdown file paths from a drag's URL list, or
+        an empty list if the drag carries no such files (e.g. an internal
+        ThumbnailPanel reorder drag, which has no URLs at all)."""
+        if not mime_data.hasUrls():
+            return []
+        paths = [Path(url.toLocalFile()) for url in mime_data.urls() if url.isLocalFile()]
+        return [p for p in paths if p.suffix.lower() in {".pdf", ".md", ".markdown"}]
+
+    def dragEnterEvent(self, event):
+        if self._droppable_paths(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if self._droppable_paths(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        paths = self._droppable_paths(event.mimeData())
+        if not paths:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self._remember_dir_from_paths(paths)
+        self.open_documents([str(p) for p in paths])
 
     def open_documents(self, files=None):
         """Open PDF files or a single Markdown document."""
