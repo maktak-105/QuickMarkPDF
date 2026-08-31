@@ -1,5 +1,5 @@
 QuickMarkPDF - Simple PDF page editor
-Distribution package  v3.0.0
+Distribution package  v3.2.0
 
 Free. No ads, no donation requests, no paid features.
 
