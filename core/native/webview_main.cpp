@@ -213,6 +213,7 @@ std::filesystem::path g_last_used_dir;
 // survive an app restart there; this port previously reset all of that on
 // every launch). Deliberately skipped entirely when QUICKMARKPDF_OFFSCREEN
 // is set: qa/extract_cpp.py's dashboard measurements depend on the window
+// always being exactly 1280x820 at a fixed position, and a QA run must
 // always being exactly 1024x768 at a fixed position, and a QA run must
 // never read stray values from -- or write over -- a real user's saved
 // settings.
@@ -324,7 +325,7 @@ bool is_test_mode() {
 // Called once at startup, before the window is created -- window
 // position/size need to be known before CreateWindowExW.
 struct SavedWindowGeometry {
-    int x = CW_USEDEFAULT, y = CW_USEDEFAULT, width = 1024, height = 768;
+    int x = CW_USEDEFAULT, y = CW_USEDEFAULT, width = 1280, height = 820;
 };
 
 SavedWindowGeometry load_window_geometry() {
@@ -394,6 +395,7 @@ std::wstring json_string(const std::wstring& value) {
     // escaping (a bare newline inside a JSON string is invalid and breaks
     // parsing on the JS side).
     std::wstring escaped = L"\"";
+    escaped.reserve(value.size() * 11 / 10 + 16);
     for (const auto character : value) {
         switch (character) {
             case L'\\': escaped += L"\\\\"; break;
@@ -413,6 +415,59 @@ std::wstring json_string(const std::wstring& value) {
     }
     escaped += L"\"";
     return escaped;
+}
+
+std::size_t count_file_lines(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::vector<char> buffer(64 * 1024);
+    std::size_t lines = 0;
+    bool has_data = false;
+    char last_char = 0;
+    while (file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
+        std::streamsize bytes = file.gcount();
+        has_data = true;
+        for (std::streamsize i = 0; i < bytes; ++i) {
+            if (buffer[i] == '\n') ++lines;
+            last_char = buffer[i];
+        }
+    }
+    if (has_data && last_char != '\n') ++lines;
+    return lines;
+}
+
+struct MarkdownChunkResult {
+    std::string content;
+    std::size_t lines_read = 0;
+    bool has_more = false;
+};
+
+MarkdownChunkResult read_markdown_chunk(const std::filesystem::path& path, std::size_t start_line, std::size_t max_lines) {
+    MarkdownChunkResult res;
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) return res;
+
+    std::string line;
+    std::size_t current_line = 0;
+    while (current_line < start_line && std::getline(file, line)) {
+        ++current_line;
+    }
+
+    std::string chunk;
+    chunk.reserve(max_lines * 80);
+    while (res.lines_read < max_lines && std::getline(file, line)) {
+        chunk += line;
+        chunk += '\n';
+        ++res.lines_read;
+    }
+    // Check if there are more lines
+    if (std::getline(file, line)) {
+        res.has_more = true;
+    } else {
+        res.has_more = false;
+    }
+    res.content = std::move(chunk);
+    return res;
 }
 
 std::string wide_to_utf8(const std::wstring& value) {
@@ -918,22 +973,65 @@ void open_pdf_paths(const std::vector<std::filesystem::path>& paths);
 // untouched in memory so switching back to a PDF loses nothing, unlike the
 // Python baseline's explicit discard-confirmation flow which this port
 // does not reproduce.
+const std::uintmax_t LARGE_MD_THRESHOLD = 2 * 1024 * 1024; // 2MB
+const std::size_t INITIAL_MD_CHUNK_LINES = 5000;
+
 void open_markdown_path(const std::filesystem::path& path) {
-    std::string content;
-    try {
-        content = read_text_file_utf8(path);
-    } catch (const std::exception&) {
+    std::error_code ec;
+    auto file_size = std::filesystem::file_size(path, ec);
+    if (ec) {
         post_status(tr(L"Markdownファイルを読み込めませんでした: ", L"Could not read the Markdown file: ") +
                     path.filename().wstring());
         return;
     }
+
     g_current_markdown_path = path;
     if (g_window) SetWindowTextW(g_window, (L"QuickMarkPDF - " + path.filename().wstring()).c_str());
-    const std::wstring response = L"{\"type\":\"markdown_opened\",\"path\":" +
-                                   json_string(path.wstring()) + L",\"content\":" +
-                                   json_string(utf8_to_wide(content)) + L"}";
-    if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
+
+    if (file_size < LARGE_MD_THRESHOLD) {
+        std::string content;
+        try {
+            content = read_text_file_utf8(path);
+        } catch (const std::exception&) {
+            post_status(tr(L"Markdownファイルを読み込めませんでした: ", L"Could not read the Markdown file: ") +
+                        path.filename().wstring());
+            return;
+        }
+        const std::wstring response = L"{\"type\":\"markdown_opened\",\"path\":" +
+                                       json_string(path.wstring()) + L",\"content\":" +
+                                       json_string(utf8_to_wide(content)) +
+                                       L",\"is_large\":false,\"file_size\":" + std::to_wstring(file_size) + L"}";
+        if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
+    } else {
+        // Large file mode: count lines fast and stream first chunk only
+        auto total_lines = count_file_lines(path);
+        auto chunk = read_markdown_chunk(path, 0, INITIAL_MD_CHUNK_LINES);
+        const std::wstring response = L"{\"type\":\"markdown_opened\",\"path\":" +
+                                       json_string(path.wstring()) + L",\"content\":" +
+                                       json_string(utf8_to_wide(chunk.content)) +
+                                       L",\"is_large\":true,\"file_size\":" + std::to_wstring(file_size) +
+                                       L",\"total_lines\":" + std::to_wstring(total_lines) +
+                                       L",\"loaded_lines\":" + std::to_wstring(chunk.lines_read) +
+                                       L",\"has_more\":" + (chunk.has_more ? L"true" : L"false") + L"}";
+        if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
+    }
     post_status(tr(L"Markdownを読み込みました: ", L"Loaded Markdown: ") + path.filename().wstring());
+}
+
+void handle_get_markdown_chunk(const std::wstring& message) {
+    if (g_current_markdown_path.empty()) return;
+    int raw_start = extract_int(message, L"start_line", 0);
+    int raw_count = extract_int(message, L"count", 5000);
+    std::size_t start_line = raw_start >= 0 ? static_cast<std::size_t>(raw_start) : 0;
+    std::size_t count = raw_count > 0 ? static_cast<std::size_t>(raw_count) : 5000;
+
+    auto chunk = read_markdown_chunk(g_current_markdown_path, start_line, count);
+    const std::wstring response = L"{\"type\":\"markdown_chunk\",\"start_line\":" +
+                                   std::to_wstring(start_line) + L",\"loaded_lines\":" +
+                                   std::to_wstring(chunk.lines_read) + L",\"has_more\":" +
+                                   (chunk.has_more ? L"true" : L"false") + L",\"content\":" +
+                                   json_string(utf8_to_wide(chunk.content)) + L"}";
+    if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
 }
 
 enum class DocumentOpenOutcome { Cancelled, RejectedMixed, OpenedMarkdown, OpenedPdf };
@@ -1043,6 +1141,7 @@ void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
     }
 
     const int total_loaded = result.loaded_count + extra_loaded;
+    if (total_loaded > 0 && g_window) SetWindowTextW(g_window, L"QuickMarkPDF");
     if (total_loaded > 0) update_window_title();
     if (!result.duplicate_files.empty()) {
         std::wstring names;
@@ -1761,6 +1860,120 @@ void resize_webview() {
     g_controller->put_Bounds(bounds);
 }
 
+bool create_pdf_from_image(const std::wstring& output_pdf_path, int width, int height, const std::vector<uint8_t>& rgb_data) {
+    std::ofstream out(std::filesystem::path(output_pdf_path), std::ios::binary);
+    if (!out.is_open()) return false;
+
+    double pt_w = width * 72.0 / 96.0;
+    double pt_h = height * 72.0 / 96.0;
+
+    std::vector<std::size_t> offsets;
+    out << "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+
+    offsets.push_back(out.tellp());
+    out << "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+
+    offsets.push_back(out.tellp());
+    out << "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
+
+    offsets.push_back(out.tellp());
+    out << "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " << pt_w << " " << pt_h
+        << "] /Contents 4 0 R /Resources << /XObject << /Im0 5 0 R >> >> >>\nendobj\n";
+
+    std::string content = "q\n" + std::to_string(pt_w) + " 0 0 " + std::to_string(pt_h) + " 0 0 cm\n/Im0 Do\nQ\n";
+    offsets.push_back(out.tellp());
+    out << "4 0 obj\n<< /Length " << content.size() << " >>\nstream\n" << content << "endstream\nendobj\n";
+
+    offsets.push_back(out.tellp());
+    out << "5 0 obj\n<< /Type /XObject /Subtype /Image /Width " << width << " /Height " << height
+        << " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length " << rgb_data.size() << " >>\nstream\n";
+    out.write(reinterpret_cast<const char*>(rgb_data.data()), rgb_data.size());
+    out << "\nendstream\nendobj\n";
+
+    std::size_t xref_offset = out.tellp();
+    out << "xref\n0 6\n0000000000 65535 f \n";
+    for (auto off : offsets) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%010zu 00000 n \n", off);
+        out << buf;
+    }
+    out << "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" << xref_offset << "\n%%EOF\n";
+    return out.good();
+}
+
+bool paste_image_from_system_clipboard(const std::wstring& temp_pdf_path) {
+    if (!OpenClipboard(g_window)) return false;
+    HBITMAP hBitmap = static_cast<HBITMAP>(GetClipboardData(CF_BITMAP));
+    if (!hBitmap) {
+        CloseClipboard();
+        return false;
+    }
+    BITMAP bm{};
+    GetObject(hBitmap, sizeof(BITMAP), &bm);
+    int width = bm.bmWidth;
+    int height = bm.bmHeight;
+    if (width <= 0 || height <= 0) {
+        CloseClipboard();
+        return false;
+    }
+
+    HDC hdc = GetDC(nullptr);
+    HDC memDC = CreateCompatibleDC(hdc);
+    HBITMAP oldBm = static_cast<HBITMAP>(SelectObject(memDC, hBitmap));
+
+    std::vector<uint8_t> bgra(width * height * 4);
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = width;
+    bi.bmiHeader.biHeight = -height;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    GetDIBits(memDC, hBitmap, 0, height, bgra.data(), &bi, DIB_RGB_COLORS);
+
+    std::vector<uint8_t> rgb(width * height * 3);
+    for (int i = 0; i < width * height; ++i) {
+        rgb[i * 3 + 0] = bgra[i * 4 + 2]; // R
+        rgb[i * 3 + 1] = bgra[i * 4 + 1]; // G
+        rgb[i * 3 + 2] = bgra[i * 4 + 0]; // B
+    }
+
+    SelectObject(memDC, oldBm);
+    DeleteDC(memDC);
+    ReleaseDC(nullptr, hdc);
+    CloseClipboard();
+
+    return create_pdf_from_image(temp_pdf_path, width, height, rgb);
+}
+
+void handle_paste_image(const std::wstring& message) {
+    wchar_t temp_path[MAX_PATH]{};
+    GetTempPathW(MAX_PATH, temp_path);
+    auto temp_pdf = std::filesystem::path(temp_path) / (L"quickmarkpdf_paste_" + std::to_wstring(GetTickCount64()) + L".pdf");
+
+    bool ok = paste_image_from_system_clipboard(temp_pdf.wstring());
+    if (!ok) {
+        post_status(tr(L"クリップボードに画像が見つかりません", L"No image found in clipboard"));
+        return;
+    }
+
+    auto res = g_manager.load_pdfs({temp_pdf.u8string()});
+    if (res.loaded_count > 0) {
+        size_t new_page_idx = g_manager.get_page_count() - 1;
+        int raw_insert = extract_int(message, L"insert_index", -1);
+        size_t insert_idx = raw_insert >= 0 ? static_cast<size_t>(raw_insert) : 0;
+        if (insert_idx < new_page_idx) {
+            std::vector<size_t> order(g_manager.get_page_count());
+            for (size_t i = 0; i < g_manager.get_page_count(); ++i) order[i] = i;
+            order.erase(order.begin() + new_page_idx);
+            order.insert(order.begin() + insert_idx, new_page_idx);
+            g_manager.reorder_pages(order);
+        }
+        post_document_state(L"document_state");
+        post_status(tr(L"画像を新しいページとして貼り付けました", L"Pasted image as a new page"));
+    }
+}
+
 void dispatch_message(const std::wstring& message) {
     const auto type = extract_type(message);
     if (type == L"open_pdf") {
@@ -1798,8 +2011,12 @@ void dispatch_message(const std::wstring& message) {
         handle_save_markdown_pdf();
     } else if (type == L"split_pdf") {
         handle_split_pdf(message);
+    } else if (type == L"paste_image") {
+        handle_paste_image(message);
     } else if (type == L"extract_text") {
         handle_extract_text(message);
+    } else if (type == L"get_markdown_chunk") {
+        handle_get_markdown_chunk(message);
     } else if (type == L"set_language") {
         g_language = extract_string(message, L"lang") == L"en" ? Language::English : Language::Japanese;
         save_language_setting(g_language);
@@ -1862,6 +2079,13 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                         MessageBoxW(g_window, tr(L"get_CoreWebView2に失敗しました。", L"get_CoreWebView2 failed."),
                                      L"QuickMarkPDF", MB_ICONERROR);
                         return E_FAIL;
+                    }
+
+                    // Disable Chromium whole-page zoom control (Ctrl+Wheel / pinch zoom)
+                    ICoreWebView2Settings* settings = nullptr;
+                    if (SUCCEEDED(g_webview->get_Settings(&settings)) && settings) {
+                        settings->put_IsZoomControlEnabled(FALSE);
+                        settings->Release();
                     }
 
                     EventRegistrationToken message_token{};
@@ -2028,15 +2252,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     // to the exe, so there is no "ui/" subfolder to look for.
     const auto ui_path = std::filesystem::absolute(executable_dir / L"index.html");
 
-    // Resource ID 101 == IDI_ICON1 in QuickMarkPDF.rc ("IDI_ICON1 ICON
-    // "QuickMarkPDF.ico""). That .rc entry alone only supplies the icon
-    // Explorer shows for the .exe file itself -- it does NOT automatically
-    // become the window's own titlebar/taskbar icon; WNDCLASSW's hIcon/
-    // hIconSm must be loaded and set explicitly, or the window shows no
-    // icon at all even though the .exe's own icon looks correct.
-    // LoadImageW (not the simpler LoadIconW) is used so the system's actual
-    // large/small icon metrics pick the closest-matching frame out of the
-    // multi-size QuickMarkPDF.ico instead of always scaling a fixed size.
     constexpr int kAppIconResourceId = 101;
     HICON app_icon_large = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(kAppIconResourceId), IMAGE_ICON,
                                                            GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
@@ -2069,6 +2284,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     const bool offscreen = GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
 
     // CreateWindowExW's width/height are the OUTER window size, but the
+    // Python spec's MainWindow.resize(1280, 820) sets its CLIENT area (what
+    // extract_python.py measures via geometry()). Passing 1280x820 straight
+    // through under-sizes the WebView2 content area by the title
+    // bar/border chrome (measured 1264x821 instead of 1280x820).
+    // AdjustWindowRectEx inflates a desired client rect to the outer size
+    // needed for this window's style, so the client area actually ends up
+    // 1280x820 regardless of the current DPI/theme's border metrics.
     // Python spec's MainWindow.resize(1024, 768) sets its CLIENT area (what
     // extract_python.py measures via geometry()). Passing the client size
     // straight through under-sizes the WebView2 content area by the title
@@ -2080,6 +2302,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     const DWORD window_ex_style = offscreen ? WS_EX_LAYERED : 0;
 
     // A saved geometry (previous session's GetWindowRect, i.e. already the
+    // OUTER rect) is used as-is; falling back to the 1280x820 CLIENT default
     // OUTER rect) is used as-is; falling back to the 1024x768 CLIENT default
     // goes through AdjustWindowRectEx same as before. Never loaded/applied
     // in offscreen (QA) mode -- see load_window_geometry's doc comment.

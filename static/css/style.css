@@ -374,6 +374,47 @@ kbd {
    高さ自動)に合わせる。 */
 .about-badge { display: block; width: 160px; height: auto; margin: 16px auto 0; border-radius: 50%; background: #fff; }
 
+/* 大容量ファイル情報バー & 続き読み込みボタン */
+.large-file-banner {
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid var(--accent-cyan, #00f0ff);
+  color: #e0f7fa;
+  padding: 10px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.large-file-banner .banner-icon {
+  font-size: 18px;
+}
+.load-more-container {
+  padding: 20px 0;
+  text-align: center;
+}
+.load-more-btn {
+  background: #1e293b;
+  color: var(--accent-cyan, #00f0ff);
+  border: 1px solid var(--accent-cyan, #00f0ff);
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.load-more-btn:hover {
+  background: var(--accent-cyan, #00f0ff);
+  color: #0b1120;
+}
+.load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Markdown -> PDF (ICoreWebView2_7::PrintToPdf) prints whatever the "print"
    media type would render for the WHOLE page -- since this app is a single
    page with the toolbar/menu/thumbnail-panel/statusbar always present in

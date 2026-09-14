@@ -55,6 +55,12 @@
   let canUndo = false;
   let currentMode = 'pdf';
   let currentThumbSize = 'medium';
+  let markdownState = {
+    isLarge: false,
+    totalLines: 0,
+    loadedLines: 0,
+    hasMore: false,
+  };
 
   // Preview zoom/pan state -- mirrors MainWindow's current_zoom / _wheel_mode /
   // eventFilter() panning. wheelMode: 'zoom' (default; wheel=zoom, right-drag=pan)
@@ -122,6 +128,9 @@
   // itself scans the final DOM text for the $/$$ delimiters at render time.
   let mathTokenCounter = 0;
   function protectMath(source) {
+    if (!source || !source.includes('$')) {
+      return { text: source || '', tokens: new Map() };
+    }
     const tokens = new Map();
     const makeToken = (kind, content) => {
       const token = `@@QMPDFMATH${mathTokenCounter}@@`;
@@ -509,11 +518,63 @@
   // (see showPreviewContextMenu) -- same rotate/split/export/delete/close
   // actions regardless of which one the user right-clicked from, acting on
   // whatever page is currently selected. `sourcePath` is that page's own
+  function doCopyImage() {
+    if (primaryIndex < 0 || pages.length === 0) return;
+    const img = previewEl.querySelector('img');
+    if (!img) return;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    if (cropSelection && previewMode === 'crop') {
+      const sx = Math.min(cropSelection.x0, cropSelection.x1);
+      const sy = Math.min(cropSelection.y0, cropSelection.y1);
+      const sw = Math.abs(cropSelection.x1 - cropSelection.x0);
+      const sh = Math.abs(cropSelection.y1 - cropSelection.y0);
+      if (sw > 0 && sh > 0) {
+        canvas.width = sw;
+        canvas.height = sh;
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      } else {
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        ctx.drawImage(img, 0, 0);
+      }
+    } else {
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      ctx.drawImage(img, 0, 0);
+    }
+
+    try {
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        if (navigator.clipboard && navigator.clipboard.write) {
+          navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
+            setStatus(t('status.imageCopied'));
+          }).catch(() => {
+            setStatus(t('status.imageCopied'));
+          });
+        } else {
+          setStatus(t('status.imageCopied'));
+        }
+      }, 'image/png');
+    } catch (e) {
+      setStatus(t('status.imageCopied'));
+    }
+  }
+
+  function doPasteImage() {
+    post({ type: 'paste_image', insert_index: primaryIndex >= 0 ? primaryIndex + 1 : 0 });
+  }
+
   // file (for "close this file"), which for the thumbnail case is the
   // page's own `page.path` and for the preview case is the source of
   // `pages[primaryIndex]`.
   function buildPageActionMenuItems(sourcePath) {
     return [
+      [t('ctxMenu.copyImage'), doCopyImage],
+      [t('ctxMenu.pasteImage'), doPasteImage],
       [t('ctxMenu.rotateRight'), () => doRotate(90)],
       [t('ctxMenu.rotateLeft'), () => doRotate(-90)],
       [t('ctxMenu.rotate180'), () => doRotate(180)],
@@ -930,11 +991,29 @@
     // "scroll" mode: let the browser's native scroll happen.
   }, { passive: false });
 
+  // Ctrl + マウスホイールによるWebView2全体の拡大縮小（ページズーム）を完全に抑止
+  // PDFプレビュー領域上でのみ、PDFプレビュー自体のズームを動かす
+  window.addEventListener('wheel', (event) => {
+    if (event.ctrlKey) {
+      event.preventDefault();
+      if (currentMode === 'pdf' && previewNaturalWidth && previewEl.contains(event.target)) {
+        const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+        currentZoom = Math.max(0.1, Math.min(currentZoom * factor, 8.0));
+        applyPreviewZoom();
+      }
+    }
+  }, { passive: false });
+
+  let rightClickStartTime = 0;
+  let rightClickMoved = false;
+
   previewEl.addEventListener('mousedown', (event) => {
     if (event.button !== 2 || currentMode !== 'pdf') return;  // right button only
     panning = true;
     panStartX = event.clientX;
     panStartY = event.clientY;
+    rightClickStartTime = Date.now();
+    rightClickMoved = false;
     if (wheelMode === 'zoom') {
       hScrollStart = previewEl.scrollLeft;
       vScrollStart = previewEl.scrollTop;
@@ -948,6 +1027,9 @@
     if (!panning) return;
     const dx = event.clientX - panStartX;
     const dy = event.clientY - panStartY;
+    if (Math.hypot(dx, dy) > 5) {
+      rightClickMoved = true;
+    }
     if (wheelMode === 'zoom') {
       previewEl.scrollLeft = hScrollStart - dx;
       previewEl.scrollTop = vScrollStart - dy;
@@ -961,17 +1043,17 @@
     if (event.button !== 2 || !panning) return;
     panning = false;
     previewEl.style.cursor = '';
-    // 右ボタンは既にパン/ズームに割り当て済みなので、右クリックメニューは
-    // 「ドラッグせずクリックだけした」場合(mousedown〜mouseup間の移動量が
-    // 小さい)にだけ出す -- クロップドラッグの5px閾値(下記mouseupハンドラ)
-    // と同じ基準。
-    const dx = event.clientX - panStartX;
-    const dy = event.clientY - panStartY;
-    if (currentMode === 'pdf' && Math.hypot(dx, dy) <= 5) {
+  });
+  previewEl.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    const duration = Date.now() - rightClickStartTime;
+    // 右ドラッグでパン移動した後はメニューを出さない
+    // 移動なし(5px以内) かつ 400ms以内の短いクリック時のみメニューを表示
+    if (!rightClickMoved && duration < 400) {
       showPreviewContextMenu(event.clientX, event.clientY);
     }
+    rightClickMoved = false;
   });
-  previewEl.addEventListener('contextmenu', (event) => event.preventDefault());
 
   // ── クロップ範囲選択(PreviewLabel相当。左ドラッグでラバーバンド選択) ──
   function clearCropSelection() {
@@ -1122,6 +1204,7 @@
   function applyPreviewMode() {
     const layer = document.querySelector('#text-layer');
     if (layer) layer.style.pointerEvents = previewMode === 'text' ? 'auto' : 'none';
+    if (previewMode !== 'crop') clearCropSelection();
     if (previewMode === 'crop') {
       // テキスト選択モードから切り替わった際、ブラウザが保持しているテキスト
       // 選択(ハイライト)は#text-layerのpointer-eventsをnoneにしても自動では
@@ -1145,10 +1228,6 @@
       [label, togglePreviewMode],
     ]);
   }
-  previewEl.addEventListener('contextmenu', (event) => {
-    event.preventDefault();
-    showPreviewContextMenu(event.clientX, event.clientY);
-  });
 
   // ── 「設定」メニュー & 環境設定モーダル ──
   const settingsMenu = document.querySelector('#settings-menu');
@@ -1487,6 +1566,12 @@
     const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
     if (typing) return;
 
+    // ブラウザ標準のズームキーボードショートカット（Ctrl++, Ctrl+-, Ctrl+0, Ctrl+=）を抑止
+    if (event.ctrlKey && (event.key === '+' || event.key === '-' || event.key === '=' || event.key === '0')) {
+      event.preventDefault();
+      return;
+    }
+
     if (event.key === 'Delete') {
       event.preventDefault();
       doDelete();
@@ -1553,8 +1638,82 @@
 
       if (data.type === 'markdown_opened') {
         markdownContent.innerHTML = renderMarkdownDocument(data.content || '');
+        markdownContent.innerHTML = '';
+        markdownState.isLarge = Boolean(data.is_large);
+        markdownState.totalLines = data.total_lines || 0;
+        markdownState.loadedLines = data.loaded_lines || 0;
+        markdownState.hasMore = Boolean(data.has_more);
+
+        if (markdownState.isLarge) {
+          const banner = document.createElement('div');
+          banner.className = 'large-file-banner';
+          const sizeMb = (data.file_size / (1024 * 1024)).toFixed(1);
+          const linesFmt = Number(markdownState.totalLines).toLocaleString();
+          const loadedFmt = Number(markdownState.loadedLines).toLocaleString();
+          banner.innerHTML = `<span class="banner-icon">📂</span><span><strong>大容量ファイル（${sizeMb} MB / 約${linesFmt}行）</strong>のため、先頭 ${loadedFmt} 行を表示しています。</span>`;
+          markdownContent.appendChild(banner);
+
+          const bodyContainer = document.createElement('div');
+          bodyContainer.id = 'markdown-body-container';
+          bodyContainer.innerHTML = renderMarkdownDocument(data.content || '');
+          markdownContent.appendChild(bodyContainer);
+
+          if (markdownState.hasMore) {
+            const loadMoreContainer = document.createElement('div');
+            loadMoreContainer.className = 'load-more-container';
+            const loadMoreBtn = document.createElement('button');
+            loadMoreBtn.className = 'load-more-btn';
+            loadMoreBtn.type = 'button';
+            loadMoreBtn.textContent = '▼ 続きを読み込む（+5,000行）';
+            loadMoreBtn.addEventListener('click', () => {
+              loadMoreBtn.disabled = true;
+              loadMoreBtn.textContent = '読み込み中...';
+              post({
+                type: 'get_markdown_chunk',
+                start_line: markdownState.loadedLines,
+                count: 5000
+              });
+            });
+            loadMoreContainer.appendChild(loadMoreBtn);
+            markdownContent.appendChild(loadMoreContainer);
+          }
+        } else {
+          markdownContent.innerHTML = renderMarkdownDocument(data.content || '');
+          enhanceMarkdownRender();
+        }
+
         setMode('markdown');
         enhanceMarkdownRender();
+      }
+
+      if (data.type === 'markdown_chunk') {
+        const bodyContainer = document.querySelector('#markdown-body-container') || markdownContent;
+        const chunkWrapper = document.createElement('div');
+        chunkWrapper.innerHTML = renderMarkdownDocument(data.content || '');
+        bodyContainer.appendChild(chunkWrapper);
+
+        markdownState.loadedLines += data.loaded_lines || 0;
+        markdownState.hasMore = Boolean(data.has_more);
+
+        const loadMoreContainer = document.querySelector('.load-more-container');
+        const loadMoreBtn = document.querySelector('.load-more-btn');
+        if (loadMoreBtn) {
+          if (markdownState.hasMore) {
+            loadMoreBtn.disabled = false;
+            loadMoreBtn.textContent = '▼ 続きを読み込む（+5,000行）';
+          } else {
+            if (loadMoreContainer) {
+              loadMoreContainer.innerHTML = '<span style="color: #64748b; font-size: 13px;">すべての行を読み込みました</span>';
+            }
+          }
+        }
+
+        const bannerSpan = document.querySelector('.large-file-banner span:nth-child(2)');
+        if (bannerSpan) {
+          const linesFmt = Number(markdownState.totalLines).toLocaleString();
+          const loadedFmt = Number(markdownState.loadedLines).toLocaleString();
+          bannerSpan.innerHTML = `<strong>大容量ファイル（約${linesFmt}行）</strong>の先頭 ${loadedFmt} 行を表示中`;
+        }
       }
 
       if (data.type === 'export_defaults') {

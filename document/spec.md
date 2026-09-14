@@ -9,6 +9,7 @@
 - **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
 - **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
 - **Version**: v3.2.0
+- **Version**: v3.3.0
 
 `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
@@ -35,6 +36,7 @@ not shipped.
 | Thumbnail-size toolbar | Small / Medium / Large thumbnail size toggle |
 | Thumbnail panel (left) | Page list with a filename tag and page numbers (post-edit position vs. original in-file index) |
 | Preview (right) | Enlarged view of the selected page. Wheel zooms or scrolls (mode set in preferences), right-drag pans or zooms. By default, left-drag selects text to copy; right-click (a click, not a drag) opens a menu to switch left-drag to crop-area selection instead (reverts to text-selection whenever a page is (re)opened) |
+| Preview (right) | Enlarged view of the selected page. Wheel zooms or scrolls (mode set in preferences), right-drag pans or zooms. Whole-page zooming via Ctrl+wheel is disabled, keeping zoom operations scoped strictly to the PDF preview canvas. After panning via right-drag, the context menu is suppressed upon release; right-click menu is shown only for short, stationary clicks (<400ms). By default, left-drag selects text to copy; right-click opens a menu to switch left-drag to crop-area selection instead (reverts to text-selection whenever a page is (re)opened) |
 | Markdown workspace | Shown instead of the PDF workspace when a `.md` file is open |
 | Status bar | The result/progress of the most recent action |
 
@@ -44,6 +46,7 @@ not shipped.
 | --- | --- | --- |
 | 1 | Open PDF | Loads and concatenates multiple PDFs at once, via the file dialog or by dragging file(s) in from Explorer (works whether or not a document is already open). Password-protected files get up to 3 retries. Duplicate files are detected and skipped. |
 | 2 | Open Markdown | Opens `.md`/`.markdown` (file dialog or drag-and-drop) and switches to Markdown preview mode. Mixing PDF and Markdown in one selection is rejected with a warning. |
+| 2 | Open Markdown | Opens `.md`/`.markdown` (file dialog or drag-and-drop) and switches to Markdown preview mode. Mixing PDF and Markdown in one selection is rejected with a warning. Large files (>2MB) are loaded via stream chunks (initial 5,000 lines) with a "Load more" button to stream additional chunks incrementally. |
 | 3 | Page selection | Click (single) / Ctrl+click (multi) / Shift+click (range). |
 | 4 | Reorder | Drag-and-drop thumbnails, including across multiple open files. |
 | 5 | Rotate | Right 90° / left 90° / 180°, multi-select capable, also available from the right-click menu. |
@@ -54,9 +57,11 @@ not shipped.
 | 10 | Save | If only one file is open, you can choose to overwrite it or save as a new file. **If multiple files are open at once, overwriting is not possible; Save always opens a "Save As" dialog and merges every open file's pages into one new PDF** (original files are left unmodified). Determined by `PdfManager::can_overwrite_source()` (whether every page shares the same `source_path`). |
 | 11 | Thumbnail size | Small (80px) / Medium (120px) / Large (200px). |
 | 12 | Preview interaction | Wheel zooms (default) or scrolls; right-drag pans or zooms (mode set in preferences). |
+| 12 | Preview interaction | Wheel zooms (default) or scrolls; right-drag pans or zooms (mode set in preferences). Whole-page zooming via Ctrl+wheel and browser zoom shortcuts (Ctrl++, Ctrl+-, etc.) are disabled; Ctrl+wheel zooms only within the PDF preview. |
 | 13 | Crop area selection | Left-drag on the preview to define the crop region used by image export. |
 | 14 | Unsaved-change confirmation | Confirms before an action that would discard unsaved edits. |
 | 15 | Right-click menu | Rotate right/left/180°, split PDF, export image, delete page, close this file. Right-clicking either the thumbnail panel or the preview shows the same items (the preview also adds "Switch to crop-area selection" / "Switch back to text selection"). |
+| 15 | Right-click menu | Rotate right/left/180°, split PDF, export image, delete page, close this file. Right-clicking either the thumbnail panel or the preview shows the same items (the preview also adds "Switch to crop-area selection" / "Switch back to text selection"). After panning via right-drag, the context menu is suppressed upon release; it is only triggered by short, stationary clicks. |
 | 16 | Keyboard shortcuts | Ctrl+O / Delete / Ctrl+Z / Ctrl+S (see section 7). |
 | 17 | Markdown preview | Headings, bold/italic, inline code, code blocks, blockquotes, lists, links, images, horizontal rules, GFM tables. |
 | 18 | Mermaid diagrams | ` ```mermaid ` fenced blocks are rendered with Mermaid.js. |
@@ -89,6 +94,7 @@ not shipped.
 | `split_pdf` | `indices` | Saves the selected pages as a new PDF |
 | `extract_text` | `indices` | Extracts the given pages' text and opens a save dialog for a .txt file |
 | `save_markdown_pdf` | optional `output_path` | Exports the Markdown preview to PDF. Omitted `output_path` opens a save dialog; tests may pass a path to skip the dialog |
+| `get_markdown_chunk` | `start_line`, `count` | Fetches an additional chunk of text for a large Markdown file |
 | `set_language` | `lang` (`"ja"` / `"en"`) | Switches the UI language. Updates the C++ side's `g_language` and persists it to the registry |
 
 ### native -> JS
@@ -97,6 +103,8 @@ not shipped.
 | --- | --- | --- |
 | `pdf_opened` | `loaded_files`, `failed_files` | Result of loading PDFs |
 | `markdown_opened` | `path`, `content` | Markdown file loaded, body content sent |
+| `markdown_opened` | `path`, `content`, optional `is_large`, `total_lines`, `loaded_lines`, `has_more`, `file_size` | Markdown file loaded, body content (or initial chunk for large files) sent |
+| `markdown_chunk` | `content`, `loaded_lines`, `has_more` | Result of requesting an additional Markdown chunk |
 | `page_rendered` | `page_index`, image data | Rendered page image |
 | `text_layout` | `page_index`, `page_width_pt`, `page_height_pt`, `runs` (each with `x0`/`y0`/`x1`/`y1`/`text`) | Text-layer data for the page; `runs` are top-left-origin line boxes in PDF points |
 | `document_state` | page list, selection state, etc. | Re-sent after each operation |
@@ -161,3 +169,4 @@ overwrite-save is always reflected in the next render.
 - Parallel page rendering / export for large page counts.
 - A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
 - Publish a GitHub Release (v3.2.0 is not tagged yet; v1.1.0 has been published).
+- Publish a GitHub Release (v3.3.0 is not tagged yet; v1.1.0 has been published).

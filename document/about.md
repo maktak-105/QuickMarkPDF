@@ -3,6 +3,7 @@
 ## Version
 
 Ver. v3.2.0
+Ver. v3.3.0
 
 ## Concept
 
@@ -14,6 +15,7 @@ to PDF, including Mermaid diagrams and math (MathJax TeX notation).
 ## Display language
 
 The GUI is Japanese only. There is no in-app language toggle.
+The UI can switch between Japanese and English (toggle button at the right end of the menu bar).
 
 ## Development environment
 

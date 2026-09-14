@@ -167,6 +167,7 @@
             <li data-i18n="help.basic.rotateDelete"><strong>回転・削除</strong>: 選択したページをツールバーまたは右クリックメニューから右90°／左90°／180°回転、削除できます。</li>
             <li data-i18n="help.basic.undo"><strong>元に戻す</strong>: 直前の操作を取り消します（Ctrl+Z）。</li>
             <li data-i18n="help.basic.save"><strong>保存</strong>: 「保存」（Ctrl+S）で編集内容を保存します。開いているファイルが<u>1つだけ</u>のときは「上書き保存」か「名前を付けて保存」かを選べます。<u>複数のPDFファイルを同時に開いているとき</u>は上書き保存はできず、常に名前を付けて保存になります——このとき、開いている全ファイルのページがひとつに<strong>連結された新しいPDF</strong>として書き出されます（元のファイルはどれも変更されません）。</li>
+            <li data-i18n="help.basic.preview"><strong>プレビュー操作</strong>: マウスホイール（またはCtrl+ホイール）で拡大縮小、右ドラッグでパン移動ができます。右ドラッグでのパン操作後はメニューを表示せず、移動のない短い右クリック時のみメニューが開きます。</li>
           </ul>
         </section>
         <section>
@@ -179,7 +180,7 @@
         </section>
         <section>
           <h3 data-i18n="help.markdown.title">Markdownモード</h3>
-          <p data-i18n="help.markdown.body">.md ファイルを開くと、PDF編集の代わりにMarkdownプレビューが表示されます。見出し・リスト・表・コードブロックに加えて、Mermaid記法の図（<code>```mermaid</code>）と、$記法（<code>$...$</code> / <code>$$...$$</code>）による数式（MathJax）に対応しています。設定メニューはこの間も利用できます。</p>
+          <p data-i18n="help.markdown.body">.md ファイルを開くと、PDF編集の代わりにMarkdownプレビューが表示されます。見出し・リスト・表・コードブロックに加えて、Mermaid記法の図（<code>```mermaid</code>）と、$記法（<code>$...$</code> / <code>$$...$$</code>）による数式（MathJax）に対応しています。2MB以上の大容量ファイルは先頭5,000行を瞬時に表示し、下部の「続きを読み込む」ボタンから順次追加表示できます。設定メニューはこの間も利用できます。</p>
         </section>
         <section>
           <h3 data-i18n="help.shortcuts.title">キーボードショートカット</h3>
@@ -200,7 +201,7 @@
   <div class="modal-overlay" id="about-overlay" hidden>
     <div class="modal about-modal">
       <h2>QuickMarkPDF</h2>
-      <p class="about-version">Ver. 3.2.0</p>
+      <p class="about-version">Ver. 3.3.0</p>
       <hr class="about-divider">
       <p data-i18n="about.desc">無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。</p>
       <h3 class="about-section-title" data-i18n="about.devEnv.title">[開発環境]</h3>

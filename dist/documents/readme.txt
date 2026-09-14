@@ -1,5 +1,6 @@
 QuickMarkPDF - Simple PDF page editor
 Distribution package  v3.2.0
+Distribution package  v3.3.0
 
 Free. No ads, no donation requests, no paid features.
 
@@ -42,6 +43,7 @@ Usage (quick start)
    shortcuts, and "Settings" for preview wheel-mode preferences.
 
 The GUI is Japanese only. There is no language toggle.
+The UI can switch between Japanese and English (toggle button at the right end of the menu bar).
 
 Opening files
 -------------
@@ -53,6 +55,9 @@ Opening files
 - Selecting multiple Markdown files opens only the first one and shows a
   warning that the rest were skipped (only one Markdown document can be
   previewed at a time).
+  previewed at a time). Large files (>=2MB) open instantly by loading the
+  first 5,000 lines, with a "Load more" button at the bottom of the preview
+  to fetch subsequent lines.
 - A password-protected PDF prompts for its password, with up to 3 retries.
   A duplicate of an already-open file is detected and skipped rather than
   loaded twice.
@@ -106,6 +111,15 @@ Right-click menu
 Right-clicking a page thumbnail (auto-selecting it if it wasn't already
 selected) opens a menu with: rotate right 90, rotate left 90, rotate 180,
 split PDF, export image, extract text, delete page, and close this file.
+Right-click menu and preview controls
+--------------------------------------
+- Right-clicking a page thumbnail or the preview pane opens a menu with:
+  rotate right 90, rotate left 90, rotate 180, split PDF, export image,
+  extract text, delete page, and close this file (the preview also adds a
+  toggle between crop-selection mode and text-selection mode).
+- Panning by right-clicking and dragging across the preview suppresses the
+  context menu upon releasing the mouse button. The context menu appears
+  only on short, stationary right-clicks.
 
 Keyboard shortcuts
 -------------------
@@ -127,6 +141,8 @@ Two extras are bundled and work offline, no internet connection needed:
   supports).
 - Math: inline `$...$` and display `$$...$$` LaTeX-style notation is
   rendered with MathJax.
+- Large files: files of 2MB or larger stream the first 5,000 lines instantly,
+  and a "Load more" button at the bottom fetches additional chunks on demand.
 Press "Save" (or Ctrl+S) in Markdown mode to export the current preview,
 diagrams and math included, to a PDF file via a save dialog.
 
@@ -137,6 +153,10 @@ behaves over the PDF preview: the default "zoom" mode zooms with the wheel
 and pans with a right-drag; the alternate "scroll" mode scrolls vertically
 with the wheel and zooms with a right-drag instead. The choice is
 remembered between runs.
+with the wheel and zooms with a right-drag instead. Whole-page zooming via
+Ctrl+wheel and browser zoom shortcuts is disabled, keeping zoom operations
+scoped strictly to the PDF preview canvas. The choice is remembered
+between runs.
 
 `QuickMarkPDF_cli.exe` is a lightweight, non-GUI demo binary used to
 exercise the underlying page-editing engine (`--help` / `demo`). It is not
