@@ -518,63 +518,8 @@
   // (see showPreviewContextMenu) -- same rotate/split/export/delete/close
   // actions regardless of which one the user right-clicked from, acting on
   // whatever page is currently selected. `sourcePath` is that page's own
-  function doCopyImage() {
-    if (primaryIndex < 0 || pages.length === 0) return;
-    const img = previewEl.querySelector('img');
-    if (!img) return;
-
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
-    if (cropSelection && previewMode === 'crop') {
-      const sx = Math.min(cropSelection.x0, cropSelection.x1);
-      const sy = Math.min(cropSelection.y0, cropSelection.y1);
-      const sw = Math.abs(cropSelection.x1 - cropSelection.x0);
-      const sh = Math.abs(cropSelection.y1 - cropSelection.y0);
-      if (sw > 0 && sh > 0) {
-        canvas.width = sw;
-        canvas.height = sh;
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-      } else {
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        ctx.drawImage(img, 0, 0);
-      }
-    } else {
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      ctx.drawImage(img, 0, 0);
-    }
-
-    try {
-      canvas.toBlob((blob) => {
-        if (!blob) return;
-        if (navigator.clipboard && navigator.clipboard.write) {
-          navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
-            setStatus(t('status.imageCopied'));
-          }).catch(() => {
-            setStatus(t('status.imageCopied'));
-          });
-        } else {
-          setStatus(t('status.imageCopied'));
-        }
-      }, 'image/png');
-    } catch (e) {
-      setStatus(t('status.imageCopied'));
-    }
-  }
-
-  function doPasteImage() {
-    post({ type: 'paste_image', insert_index: primaryIndex >= 0 ? primaryIndex + 1 : 0 });
-  }
-
-  // file (for "close this file"), which for the thumbnail case is the
-  // page's own `page.path` and for the preview case is the source of
-  // `pages[primaryIndex]`.
   function buildPageActionMenuItems(sourcePath) {
     return [
-      [t('ctxMenu.copyImage'), doCopyImage],
-      [t('ctxMenu.pasteImage'), doPasteImage],
       [t('ctxMenu.rotateRight'), () => doRotate(90)],
       [t('ctxMenu.rotateLeft'), () => doRotate(-90)],
       [t('ctxMenu.rotate180'), () => doRotate(180)],

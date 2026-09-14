@@ -1860,120 +1860,6 @@ void resize_webview() {
     g_controller->put_Bounds(bounds);
 }
 
-bool create_pdf_from_image(const std::wstring& output_pdf_path, int width, int height, const std::vector<uint8_t>& rgb_data) {
-    std::ofstream out(std::filesystem::path(output_pdf_path), std::ios::binary);
-    if (!out.is_open()) return false;
-
-    double pt_w = width * 72.0 / 96.0;
-    double pt_h = height * 72.0 / 96.0;
-
-    std::vector<std::size_t> offsets;
-    out << "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
-
-    offsets.push_back(out.tellp());
-    out << "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
-
-    offsets.push_back(out.tellp());
-    out << "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
-
-    offsets.push_back(out.tellp());
-    out << "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " << pt_w << " " << pt_h
-        << "] /Contents 4 0 R /Resources << /XObject << /Im0 5 0 R >> >> >>\nendobj\n";
-
-    std::string content = "q\n" + std::to_string(pt_w) + " 0 0 " + std::to_string(pt_h) + " 0 0 cm\n/Im0 Do\nQ\n";
-    offsets.push_back(out.tellp());
-    out << "4 0 obj\n<< /Length " << content.size() << " >>\nstream\n" << content << "endstream\nendobj\n";
-
-    offsets.push_back(out.tellp());
-    out << "5 0 obj\n<< /Type /XObject /Subtype /Image /Width " << width << " /Height " << height
-        << " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length " << rgb_data.size() << " >>\nstream\n";
-    out.write(reinterpret_cast<const char*>(rgb_data.data()), rgb_data.size());
-    out << "\nendstream\nendobj\n";
-
-    std::size_t xref_offset = out.tellp();
-    out << "xref\n0 6\n0000000000 65535 f \n";
-    for (auto off : offsets) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%010zu 00000 n \n", off);
-        out << buf;
-    }
-    out << "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" << xref_offset << "\n%%EOF\n";
-    return out.good();
-}
-
-bool paste_image_from_system_clipboard(const std::wstring& temp_pdf_path) {
-    if (!OpenClipboard(g_window)) return false;
-    HBITMAP hBitmap = static_cast<HBITMAP>(GetClipboardData(CF_BITMAP));
-    if (!hBitmap) {
-        CloseClipboard();
-        return false;
-    }
-    BITMAP bm{};
-    GetObject(hBitmap, sizeof(BITMAP), &bm);
-    int width = bm.bmWidth;
-    int height = bm.bmHeight;
-    if (width <= 0 || height <= 0) {
-        CloseClipboard();
-        return false;
-    }
-
-    HDC hdc = GetDC(nullptr);
-    HDC memDC = CreateCompatibleDC(hdc);
-    HBITMAP oldBm = static_cast<HBITMAP>(SelectObject(memDC, hBitmap));
-
-    std::vector<uint8_t> bgra(width * height * 4);
-    BITMAPINFO bi{};
-    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bi.bmiHeader.biWidth = width;
-    bi.bmiHeader.biHeight = -height;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-    GetDIBits(memDC, hBitmap, 0, height, bgra.data(), &bi, DIB_RGB_COLORS);
-
-    std::vector<uint8_t> rgb(width * height * 3);
-    for (int i = 0; i < width * height; ++i) {
-        rgb[i * 3 + 0] = bgra[i * 4 + 2]; // R
-        rgb[i * 3 + 1] = bgra[i * 4 + 1]; // G
-        rgb[i * 3 + 2] = bgra[i * 4 + 0]; // B
-    }
-
-    SelectObject(memDC, oldBm);
-    DeleteDC(memDC);
-    ReleaseDC(nullptr, hdc);
-    CloseClipboard();
-
-    return create_pdf_from_image(temp_pdf_path, width, height, rgb);
-}
-
-void handle_paste_image(const std::wstring& message) {
-    wchar_t temp_path[MAX_PATH]{};
-    GetTempPathW(MAX_PATH, temp_path);
-    auto temp_pdf = std::filesystem::path(temp_path) / (L"quickmarkpdf_paste_" + std::to_wstring(GetTickCount64()) + L".pdf");
-
-    bool ok = paste_image_from_system_clipboard(temp_pdf.wstring());
-    if (!ok) {
-        post_status(tr(L"クリップボードに画像が見つかりません", L"No image found in clipboard"));
-        return;
-    }
-
-    auto res = g_manager.load_pdfs({temp_pdf.u8string()});
-    if (res.loaded_count > 0) {
-        size_t new_page_idx = g_manager.get_page_count() - 1;
-        int raw_insert = extract_int(message, L"insert_index", -1);
-        size_t insert_idx = raw_insert >= 0 ? static_cast<size_t>(raw_insert) : 0;
-        if (insert_idx < new_page_idx) {
-            std::vector<size_t> order(g_manager.get_page_count());
-            for (size_t i = 0; i < g_manager.get_page_count(); ++i) order[i] = i;
-            order.erase(order.begin() + new_page_idx);
-            order.insert(order.begin() + insert_idx, new_page_idx);
-            g_manager.reorder_pages(order);
-        }
-        post_document_state(L"document_state");
-        post_status(tr(L"画像を新しいページとして貼り付けました", L"Pasted image as a new page"));
-    }
-}
-
 void dispatch_message(const std::wstring& message) {
     const auto type = extract_type(message);
     if (type == L"open_pdf") {
@@ -2011,8 +1897,6 @@ void dispatch_message(const std::wstring& message) {
         handle_save_markdown_pdf();
     } else if (type == L"split_pdf") {
         handle_split_pdf(message);
-    } else if (type == L"paste_image") {
-        handle_paste_image(message);
     } else if (type == L"extract_text") {
         handle_extract_text(message);
     } else if (type == L"get_markdown_chunk") {
