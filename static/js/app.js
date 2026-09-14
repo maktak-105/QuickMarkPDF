@@ -109,6 +109,27 @@
     if (hasBridge()) window.chrome.webview.postMessage(JSON.stringify(payload));
   };
 
+  // サムネイルのrender_pageは、開いた瞬間に全ページ分を一気に投げると
+  // C++側がUIスレッド上で1件ずつ直列処理するため、ページ数が多いPDFほど
+  // 後方のサムネイル(や、その後に届くプレビュー)の表示が線形に遅れていた。
+  // 画面内に実際にスクロールで入ってきたサムネイルだけをリクエストすることで、
+  // 開いた直後に見えている分だけを即座に描画させる。
+  let thumbObserver = null;
+  const requestedThumbIndices = new Set();
+  function ensureThumbObserver() {
+    if (thumbObserver) thumbObserver.disconnect();
+    thumbObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const index = Number(entry.target.dataset.pageIndex);
+        if (requestedThumbIndices.has(index)) continue;
+        requestedThumbIndices.add(index);
+        const thumbWidth = NUM_GUTTER_W + THUMB_SIZES[currentThumbSize].w;
+        post({ type: 'render_page', page_index: index, width: thumbWidth });
+      }
+    }, { root: thumbnailPanel, rootMargin: '400px 0px', threshold: 0 });
+  }
+
   // Compact Markdown -> HTML converter. Covers headings, paragraphs,
   // bold/italic, inline code, fenced code blocks (incl. ```mermaid blocks),
   // blockquotes (recursive), simple (non-nested) bullet/numbered lists,
@@ -744,25 +765,33 @@
       return;
     }
 
-    pageList.className = '';
-    pageList.replaceChildren();
-    const thumbWidth = THUMB_SIZES[currentThumbSize].w;
-    pages.forEach((page, index) => {
-      pageList.appendChild(buildPageItem(page, index, index + 1));
-      post({ type: 'render_page', page_index: index, width: NUM_GUTTER_W + thumbWidth });
-    });
-
     // The page count/positions may have just changed (delete/reorder/undo);
     // keep whatever selection still fits, defaulting to the first page if
-    // nothing survived.
+    // nothing survived. Resolved before building the DOM/thumbnail requests
+    // below so the preview request (primaryIndex) can go out first.
     selectedIndices = new Set(Array.from(selectedIndices).filter((i) => i < pages.length));
     if (primaryIndex < 0 || primaryIndex >= pages.length) {
       primaryIndex = selectedIndicesSorted()[0] ?? 0;
     }
     if (selectedIndices.size === 0) selectedIndices.add(primaryIndex);
+
+    // プレビュー(今表示するページ)を、サムネイル一覧より先にリクエストする。
+    // C++側はWebMessageを受信順に直列処理するため、後回しにすると全サムネイル
+    // の処理が終わるまでプレビューが表示されなかった。
+    requestPreviewRender(PREVIEW_RENDER_WIDTH, { highRes: false });
+
+    pageList.className = '';
+    pageList.replaceChildren();
+    requestedThumbIndices.clear();
+    ensureThumbObserver();
+    pages.forEach((page, index) => {
+      const item = buildPageItem(page, index, index + 1);
+      pageList.appendChild(item);
+      thumbObserver.observe(item);
+    });
+
     applySelectionToDom();
     updateToolbarEnabled();
-    requestPreviewRender(PREVIEW_RENDER_WIDTH, { highRes: false });
   }
 
   // ── サムネイルサイズ切替（ツールバー2段目） ──
@@ -784,12 +813,12 @@
     // Mirrors ThumbnailPanel._apply_size: panel width = gutter + body + scrollbar/border allowance.
     document.documentElement.style.setProperty('--panel-w', `${NUM_GUTTER_W + w + 24}px`);
     if (pages.length > 0) {
-      // Re-render every thumbnail at the new width; renderPageList() already
-      // does this same walk on open/delete/reorder/undo.
-      const thumbWidth = THUMB_SIZES[size].w;
-      pages.forEach((_page, index) => {
-        post({ type: 'render_page', page_index: index, width: NUM_GUTTER_W + thumbWidth });
-      });
+      // Re-render thumbnails at the new width -- only the ones currently
+      // visible go out immediately; off-screen ones are re-requested by the
+      // observer as they scroll into view (same lazy path as renderPageList()).
+      requestedThumbIndices.clear();
+      ensureThumbObserver();
+      pageList.querySelectorAll('.page-item').forEach((item) => thumbObserver.observe(item));
     }
     const sizeName = t(`sizeToolbar.${size}`);
     setStatus(t('status.thumbSizeChanged', { sizeName }));
