@@ -3,6 +3,7 @@
 #include <wincred.h>
 #include <wincrypt.h>
 #include <shobjidl.h>
+#include <shlwapi.h>
 #include <commctrl.h>
 #include <unknwn.h>
 #include <WebView2.h>
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
@@ -19,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "engine.h"
@@ -147,6 +150,34 @@ public:
     }
 };
 
+class WebResourceRequestedHandler : public ICoreWebView2WebResourceRequestedEventHandler {
+    std::function<HRESULT(ICoreWebView2*, ICoreWebView2WebResourceRequestedEventArgs*)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit WebResourceRequestedHandler(
+        std::function<HRESULT(ICoreWebView2*, ICoreWebView2WebResourceRequestedEventArgs*)> fn)
+        : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2WebResourceRequestedEventHandler) {
+            *ppv = static_cast<ICoreWebView2WebResourceRequestedEventHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args) override {
+        return fn_(sender, args);
+    }
+};
+
 class PrintToPdfCompletedHandler : public ICoreWebView2PrintToPdfCompletedHandler {
     std::function<HRESULT(HRESULT, BOOL)> fn_;
     std::atomic<ULONG> ref_{1};
@@ -188,7 +219,9 @@ using ComPtr = std::unique_ptr<T, ComDeleter<T>>;
 // Global session state
 // =====================
 
+HINSTANCE g_instance = nullptr;
 HWND g_window = nullptr;
+ICoreWebView2Environment* g_environment = nullptr;
 ICoreWebView2Controller* g_controller = nullptr;
 ICoreWebView2* g_webview = nullptr;
 quickmarkpdf::PdfManager g_manager;
@@ -383,8 +416,47 @@ void save_last_used_dir_setting() {
 // the only consumer of the response messages, and its shape never varies,
 // so a couple of targeted lookups are enough -- no general JSON parser.
 
-std::wstring file_url(const std::filesystem::path& path) {
-    return L"file:///" + path.generic_wstring();
+// UI一式はファイルとして配布せず exe 本体の RCDATA として埋め込む(QuickMarkPDF.rc
+// 参照)。resource_id はそこで定義した IDR_INDEX_HTML/IDR_MATHJAX_JS/IDR_MERMAID_JS
+// と一致させる必要がある -- .rc の #define はこの翻訳単位からは見えないため、
+// ここでも同じ数値を独立に定義する。
+constexpr int IDR_INDEX_HTML = 200;
+constexpr int IDR_MATHJAX_JS = 201;
+constexpr int IDR_MERMAID_JS = 202;
+
+// 返り値の data は exe のリソースセクションを指すポインタで、寿命はプロセス
+// 終了までモジュール自体が保証する -- 呼び出し側で解放してはいけない。
+// 見つからない場合は {nullptr, 0}。
+std::pair<const std::byte*, DWORD> load_resource_bytes(int resource_id) {
+    HRSRC res_info = FindResourceW(g_instance, MAKEINTRESOURCEW(resource_id), RT_RCDATA);
+    if (!res_info) return {nullptr, 0};
+    HGLOBAL res_handle = LoadResource(g_instance, res_info);
+    if (!res_handle) return {nullptr, 0};
+    const auto* data = static_cast<const std::byte*>(LockResource(res_handle));
+    const DWORD size = SizeofResource(g_instance, res_info);
+    if (!data || size == 0) return {nullptr, 0};
+    return {data, size};
+}
+
+// Navigate先はこの仮想ホストで、実ファイルシステム上のどこにも存在しない
+// (SetVirtualHostNameToFolderMappingではなくWebResourceRequestedで応答するため、
+// exe/DLL以外の外部ファイルが要らない)。https系スキームなので file:// と違い
+// 通常のCORS/セキュリティコンテキストで動く。
+const wchar_t* const kAppOrigin = L"https://appassets.quickmarkpdf.local/";
+
+// リクエストされたパス(仮想ホストからの相対、先頭スラッシュ無し)を埋め込み
+// リソースへ解決する。一致しなければ resource_id==0 を返し、呼び出し側は
+// レスポンスを設定しない(WebView2側で404扱いになる)。
+struct EmbeddedAsset {
+    int resource_id = 0;
+    const wchar_t* content_type = L"application/octet-stream";
+};
+
+EmbeddedAsset resolve_embedded_asset(const std::wstring& path) {
+    if (path == L"index.html") return {IDR_INDEX_HTML, L"text/html; charset=utf-8"};
+    if (path == L"vendor/mathjax/tex-svg.js") return {IDR_MATHJAX_JS, L"text/javascript; charset=utf-8"};
+    if (path == L"vendor/mermaid/mermaid.min.js") return {IDR_MERMAID_JS, L"text/javascript; charset=utf-8"};
+    return {};
 }
 
 std::wstring json_string(const std::wstring& value) {
@@ -1907,7 +1979,7 @@ void dispatch_message(const std::wstring& message) {
     }
 }
 
-bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem::path& ui_path) {
+bool load_ui(const std::filesystem::path& executable_dir) {
     const auto loader_path = executable_dir / L"WebView2Loader.dll";
     HMODULE loader = LoadLibraryW(loader_path.c_str());
     if (!loader) {
@@ -1933,7 +2005,7 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
 
     const HRESULT create_result = create_environment(
         nullptr, user_data_folder.c_str(), nullptr,
-        new EnvCompletedHandler([ui_path](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
+        new EnvCompletedHandler([](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
             if (FAILED(result) || environment == nullptr) {
                 wchar_t msg[256]{};
                 swprintf_s(msg,
@@ -1943,9 +2015,14 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                 MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
                 return result;
             }
+            // WebResourceRequestedHandlerがCreateWebResourceResponseを呼ぶのに
+            // 必要(ページロード中の任意のタイミングで呼ばれるため、ここでAddRef
+            // してプロセス生存中ずっと有効な参照をグローバルに持つ)。
+            g_environment = environment;
+            g_environment->AddRef();
             const HRESULT controller_request = environment->CreateCoreWebView2Controller(
-                g_window, new ControllerCompletedHandler([ui_path](HRESULT controller_result,
-                                                                    ICoreWebView2Controller* controller) -> HRESULT {
+                g_window, new ControllerCompletedHandler([](HRESULT controller_result,
+                                                              ICoreWebView2Controller* controller) -> HRESULT {
                     if (FAILED(controller_result) || controller == nullptr) {
                         wchar_t msg[256]{};
                         swprintf_s(msg,
@@ -1971,6 +2048,50 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                         settings->put_IsZoomControlEnabled(FALSE);
                         settings->Release();
                     }
+
+                    // index.html/vendor/*.jsをファイルシステムではなくexe埋め込み
+                    // リソースから返す。kAppOrigin宛のリクエストだけを対象にする
+                    // フィルタなので、PDF/Markdownを開く際の別処理には影響しない。
+                    g_webview->AddWebResourceRequestedFilter(
+                        (std::wstring(kAppOrigin) + L"*").c_str(), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                    EventRegistrationToken resource_token{};
+                    g_webview->add_WebResourceRequested(
+                        new WebResourceRequestedHandler(
+                            [](ICoreWebView2*, ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                                ICoreWebView2WebResourceRequest* request = nullptr;
+                                if (FAILED(args->get_Request(&request)) || !request) return S_OK;
+                                LPWSTR raw_uri = nullptr;
+                                const HRESULT uri_result = request->get_Uri(&raw_uri);
+                                request->Release();
+                                if (FAILED(uri_result) || !raw_uri) return S_OK;
+                                const std::wstring uri(raw_uri);
+                                CoTaskMemFree(raw_uri);
+
+                                const std::wstring origin(kAppOrigin);
+                                if (uri.rfind(origin, 0) != 0) return S_OK;  // フィルタ外のURI(念のため)
+                                const auto asset = resolve_embedded_asset(uri.substr(origin.size()));
+                                if (asset.resource_id == 0 || !g_environment) return S_OK;
+
+                                const auto [data, size] = load_resource_bytes(asset.resource_id);
+                                if (!data) return S_OK;
+
+                                IStream* stream = SHCreateMemStream(
+                                    reinterpret_cast<const BYTE*>(data), size);
+                                if (!stream) return S_OK;
+
+                                const std::wstring headers = std::wstring(L"Content-Type: ") + asset.content_type +
+                                                              L"\r\nCache-Control: no-cache";
+                                ICoreWebView2WebResourceResponse* response = nullptr;
+                                g_environment->CreateWebResourceResponse(stream, 200, L"OK", headers.c_str(),
+                                                                          &response);
+                                stream->Release();
+                                if (response) {
+                                    args->put_Response(response);
+                                    response->Release();
+                                }
+                                return S_OK;
+                            }),
+                        &resource_token);
 
                     EventRegistrationToken message_token{};
                     const HRESULT add_result = g_webview->add_WebMessageReceived(
@@ -2023,12 +2144,13 @@ bool load_ui(const std::filesystem::path& executable_dir, const std::filesystem:
                         &nav_token);
 
                     resize_webview();
-                    const HRESULT nav_result = g_webview->Navigate(file_url(ui_path).c_str());
+                    const std::wstring start_url = std::wstring(kAppOrigin) + L"index.html";
+                    const HRESULT nav_result = g_webview->Navigate(start_url.c_str());
                     if (FAILED(nav_result)) {
                         wchar_t msg[512]{};
                         swprintf_s(msg, tr(L"Navigateに失敗しました。\nHRESULT: 0x%08X\nパス: %s",
                                             L"Navigate failed.\nHRESULT: 0x%08X\nPath: %s"),
-                                   static_cast<unsigned>(nav_result), file_url(ui_path).c_str());
+                                   static_cast<unsigned>(nav_result), start_url.c_str());
                         MessageBoxW(g_window, msg, L"QuickMarkPDF", MB_ICONERROR);
                     }
                     return S_OK;
@@ -2125,16 +2247,13 @@ std::vector<std::wstring> parse_startup_document_args(PWSTR command_line) {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_command) {
+    g_instance = instance;
     g_language = load_language_setting();
     g_startup_paths = parse_startup_document_args(command_line);
 
     wchar_t executable_path[MAX_PATH]{};
     GetModuleFileNameW(nullptr, executable_path, MAX_PATH);
     const auto executable_dir = std::filesystem::path(executable_path).parent_path();
-    // dist/binary/ is a flat layout (see ___appli-template/01_フォルダ構成.md):
-    // bundle_html.py always produces a single self-contained index.html next
-    // to the exe, so there is no "ui/" subfolder to look for.
-    const auto ui_path = std::filesystem::absolute(executable_dir / L"index.html");
 
     constexpr int kAppIconResourceId = 101;
     HICON app_icon_large = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(kAppIconResourceId), IMAGE_ICON,
@@ -2214,7 +2333,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     // without this, the common-item dialog can fail to appear at all, with
     // GetOpenFileNameW simply returning FALSE and no dialog ever shown.
     OleInitialize(nullptr);
-    if (!load_ui(executable_dir, ui_path)) return 1;
+    if (!load_ui(executable_dir)) return 1;
 
     // No-ops unless QUICKMARKPDF_TEST_PORT is set -- see test_api_server.h.
     quickmarkpdf::maybe_start_test_api_server(run_test_command_on_main_thread);

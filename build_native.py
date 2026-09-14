@@ -85,7 +85,24 @@ def build():
     import bundle_html
     bundle_html.bundle(binary_dir)
 
-    # 0. アイコン/バージョン情報リソース
+    # UI一式をexeのRCDATAとして埋め込むため、windresが相対パスで拾える
+    # native_dir配下へ一時コピーする(QuickMarkPDF.rcのIDR_INDEX_HTML等が参照する
+    # generated_*ファイル。.gitignore済みの中間ファイルで、実体は
+    # dist/binary/index.htmlとresources/vendor/)。
+    resource_assets = [
+        (os.path.join(binary_dir, "index.html"), os.path.join(native_dir, "generated_index.html")),
+        (os.path.join(base_dir, "resources", "vendor", "mathjax", "tex-svg.js"),
+         os.path.join(native_dir, "generated_mathjax.js")),
+        (os.path.join(base_dir, "resources", "vendor", "mermaid", "mermaid.min.js"),
+         os.path.join(native_dir, "generated_mermaid.js")),
+    ]
+    for src, dst in resource_assets:
+        if not os.path.exists(src):
+            print(f"[エラー] 埋め込み対象が見つかりません: {src}")
+            return False
+        shutil.copy2(src, dst)
+
+    # 0. アイコン/バージョン情報/UI埋め込みリソース
     resource_src = os.path.join(native_dir, "QuickMarkPDF.rc")
     resource_obj = os.path.join(native_dir, "QuickMarkPDF_res.o")
     windres = os.path.join(compiler_dir, "llvm-windres.exe")
@@ -107,6 +124,7 @@ def build():
         "-lkernel32", "-luser32", "-lgdi32", "-lole32", "-loleaut32", "-luuid",
         "-lcomctl32", "-lcomdlg32", "-lshell32", "-lcrypt32", "-lcredui", "-lwindowscodecs",
         "-lws2_32",  # test_api_server.cpp: loopback-only TCP test control server
+        "-lshlwapi",  # SHCreateMemStream: embedded UI resources -> IStream for CreateWebResourceResponse
     ]
 
     # 1. GUI本体 (WebView2ホスト)

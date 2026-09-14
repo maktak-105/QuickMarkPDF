@@ -6,9 +6,22 @@ IDI_ICON1 ICON "QuickMarkPDF.ico"
 // エントリポイントが見つからず起動時にクラッシュする。
 1 24 "QuickMarkPDF.manifest"
 
+// UI一式(index.html/Mermaid.js/MathJax)をexe本体にRCDATAとして埋め込む。
+// webview_main.cppがWebResourceRequestedでこれらをメモリから返し、
+// https://appassets.quickmarkpdf.local/ 宛のNavigateに応答するため、実行時に
+// index.html/vendor/フォルダが exe と同じ場所に無くても起動できる
+// (pdfium.dll/WebView2Loader.dllの2DLLのみが引き続き外部ファイルとして必要)。
+// ここで参照する generated_*.html/.js は build_native.py がビルドの都度
+// dist/binary/index.html・resources/vendor/ からこのディレクトリにコピーする
+// 中間ファイル(.gitignore済み) -- windresの相対パス解決を単純にするため。
+#define IDR_INDEX_HTML 200
+#define IDR_MATHJAX_JS 201
+#define IDR_MERMAID_JS 202
+IDR_INDEX_HTML RCDATA "generated_index.html"
+IDR_MATHJAX_JS RCDATA "generated_mathjax.js"
+IDR_MERMAID_JS RCDATA "generated_mermaid.js"
+
 1 VERSIONINFO
-FILEVERSION 3,2,0,0
-PRODUCTVERSION 3,2,0,0
 FILEVERSION 3,3,0,0
 PRODUCTVERSION 3,3,0,0
 FILEOS 0x40004L
@@ -20,13 +33,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "maktak-105"
       VALUE "FileDescription", "QuickMarkPDF"
-      VALUE "FileVersion", "3.2.0.0"
       VALUE "FileVersion", "3.3.0.0"
       VALUE "InternalName", "QuickMarkPDF"
       VALUE "LegalCopyright", "MIT License"
       VALUE "OriginalFilename", "QuickMarkPDF.exe"
       VALUE "ProductName", "QuickMarkPDF"
-      VALUE "ProductVersion", "3.2.0.0"
       VALUE "ProductVersion", "3.3.0.0"
     END
   END
