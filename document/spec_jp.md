@@ -22,7 +22,7 @@
 - `pdf_backend.cpp`: PDFiumを使ったページ描画・編集のラッパー
 - `image_io.cpp`: PNG書き出し（自前実装）とJPEG書き出し（Windows Imaging Component経由）
 - `webview_main.cpp`: Win32ウィンドウ生成、WebView2初期化、JSONメッセージの受け渡し、`IFileDialog`/`GetOpenFileNameW`/`GetSaveFileNameW`によるファイル選択・保存ダイアログ
-- フロントエンド: フレームワーク非依存。`bundle_html.py`で1枚のHTMLへバンドルし、その際にMermaid/MathJaxの`<script>`タグとMathJax設定を注入する
+- フロントエンド: フレームワーク非依存。`bundle_html.py`で1枚のHTMLへバンドルし、その際にMermaid/MathJaxの`<script>`タグとMathJax設定を注入する。バンドル済みHTMLとMermaid.js/MathJaxは、ビルド時に`QuickMarkPDF.exe`へ`RCDATA`リソースとして埋め込まれ、仮想オリジン（`https://appassets.quickmarkpdf.local/`）宛のリクエストに`WebResourceRequested`ハンドラが応答する形で提供される -- 実行時に`index.html`/`vendor/`をexeの隣に置く必要はない
 
 ## 3. 画面構成
 
@@ -129,6 +129,10 @@
 - **MarkdownのPDF書き出し**: WebView2の`PrintToPdf`によるA4相当のページ出力。ツールバー等のUI要素は`@media print`で除外される
 
 ## 9. パフォーマンス
+
+### サムネイルの遅延読込み
+
+ドキュメントを開いた瞬間にサムネイルの`render_page`リクエストを全ページ分一斉送信することはしない。C++側は`render_page`メッセージをUIスレッド上で1件ずつ同期処理するため（下記「並列化設計」参照）、開いた瞬間に全ページ分をリクエストすると、プレビュー自体、およびその後の各サムネイルの表示が、ページ数にほぼ比例して遅延してしまう。代わりにプレビューを先にリクエストし、サムネイルはサムネイルパネル内で実際に画面内へスクロールで入ったものだけを`IntersectionObserver`（`app.js`の`ensureThumbObserver`、`rootMargin`は400px）で都度リクエストする。
 
 ### 並列化設計
 

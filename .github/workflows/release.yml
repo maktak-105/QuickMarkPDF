@@ -45,7 +45,6 @@ jobs:
             'dist/binary/QuickMarkPDF_cli.exe',
             'dist/binary/pdfium.dll',
             'dist/binary/WebView2Loader.dll',
-            'dist/binary/index.html',
             'dist/documents/readme.txt',
             'dist/documents/readme_jp.txt',
             'dist/documents/history.txt',
@@ -56,14 +55,11 @@ jobs:
           foreach ($file in $files) {
             if (!(Test-Path -LiteralPath $file)) { throw "Missing distribution file: $file" }
           }
-          $vendor = 'dist/binary/vendor'
-          if (!(Test-Path -LiteralPath $vendor)) { throw "Missing distribution file: $vendor" }
           $staging = Join-Path $env:RUNNER_TEMP 'QuickMarkPDF-package'
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
           foreach ($file in $files) {
             Copy-Item -LiteralPath $file -Destination $staging -Force
           }
-          Copy-Item -LiteralPath $vendor -Destination (Join-Path $staging 'vendor') -Recurse -Force
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'QuickMarkPDF-binary.zip') -Force
 
       - name: Upload release asset
@@ -79,5 +75,5 @@ jobs:
 
             Download `QuickMarkPDF-binary.zip`, extract every file into the same folder, and run `QuickMarkPDF.exe`.
 
-            Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebView2Loader.dll`, `index.html`, and `vendor/` together.
+            Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `WebView2Loader.dll` together (the UI is bundled inside the exe, so no `index.html` or `vendor/` folder is needed).
             Windows 11 already includes WebView2 Runtime. On some Windows 10 / LTSC / Server PCs, install Microsoft Edge WebView2 Runtime (Evergreen).

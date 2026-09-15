@@ -8,7 +8,6 @@
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
 - **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
 - **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
-- **Version**: v3.2.0
 - **Version**: v3.3.0
 
 `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6)
@@ -25,7 +24,7 @@ not shipped.
 - `pdf_backend.cpp`: PDFium wrapper for page rendering/editing.
 - `image_io.cpp`: a hand-written PNG encoder plus JPEG encoding via the Windows Imaging Component.
 - `webview_main.cpp`: creates the Win32 window, initializes WebView2, relays JSON messages, and drives file dialogs (`IFileDialog`/`GetOpenFileNameW`/`GetSaveFileNameW`).
-- Frontend: framework-free. `bundle_html.py` bundles it into a single self-contained `index.html`, injecting the Mermaid/MathJax `<script>` tags and MathJax config at bundle time.
+- Frontend: framework-free. `bundle_html.py` bundles it into a single self-contained `index.html`, injecting the Mermaid/MathJax `<script>` tags and MathJax config at bundle time. The bundled HTML plus Mermaid.js/MathJax are embedded into `QuickMarkPDF.exe` as `RCDATA` resources at build time and served over a virtual origin (`https://appassets.quickmarkpdf.local/`) via a `WebResourceRequested` handler -- no `index.html`/`vendor/` files are needed next to the exe at runtime.
 
 ## 3. Screen layout
 
@@ -138,6 +137,17 @@ not shipped.
 
 ## 9. Performance
 
+### Lazy thumbnail loading
+
+Thumbnail `render_page` requests are not all fired at once when a document
+opens. The C++ side processes each `render_page` message synchronously on
+the UI thread (see Parallelization below), so requesting every page's
+thumbnail immediately would delay the preview -- and every later thumbnail
+-- roughly in proportion to the page count on large documents. Instead, the
+preview is requested first, and thumbnails are requested one by one via
+`IntersectionObserver` only once they actually scroll into view within the
+thumbnail panel (`app.js`'s `ensureThumbObserver`, 400px `rootMargin`).
+
 ### Parallelization
 
 Page rendering and export are currently synchronous. Parallel rendering of
@@ -168,5 +178,4 @@ overwrite-save is always reflected in the next render.
 - Support nested lists in Markdown.
 - Parallel page rendering / export for large page counts.
 - A product-grade CLI (`QuickMarkPDF_cli.exe` is a page-model demo today).
-- Publish a GitHub Release (v3.2.0 is not tagged yet; v1.1.0 has been published).
 - Publish a GitHub Release (v3.3.0 is not tagged yet; v1.1.0 has been published).

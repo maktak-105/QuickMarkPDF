@@ -1,5 +1,29 @@
 QuickMarkPDF - Change log
 
+v3.3.0 (2026-09-14)
+- Fixed Ctrl+mouse wheel / browser zoom shortcuts zooming the whole UI instead of just the PDF preview.
+- Fixed large Markdown files (100MB+) causing memory pressure or freezing: files 2MB+ now stream the first 5,000 lines instantly with a "Load more" button, and math-protection processing is skipped for blocks with no math syntax.
+- Fixed slow preview/thumbnail display right after opening a PDF with many pages by requesting the preview first and loading thumbnails one by one via IntersectionObserver as they scroll into view, instead of requesting every thumbnail at once.
+- Improved the right-click menu so it no longer pops up accidentally after panning the preview via right-click-drag.
+- Bundled the UI (index.html, Mermaid.js, MathJax) inside the exe as embedded resources. `index.html` and the `vendor` folder are no longer needed alongside `QuickMarkPDF.exe`.
+
+v3.2.0 (2026-08-30)
+- Added drag-and-drop opening: dropping a PDF or Markdown file from Explorer onto the window opens it, whether or not a document is already open.
+
+v3.1.0 (2026-08-30)
+- Fixed the main window failing to reappear on the primary monitor after being moved to a second display that was later disconnected.
+- Reduced the default window size from 1280x820 to 1024x768.
+
+v3.0.0 (2026-08-29)
+- Added an "Extract text" right-click menu item: choose all pages, a page range, or the current preview page, and save the result as a .txt file.
+
+v2.2.1 (2026-08-28)
+- Added text selection and copy on the PDF preview (enabled by default; switch to crop-selection mode from the right-click menu).
+- Added a Japanese/English UI language toggle covering the whole UI, including native dialogs.
+- Made the preview's render resolution dynamic (quick 900px preview, then a high-resolution re-render once zooming settles) to fix blurry text at high zoom.
+- Fixed leftover selection highlights when switching selection modes, thumbnail Up/Down arrow-key focus, and the missing app icon in the titlebar/taskbar.
+- Refreshed the app icon with a "PDF" label and the Quick series' "Q" motif.
+
 v1.2.1 (2026-08-27)
 - Added Up/Down arrow key page switching when the thumbnail panel has focus (it used to just scroll).
 - Sped up opening PDFs and the file-association double-click launch by caching the open PDFium document per source file instead of re-reading/re-parsing it for every page.

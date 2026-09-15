@@ -2,7 +2,6 @@
 
 ## Version
 
-Ver. v3.2.0
 Ver. v3.3.0
 
 ## Concept

@@ -82,15 +82,18 @@ def build():
     binary_dir = os.path.join(dist_dir, "binary")
     os.makedirs(binary_dir, exist_ok=True)
 
-    import bundle_html
-    bundle_html.bundle(binary_dir)
-
     # UI一式をexeのRCDATAとして埋め込むため、windresが相対パスで拾える
-    # native_dir配下へ一時コピーする(QuickMarkPDF.rcのIDR_INDEX_HTML等が参照する
-    # generated_*ファイル。.gitignore済みの中間ファイルで、実体は
-    # dist/binary/index.htmlとresources/vendor/)。
+    # native_dir配下へ直接バンドル生成する(QuickMarkPDF.rcのIDR_INDEX_HTML等が
+    # 参照するgenerated_*ファイル。.gitignore済みの中間ファイル)。
+    # dist/binary/にはもう index.html/vendor/ を置かない -- exe起動時は
+    # WebResourceRequestedハンドラがこのRCDATAから返すため、配布物として
+    # 外部に置く必要が無い(dist/binaryにはexe本体とpdfium.dll/
+    # WebView2Loader.dllの2DLLのみが並ぶ)。
+    import bundle_html
+    bundle_html.bundle(native_dir)
+    os.replace(os.path.join(native_dir, "index.html"), os.path.join(native_dir, "generated_index.html"))
+
     resource_assets = [
-        (os.path.join(binary_dir, "index.html"), os.path.join(native_dir, "generated_index.html")),
         (os.path.join(base_dir, "resources", "vendor", "mathjax", "tex-svg.js"),
          os.path.join(native_dir, "generated_mathjax.js")),
         (os.path.join(base_dir, "resources", "vendor", "mermaid", "mermaid.min.js"),
@@ -170,17 +173,6 @@ def build():
             shutil.copy2(dll, os.path.join(binary_dir, os.path.basename(dll)))
         else:
             print(f"[警告] DLLが見つかりませんでした: {dll}")
-
-    # 4. Mermaid/MathJax 同梱資産(Markdown内のダイアグラム/数式描画用。
-    # index.html は file:// でNavigateされるので相対パスで解決できるよう
-    # dist/binary/vendor/ 配下にそのままコピーする)
-    vendor_src = os.path.join(base_dir, "resources", "vendor")
-    vendor_dst = os.path.join(binary_dir, "vendor")
-    if os.path.isdir(vendor_src):
-        shutil.copytree(vendor_src, vendor_dst, dirs_exist_ok=True)
-        print(f"[成功] vendor資産をコピーしました: {vendor_dst}")
-    else:
-        print(f"[警告] vendor資産が見つかりませんでした: {vendor_src}")
 
     print(f"\n[完成] 配布用バイナリを dist/binary フォルダに生成完了: {binary_dir}")
     return True

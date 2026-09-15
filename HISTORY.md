@@ -14,10 +14,12 @@ This file records the major changes in each public version.
 
 - Fixed an issue where Ctrl+mouse wheel or browser zoom keyboard shortcuts (Ctrl++, Ctrl+-, Ctrl+0, etc.) zoomed the entire UI, distorting toolbar icons and thumbnail layouts. Browser-level zooming has been disabled, restricting Ctrl+wheel zoom strictly to the active PDF preview canvas.
 - Fixed an issue where opening very large Markdown files (100MB+) caused heavy memory pressure or freezing. Implemented streaming chunk reading for files >=2MB (loading an initial 5,000 lines instantly) along with a "▼ Load more (+5,000 lines)" button to fetch subsequent chunks on demand. Also added a bypass for math syntax protection when no `$` symbols are present, dramatically speeding up Markdown rendering.
+- Fixed slow preview/thumbnail display right after opening a PDF with many pages. All thumbnail `render_page` requests used to fire at once on open, and since the C++ side processes them one at a time on the UI thread, the preview itself was delayed proportionally to the page count. The preview is now requested first, and thumbnails are requested one by one via `IntersectionObserver` only as they actually scroll into view.
 
 ### Changes
 
 - Improved right-click menu behavior in the preview pane: after panning via right-click and drag, releasing the mouse button no longer accidentally opens the context menu. The context menu is now triggered exclusively on short, stationary right-clicks (<400ms).
+- Bundled the UI (`index.html`, Mermaid.js, MathJax) inside the exe as RCDATA resources, removing the external-file dependency. `index.html`/`vendor/` are no longer needed at runtime -- `QuickMarkPDF.exe` now runs with just `pdfium.dll` and `WebView2Loader.dll` alongside it (also dropped from the distribution ZIP).
 
 ## v3.2.0 (2026-08-30)
 

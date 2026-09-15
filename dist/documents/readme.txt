@@ -1,5 +1,4 @@
 QuickMarkPDF - Simple PDF page editor
-Distribution package  v3.2.0
 Distribution package  v3.3.0
 
 Free. No ads, no donation requests, no paid features.
@@ -13,8 +12,8 @@ Binary release
 GitHub Actions builds `QuickMarkPDF-binary.zip` when a `v*` tag is pushed.
 The ZIP is not stored in the repository. Download it from:
 https://github.com/maktak-105/QuickMarkPDF/releases
-and extract it. All distribution files are placed in the same folder
-without subfolders (except `vendor/`, which must stay next to index.html).
+and extract it. All distribution files are placed in the same folder,
+without subfolders.
 
 Requirements
 ------------
@@ -33,8 +32,9 @@ it is not the Runtime itself.
 Usage (quick start)
 -------------------
 1. Extract the distribution ZIP into any folder.
-2. Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebView2Loader.dll`, `index.html`,
-   and the `vendor` folder together.
+2. Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `WebView2Loader.dll` together
+   (the GUI is bundled inside the exe, so no `index.html` or `vendor`
+   folder is needed).
 3. Run `QuickMarkPDF.exe`.
 4. Click "Open" to load one or more PDF files, or a single Markdown (.md) file.
 5. Select pages in the left thumbnail panel, then use the toolbar or the
@@ -54,7 +54,6 @@ Opening files
   from different source files apart.
 - Selecting multiple Markdown files opens only the first one and shows a
   warning that the rest were skipped (only one Markdown document can be
-  previewed at a time).
   previewed at a time). Large files (>=2MB) open instantly by loading the
   first 5,000 lines, with a "Load more" button at the bottom of the preview
   to fetch subsequent lines.
@@ -106,11 +105,6 @@ right-clicked). Text is read top-left to bottom-right, and bullet/numbered
 list markers are kept where the source PDF exposes them as real text. Pick
 a destination in the following "Save As" dialog to write a .txt file.
 
-Right-click menu
------------------
-Right-clicking a page thumbnail (auto-selecting it if it wasn't already
-selected) opens a menu with: rotate right 90, rotate left 90, rotate 180,
-split PDF, export image, extract text, delete page, and close this file.
 Right-click menu and preview controls
 --------------------------------------
 - Right-clicking a page thumbnail or the preview pane opens a menu with:
@@ -151,8 +145,6 @@ Preferences
 The "Settings" menu's preferences dialog controls how the mouse wheel
 behaves over the PDF preview: the default "zoom" mode zooms with the wheel
 and pans with a right-drag; the alternate "scroll" mode scrolls vertically
-with the wheel and zooms with a right-drag instead. The choice is
-remembered between runs.
 with the wheel and zooms with a right-drag instead. Whole-page zooming via
 Ctrl+wheel and browser zoom shortcuts is disabled, keeping zoom operations
 scoped strictly to the PDF preview canvas. The choice is remembered
@@ -164,12 +156,10 @@ a product command-line interface.
 
 Distribution files
 ------------------
-- `QuickMarkPDF.exe` - WebView2 GUI version
+- `QuickMarkPDF.exe` - WebView2 GUI version (the GUI, Mermaid.js, and MathJax are bundled inside the exe)
 - `QuickMarkPDF_cli.exe` - non-GUI demo/verification binary
 - `pdfium.dll` - PDF rendering/editing engine
 - `WebView2Loader.dll` - WebView2 loader
-- `index.html` - GUI content
-- `vendor/` - Mermaid.js and MathJax used by Markdown preview
 - `readme.txt` - this file
 - `readme_jp.txt` - Japanese distribution documentation
 - `history.txt` - change log

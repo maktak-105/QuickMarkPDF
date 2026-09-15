@@ -71,27 +71,30 @@ python build_native.py --skip-tests
 ### `build_native.py` の内訳
 
 1. `g++` または `clang++` を検出（PATH → WinGet の WinLibs → いくつかの予備パス）。
-2. `bundle_html.py` で CSS/JS/画像を `dist/binary/index.html` にインライン化。Mermaid/MathJax は `vendor/` の script 参照のまま。
-3. `.rc`（アイコン・バージョン情報）を `windres` / `llvm-windres` でコンパイル。
+2. `bundle_html.py` で CSS/JS/画像を `core/native/index.html` にインライン化した後、
+   `core/native/generated_index.html` へリネーム。Mermaid/MathJax は `resources/vendor/`
+   から同じく `core/native/generated_mathjax.js` / `generated_mermaid.js` へコピー
+   （いずれも `.gitignore` 済みの中間ファイルで、`dist/binary/` には残らない）。
+3. `.rc`（アイコン・バージョン情報・UI埋め込みリソース）を `windres` / `llvm-windres` で
+   コンパイル。`generated_*` ファイルは `QuickMarkPDF.rc` の `RCDATA` としてこの時点で
+   exe 本体に埋め込まれる。
 4. `webview_main.cpp` とエンジンを `-static` でリンクし `QuickMarkPDF.exe` を生成。
 5. CLI デモを `-static` で `QuickMarkPDF_cli.exe` にリンク。
-6. `pdfium.dll`、`WebView2Loader.dll`、`resources/vendor/` を `dist/binary/` へコピー。
+6. `pdfium.dll`、`WebView2Loader.dll` を `dist/binary/` へコピー。
 7. `--skip-tests` が無ければ `engine_tests.cpp` をビルドして実行（このテスト exe は `-static` ではないため、MinGW ランタイム DLL を隣へコピーする）。
 
 ### ビルド成果物
 
 | ファイル | 説明 |
 | --- | --- |
-| `dist/binary/QuickMarkPDF.exe` | GUI（製品本体） |
+| `dist/binary/QuickMarkPDF.exe` | GUI（製品本体。UI一式・Mermaid.js・MathJaxを埋め込み済み） |
 | `dist/binary/QuickMarkPDF_cli.exe` | 非 GUI のページモデルデモ |
 | `dist/binary/pdfium.dll` | PDFium |
 | `dist/binary/WebView2Loader.dll` | WebView2 ローダー |
-| `dist/binary/index.html` | バンドル済み GUI |
-| `dist/binary/vendor/` | Mermaid.js と MathJax |
 | `core/native/QuickMarkPDF_native_tests.exe` | エンジンテスト（配布しない） |
 
-`QuickMarkPDF.exe`、`pdfium.dll`、`WebView2Loader.dll`、`index.html`、`vendor/` は
-同じフォルダに置きます。
+`QuickMarkPDF.exe`、`pdfium.dll`、`WebView2Loader.dll` の3ファイルを同じフォルダに
+置けば動作します（`index.html`/`vendor/` は exe に埋め込み済みのため不要）。
 
 **既知の環境上の癖**: CrowdStrike Falcon Sensor が動いている環境（この開発機で確認済み）では、
 ビルド直後の未署名 exe がブロックされることがあります。実例として、ビルド成功直後に
@@ -111,7 +114,7 @@ Teams・Windows 検索などと共有されます。終了するのは `QuickMar
 | WebView2 ヘッダーが見つからない | `scripts\fetch_webview2_sdk.ps1` を実行するか `WEBVIEW2_INCLUDE` を設定 |
 | PDFium ヘッダー/DLL が見つからない | `scripts\fetch_pdfium.ps1` を実行 |
 | `windres` が見つからない | コンパイラと同じフォルダにある。PATH 変更後はターミナル再起動 |
-| 起動時に白画面 | `index.html` を再バンドルし、隣に `vendor/` があるか確認 |
+| 起動時に白画面 | RCDATA埋め込みが古いままの可能性。`python build_native.py` を再実行してexeを作り直す |
 | 起動できない（Runtime） | Microsoft Edge WebView2 Runtime (Evergreen) をインストール |
 | `g++` / `windres` を直接叩けない | WinLibs の `mingw64\bin` をユーザー PATH へ。`build_native.py` 自体には不要 |
 | 未署名 exe が消える、または終了コード `3221225785` | 上記 Falcon の癖。回帰と決めつける前に再実行 |
@@ -172,8 +175,8 @@ TCP 制御チャネル（`core/native/test_api_server.cpp`）は `QUICKMARKPDF_T
 ## 依存関係
 
 出荷する C++ バイナリ: PDFium（`pdfium.dll`）、Windows の WebView2 Runtime、WIC。
-フロントエンドはフレームワーク非依存。Markdown プレビュー用に Mermaid.js と MathJax を
-`vendor/` へ同梱します。
+フロントエンドはフレームワーク非依存。Markdown プレビュー用の Mermaid.js と MathJax は
+`resources/vendor/` のソースをビルド時に exe 本体へ RCDATA として埋め込みます。
 
 Python 試作 / テスト: `requirements.txt`（PyMuPDF、PySide6、Pillow、Markdown、PyInstaller）と
 `requirements-dev.txt`（pytest、pytest-qt、pytest-timeout、pytest-cov）。
@@ -190,7 +193,7 @@ QuickMarkPDF/
 ├── python/tests/          Python 試作のテスト
 ├── python/tools/          補助スクリプト
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
-├── resources/vendor/      dist/binary/vendor/ へコピーする Mermaid / MathJax
+├── resources/vendor/      exe へ埋め込む Mermaid / MathJax のソース
 ├── assets/                README 用スクリーンショット（ZIP には入れない）
 ├── document/              開発者向け文書（英語 + _jp）
 ├── plans/                 日付付き計画書・実施結果

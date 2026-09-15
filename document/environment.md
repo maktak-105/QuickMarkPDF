@@ -73,27 +73,30 @@ python build_native.py --skip-tests
 ### What `build_native.py` does
 
 1. Detects `g++` or `clang++` (PATH, then the WinGet WinLibs location, then a few fallbacks).
-2. Runs `bundle_html.py`: inlines CSS/JS/images into `dist/binary/index.html`, leaving Mermaid/MathJax as `vendor/` script tags.
-3. Compiles the `.rc` (icon + version info) with `windres` / `llvm-windres`.
+2. Runs `bundle_html.py`: inlines CSS/JS/images into `core/native/index.html`, then renames it to
+   `core/native/generated_index.html`. Mermaid/MathJax are copied from `resources/vendor/` to
+   `core/native/generated_mathjax.js` / `generated_mermaid.js` the same way (all `.gitignore`d
+   intermediate files -- none of this ends up in `dist/binary/`).
+3. Compiles the `.rc` (icon, version info, and UI embed resources) with `windres` / `llvm-windres`.
+   This is the step that embeds the `generated_*` files into the exe as `RCDATA`.
 4. Statically links (`-static`) `webview_main.cpp` + engine into `QuickMarkPDF.exe`.
 5. Statically links the CLI demo into `QuickMarkPDF_cli.exe`.
-6. Copies `pdfium.dll`, `WebView2Loader.dll`, and `resources/vendor/` into `dist/binary/`.
+6. Copies `pdfium.dll` and `WebView2Loader.dll` into `dist/binary/`.
 7. Unless `--skip-tests`, builds and runs `engine_tests.cpp` (this test exe is **not** `-static`, so MinGW runtime DLLs are copied next to it).
 
 ### Build output
 
 | File | Description |
 | --- | --- |
-| `dist/binary/QuickMarkPDF.exe` | GUI (shipped app) |
+| `dist/binary/QuickMarkPDF.exe` | GUI (shipped app; UI, Mermaid.js, and MathJax bundled inside) |
 | `dist/binary/QuickMarkPDF_cli.exe` | Non-GUI page-model demo |
 | `dist/binary/pdfium.dll` | PDFium |
 | `dist/binary/WebView2Loader.dll` | WebView2 loader |
-| `dist/binary/index.html` | Bundled GUI |
-| `dist/binary/vendor/` | Mermaid.js and MathJax |
 | `core/native/QuickMarkPDF_native_tests.exe` | Engine tests (not shipped) |
 
-Keep `QuickMarkPDF.exe`, `pdfium.dll`, `WebView2Loader.dll`, `index.html`, and
-`vendor/` in the same folder.
+Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `WebView2Loader.dll` in the same
+folder -- that's all three files needed; the UI is embedded in the exe, so
+no `index.html` or `vendor/` folder is required.
 
 **Known environment quirk:** on machines running CrowdStrike Falcon Sensor
 (confirmed on this dev machine), a freshly-built unsigned `.exe` can be
@@ -116,7 +119,7 @@ shared by Teams, Windows Search, and other apps. Stop only
 | WebView2 headers not found | Run `scripts\fetch_webview2_sdk.ps1`, or set `WEBVIEW2_INCLUDE` |
 | PDFium headers/DLL not found | Run `scripts\fetch_pdfium.ps1` |
 | `windres` not found | It lives next to the compiler; PATH changes need a terminal restart |
-| White/blank GUI | Rebuild so `index.html` is bundled; confirm `vendor/` sits beside it |
+| White/blank GUI | The embedded RCDATA is probably stale; re-run `python build_native.py` to rebuild the exe |
 | GUI will not start (Runtime) | Install Microsoft Edge WebView2 Runtime (Evergreen) |
 | `g++` / `windres` not found when invoked directly | Add WinLibs `mingw64\bin` to user PATH — not needed for `build_native.py` |
 | Fresh unsigned exe disappears or tests fail with exit `3221225785` | CrowdStrike quirk above; re-run before assuming a regression |
@@ -180,8 +183,8 @@ WebMessage protocol documented in [`spec.md`](spec.md).
 ## Dependencies
 
 Shipped C++ binary: PDFium (`pdfium.dll`) plus the Windows WebView2 Runtime
-and WIC. Frontend is framework-free. Mermaid.js and MathJax are bundled
-under `vendor/` for Markdown preview.
+and WIC. Frontend is framework-free. Mermaid.js and MathJax for Markdown
+preview are embedded into the exe at build time from `resources/vendor/`.
 
 Python prototype / tests: `requirements.txt` (PyMuPDF, PySide6, Pillow,
 Markdown, PyInstaller) and `requirements-dev.txt` (pytest, pytest-qt,
@@ -199,7 +202,7 @@ QuickMarkPDF/
 ├── python/tests/          Python prototype tests
 ├── python/tools/          helper scripts
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
-├── resources/vendor/      Mermaid / MathJax source copied to dist/binary/vendor/
+├── resources/vendor/      Mermaid / MathJax source embedded into the exe
 ├── assets/                README screenshots (not in the ZIP)
 ├── document/              developer docs (en + _jp)
 ├── plans/                 dated plans and results
