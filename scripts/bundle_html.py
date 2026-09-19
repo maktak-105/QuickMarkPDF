@@ -4,11 +4,12 @@ import base64
 
 
 def bundle(output_dir=None):
-    base_dir = os.path.dirname(__file__)
-    tmpl_path = os.path.join(base_dir, "templates", "index.html")
-    css_path = os.path.join(base_dir, "static", "css", "style.css")
-    i18n_path = os.path.join(base_dir, "static", "js", "i18n.js")
-    app_path = os.path.join(base_dir, "static", "js", "app.js")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.dirname(script_dir)
+    tmpl_path = os.path.join(repo_root, "src", "ui", "index.html")
+    css_path = os.path.join(repo_root, "src", "ui", "css", "style.css")
+    i18n_path = os.path.join(repo_root, "src", "ui", "js", "i18n.js")
+    app_path = os.path.join(repo_root, "src", "ui", "js", "app.js")
 
     with open(tmpl_path, "r", encoding="utf-8") as f:
         html = f.read()
@@ -56,8 +57,13 @@ def bundle(output_dir=None):
             return match.group(0)
         img_path = os.path.normpath(os.path.join(os.path.dirname(tmpl_path), src))
         if not os.path.isfile(img_path):
-            print(f"[WARN] image not found for inline: {img_path}")
-            return match.group(0)
+            cleaned = src.replace("../", "").replace("./", "")
+            candidate = os.path.normpath(os.path.join(repo_root, cleaned))
+            if os.path.isfile(candidate):
+                img_path = candidate
+            else:
+                print(f"[WARN] image not found for inline: {img_path}")
+                return match.group(0)
         ext = os.path.splitext(img_path)[1].lower()
         mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                 ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml"}.get(ext, "application/octet-stream")
@@ -80,7 +86,7 @@ def bundle(output_dir=None):
 """
 
     if output_dir is None:
-        output_dir = os.path.join(base_dir, "dist", "binary")
+        output_dir = os.path.join(repo_root, "build", "intermediate")
     os.makedirs(output_dir, exist_ok=True)
     dist_index = os.path.join(output_dir, "index.html")
     with open(dist_index, "w", encoding="utf-8") as f:

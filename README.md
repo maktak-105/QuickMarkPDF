@@ -6,7 +6,7 @@
 
 A simple Windows desktop PDF page editor — free, no ads, no donation requests, no paid features. Just the split / merge / reorder / rotate / export you actually need. As a bonus, it also renders and exports Markdown to PDF, with Mermaid diagrams and math (MathJax).
 
-**Current version: v3.3.0.** `core/native/` (C++17 + WebView2) is the shipped product. `python/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`document/about.md`](document/about.md) and [`document/environment.md`](document/environment.md).
+**Current version: v3.3.0.** `src/` (C++17 + WebView2) is the shipped product. `proto/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`docs/about.md`](docs/about.md) and [`docs/environment.md`](docs/environment.md).
 
 The UI can switch between Japanese and English (toggle button at the right end of the menu bar). The English and Japanese README screenshots show the same window in each language.
 
@@ -39,7 +39,13 @@ The ZIP contains all distribution files in one flat folder.
 - `history.txt` / `history_jp.txt` - change log
 - `LICENSE.txt` / `LICENSE_jp.txt` - MIT License files
 
-Release binaries and checksums are published on GitHub Releases, not in this repository.
+### Integrity verification (SHA-256)
+
+Official SHA-256 checksums for the distribution ZIP and binaries are automatically computed during the CI (GitHub Actions) build and published as `SHA256SUMS.txt` on each release page. Verify the downloaded package with PowerShell:
+
+```powershell
+Get-FileHash .\QuickMarkPDF-binary.zip -Algorithm SHA256
+```
 
 Run `QuickMarkPDF.exe` for the GUI. Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `WebView2Loader.dll` in the same folder (the UI is bundled inside the exe, so no `index.html` or `vendor/` folder is needed). If WebView2 Runtime is unavailable, install Microsoft Edge WebView2 Runtime (Evergreen). It is normally included with Windows 11, but may require installation on older Windows 10 systems, LTSC, Server, or managed devices.
 
@@ -54,15 +60,14 @@ Run `QuickMarkPDF.exe` for the GUI. Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `
 
 Keyboard shortcuts: `Ctrl+O` open, `Delete` delete selected pages, `Ctrl+Z` undo, `Ctrl+S` save.
 
-Full usage, including password-protected PDFs and image-export options, is in [`dist/documents/readme.txt`](dist/documents/readme.txt).
+Full usage, including password-protected PDFs and image-export options, is in [`docs/distribution/readme.txt`](docs/distribution/readme.txt).
 
 ## CLI
 
 `QuickMarkPDF_cli.exe` is a page-model demo used to exercise the native engine. It is not a product command-line interface.
 
 ```powershell
-.\QuickMarkPDF_cli.exe --help
-.\QuickMarkPDF_cli.exe demo
+.\QuickMarkPDF_cli.exe input.pdf
 ```
 
 ## Building the native version
@@ -73,19 +78,20 @@ The native build uses the MinGW-w64 C++ toolchain, validated with WinLibs (MCF t
 winget install --id BrechtSanders.WinLibs.MCF.UCRT --exact --source winget
 ```
 
-`build_native.py` automatically searches the standard WinGet package location and also looks for `windres.exe` next to the detected compiler, so adding MinGW to `PATH` is not required for the project build.
+`scripts/build.py` automatically searches the standard WinGet package location and also looks for `windres.exe` next to the detected compiler, so adding MinGW to `PATH` is not required for the project build.
 
 The WebView2 SDK and PDFium are fetched into `third_party/` (gitignored):
 
 ```powershell
 powershell -File scripts\fetch_webview2_sdk.ps1
 powershell -File scripts\fetch_pdfium.ps1
-python build_native.py
+scripts\build.bat
+# or python scripts/build.py
 ```
 
-Output under `dist/binary/`: `QuickMarkPDF.exe`, `QuickMarkPDF_cli.exe`, `pdfium.dll`, and `WebView2Loader.dll` (the UI bundle is embedded in the exe as a build step, not written to `dist/binary/`).
+Output under `dist/`: `QuickMarkPDF.exe`, `QuickMarkPDF_cli.exe`, `pdfium.dll`, and `WebView2Loader.dll` (the UI bundle is embedded in the exe as a build step, not written as separate HTML).
 
-Full development details, tests, and QA: [`document/environment.md`](document/environment.md). Specification: [`document/spec.md`](document/spec.md).
+Full development details, tests, and QA: [`docs/environment.md`](docs/environment.md). Specification: [`docs/spec.md`](docs/spec.md).
 
 ## Evaluation prototype (Python)
 
@@ -95,7 +101,7 @@ The PySide6 prototype is not the shipped app. It remains in the tree so page-edi
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt
-python python/prototype/main.py
+python proto/prototype/main.py
 ```
 
 ## License
@@ -104,7 +110,7 @@ This project is provided under the MIT License.
 
 `Copyright (c) 2026 maktak-105 (GitHub: https://github.com/maktak-105)`
 
-See [`dist/documents/LICENSE.txt`](dist/documents/LICENSE.txt) for the English original and [`dist/documents/LICENSE_jp.txt`](dist/documents/LICENSE_jp.txt) for the Japanese reference translation.
+See [`docs/distribution/LICENSE.txt`](docs/distribution/LICENSE.txt) for the English original and [`docs/distribution/LICENSE_jp.txt`](docs/distribution/LICENSE_jp.txt) for the Japanese reference translation.
 
 ## Third-party software
 
