@@ -6,7 +6,7 @@
 
 無料、広告無し、寄付無し、課金無し。シンプルなWindowsデスクトップ向けPDFページ編集ツールです。分割・結合・並べ替え・回転・書き出しといった、必要最小限の編集に絞っています。おまけとして、Markdown（Mermaid図・数式（MathJax）対応）のプレビュー・PDF書き出しも備えています。
 
-**現在のバージョンは v3.3.0 です。** `core/native/`（C++17 + WebView2版）が製品として出荷される版です。`python/prototype/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、配布はされません。詳細は[`document/about_jp.md`](document/about_jp.md)・[`document/environment_jp.md`](document/environment_jp.md)を参照してください。
+**現在のバージョンは v3.3.0 です。** `src/`（C++17 + WebView2版）が製品として出荷される版です。`proto/prototype/`（PySide6版）は開発中の挙動評価に使う試作・評価用プロトタイプであり、配布はされません。詳細は[`docs/about_jp.md`](docs/about_jp.md)・[`docs/environment_jp.md`](docs/environment_jp.md)を参照してください。
 
 画面は日本語／Englishを切替可能です（メニューバー右端のボタン）。英語版 README のスクリーンショットは同じウィンドウの日本語表示時のものです。
 
@@ -39,7 +39,13 @@ ZIPを展開すると、すべての配布ファイルが同じフォルダに�
 - `history.txt` / `history_jp.txt` - 更新履歴
 - `LICENSE.txt` / `LICENSE_jp.txt` - MIT License
 
-配布バイナリとチェックサムは GitHub Releases に掲載します。このリポジトリには置きません。
+### 完全性の確認（SHA-256）
+
+配布用ZIPおよび各バイナリの公式SHA-256チェックサムは、CI（GitHub Actions）のビルド時に自動算出され、GitHub Releasesの各リリースに `SHA256SUMS.txt` として添付されています。ダウンロード後の整合性確認には `SHA256SUMS.txt` を参照してください。
+
+```powershell
+Get-FileHash .\QuickMarkPDF-binary.zip -Algorithm SHA256
+```
 
 GUI版は`QuickMarkPDF.exe`を実行します。`QuickMarkPDF.exe`、`pdfium.dll`、`WebView2Loader.dll` は必ず同じフォルダに置いてください（UI一式はexe本体に埋め込み済みのため、`index.html`や`vendor/`フォルダは不要です）。WebView2 Runtimeがない場合は、Microsoft Edge WebView2 Runtime (Evergreen)をインストールしてください。Windows 11には通常含まれていますが、Windows 10の古い環境、LTSC、Server、管理端末では追加導入が必要な場合があります。
 
@@ -54,38 +60,30 @@ GUI版は`QuickMarkPDF.exe`を実行します。`QuickMarkPDF.exe`、`pdfium.dll
 
 キーボードショートカット: `Ctrl+O` 開く、`Delete` 選択ページを削除、`Ctrl+Z` 元に戻す、`Ctrl+S` 保存。
 
-パスワード保護PDFや画像出力の詳細は[`dist/documents/readme_jp.txt`](dist/documents/readme_jp.txt)を参照してください。
+パスワード保護PDFや画像出力の詳細は[`docs/distribution/readme_jp.txt`](docs/distribution/readme_jp.txt)を参照してください。
 
 ## CLI
 
-`QuickMarkPDF_cli.exe` はネイティブエンジンのページモデルを動かすデモであり、製品としてのコマンドライン版ではありません。
+GUIの機能確認・デモ用の軽量バイナリです（製品CLIではありません）。
 
 ```powershell
-.\QuickMarkPDF_cli.exe --help
-.\QuickMarkPDF_cli.exe demo
+.\QuickMarkPDF_cli.exe input.pdf
 ```
 
-## ネイティブ版のビルド
+## ビルド
 
-ネイティブ版はMinGW-w64のC++ツールチェーンを使用します。WinLibs（MCF threads、UCRT runtime）のWinGetパッケージで確認しています。
-
-```powershell
-winget install --id BrechtSanders.WinLibs.MCF.UCRT --exact --source winget
-```
-
-`build_native.py`は標準的なWinGetパッケージの場所を自動検索し、検出したコンパイラと同じフォルダの`windres.exe`も使うため、プロジェクトのビルドだけならPATH登録は不要です。
-
-WebView2 SDKとPDFiumは`third_party/`（Git管理外）へ取得します。
+MinGW-w64を導入し、WebView2 SDKおよびPDFiumを取得します。
 
 ```powershell
 powershell -File scripts\fetch_webview2_sdk.ps1
 powershell -File scripts\fetch_pdfium.ps1
-python build_native.py
+scripts\build.bat
+# または python scripts/build.py
 ```
 
-生成物（`dist/binary/`）: `QuickMarkPDF.exe`、`QuickMarkPDF_cli.exe`、`pdfium.dll`、`WebView2Loader.dll`（UI一式はビルド時にexe本体へ埋め込まれるため、`dist/binary/`には書き出されません）。
+生成物（`dist/`）: `QuickMarkPDF.exe`、`QuickMarkPDF_cli.exe`、`pdfium.dll`、`WebView2Loader.dll`（UI一式はビルド時にexe本体へ埋め込まれるため、外部HTMLファイルは不要です）。
 
-開発環境・テスト・QAの詳細は[`document/environment_jp.md`](document/environment_jp.md)、仕様は[`document/spec_jp.md`](document/spec_jp.md)を参照してください。
+開発環境・テスト・QAの詳細は[`docs/environment_jp.md`](docs/environment_jp.md)、仕様は[`docs/spec_jp.md`](docs/spec_jp.md)を参照してください。
 
 ## 評価用プロトタイプ（Python）
 
@@ -95,7 +93,7 @@ PySide6版は製品ではありません。開発中にページ編集の挙動�
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt
-python python/prototype/main.py
+python proto/prototype/main.py
 ```
 
 ## ライセンス
@@ -104,7 +102,7 @@ MIT Licenseです。
 
 `Copyright (c) 2026 maktak-105 (GitHub: https://github.com/maktak-105)`
 
-英語原文は[`dist/documents/LICENSE.txt`](dist/documents/LICENSE.txt)、日本語参考訳は[`dist/documents/LICENSE_jp.txt`](dist/documents/LICENSE_jp.txt)を確認してください。
+英語原文は[`docs/distribution/LICENSE.txt`](docs/distribution/LICENSE.txt)、日本語参考訳は[`docs/distribution/LICENSE_jp.txt`](docs/distribution/LICENSE_jp.txt)を確認してください。
 
 ## 第三者ソフトウェア
 

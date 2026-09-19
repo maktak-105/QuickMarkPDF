@@ -45,28 +45,21 @@ output/
 dist/PDF_Editor/
 dist_tmp/
 *.manifest
-!core/native/QuickMarkPDF.manifest
+!src/app/QuickMarkPDF.manifest
 
-# Keep the distribution documentation and empty asset folders tracked.
-!dist/documents/
-!dist/documents/*
-!dist/assets/
-!dist/assets/.gitkeep
+# Distribution folder
+dist/*
+!dist/.gitkeep
 
 # AI tools and local notes
 CODEX_PROJECT_NOTE.txt
 .claude/
 
-# core/native: build_native.py が生成する中間ファイル
-core/native/*.dll
-core/native/*.o
-core/native/*.exe
-# EXE埋め込み用にbuild_native.pyがindex.html/vendor資産をコピーしてくる一時ファイル
-core/native/generated_*
-
-# dist/binary: ビルド成果物はGit管理外、フォルダ構造だけ管理
-dist/binary/*
-!dist/binary/.gitkeep
+# Build intermediates
+build/
+*.o
+*.exe
+*.dll
 
 # Downloaded SDKs
 third_party/webview2/
@@ -77,9 +70,8 @@ third_party/*.tgz
 # Build logs
 *.log
 
-# Test tooling: generated reports/caches are not tracked.
-# tests/visual_baselines/ (the actual reference screenshots) IS tracked.
-python/tests/reports/
+# Test tooling
+proto/tests/reports/
 .pytest_cache/
 .coverage
 htmlcov/

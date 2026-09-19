@@ -32,13 +32,13 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
-          $env:PYTHONPATH = 'python/prototype'
+          $env:PYTHONPATH = 'proto/prototype'
           # pytest, not unittest discover: test_dialog_guard.py and
           # test_main_window_flows.py are pytest-fixture-based (dialog_responses,
           # main_window, etc. from conftest.py) and are silently skipped rather
           # than actually run under plain unittest discovery.
           $junitPath = 'pytest-results.xml'
-          python -m pytest python/tests -v "--junitxml=$junitPath"
+          python -m pytest proto/tests -v "--junitxml=$junitPath"
           $exitCode = $LASTEXITCODE
 
           # PySide6/Qt can crash during interpreter teardown on Windows after

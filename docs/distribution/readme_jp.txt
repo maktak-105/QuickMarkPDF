@@ -169,7 +169,10 @@ Markdownモード中に「保存」（またはCtrl+S）を押すと、現在の
 
 SHA-256
 -------
-この ZIP を添付した GitHub Release に掲載します。
+配布バイナリおよびZIPパッケージの公式SHA-256チェックサムは、CI（GitHub Actions）の
+ビルド時に自動算出され、GitHub Releasesの各リリースに `SHA256SUMS.txt` として添付されています。
+整合性確認にはリリースページ添付の `SHA256SUMS.txt` を参照してください:
+https://github.com/maktak-105/QuickMarkPDF/releases
 
 ライセンス
 ----------

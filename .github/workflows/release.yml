@@ -34,23 +34,23 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
-          python build_native.py
+          python scripts/build.py
           if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
 
       - name: Package distribution files
         shell: pwsh
         run: |
           $files = @(
-            'dist/binary/QuickMarkPDF.exe',
-            'dist/binary/QuickMarkPDF_cli.exe',
-            'dist/binary/pdfium.dll',
-            'dist/binary/WebView2Loader.dll',
-            'dist/documents/readme.txt',
-            'dist/documents/readme_jp.txt',
-            'dist/documents/history.txt',
-            'dist/documents/history_jp.txt',
-            'dist/documents/LICENSE.txt',
-            'dist/documents/LICENSE_jp.txt'
+            'dist/QuickMarkPDF.exe',
+            'dist/QuickMarkPDF_cli.exe',
+            'dist/pdfium.dll',
+            'dist/WebView2Loader.dll',
+            'docs/distribution/readme.txt',
+            'docs/distribution/readme_jp.txt',
+            'docs/distribution/history.txt',
+            'docs/distribution/history_jp.txt',
+            'docs/distribution/LICENSE.txt',
+            'docs/distribution/LICENSE_jp.txt'
           )
           foreach ($file in $files) {
             if (!(Test-Path -LiteralPath $file)) { throw "Missing distribution file: $file" }
@@ -62,12 +62,34 @@ jobs:
           }
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'QuickMarkPDF-binary.zip') -Force
 
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $checksumFile = Join-Path $env:GITHUB_WORKSPACE 'SHA256SUMS.txt'
+          $lines = @()
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE 'QuickMarkPDF-binary.zip'
+          $zipHash = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToUpper()
+          $lines += "$zipHash  QuickMarkPDF-binary.zip"
+          $lines += ""
+          $lines += "# Binaries inside archive:"
+          $binFiles = @('dist/QuickMarkPDF.exe', 'dist/QuickMarkPDF_cli.exe', 'dist/pdfium.dll', 'dist/WebView2Loader.dll')
+          foreach ($f in $binFiles) {
+            if (Test-Path -LiteralPath $f) {
+              $h = (Get-FileHash -Algorithm SHA256 -Path $f).Hash.ToUpper()
+              $name = Split-Path -Leaf $f
+              $lines += "$h  $name"
+            }
+          }
+          $lines | Set-Content -Path $checksumFile -Encoding utf8
+
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          files: QuickMarkPDF-binary.zip
+          files: |
+            QuickMarkPDF-binary.zip
+            SHA256SUMS.txt
           overwrite_files: true
           generate_release_notes: true
           body: |
