@@ -26,14 +26,8 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
-          python -m pytest proto/tests -v --junitxml=pytest-results.xml
-          $exitCode = $LASTEXITCODE
-          [xml]$results = Get-Content pytest-results.xml
-          $suite = if ($results.DocumentElement.Name -eq 'testsuite') { $results.DocumentElement } else { $results.testsuites.testsuite }
-          $failures = [int]$suite.failures
-          $errors = [int]$suite.errors
-          if ($failures -gt 0 -or $errors -gt 0) { throw "Prototype tests failed: $failures failures, $errors errors" }
-          if ($exitCode -ne 0) { Write-Output "All $($suite.tests) tests passed; pytest returned $exitCode during Qt teardown." }
+          python proto/tests/run_tests.py -- proto/tests
+          if ($LASTEXITCODE -ne 0) { throw 'Prototype tests failed' }
       - name: Install MinGW
         shell: pwsh
         run: choco install mingw python --yes --no-progress
