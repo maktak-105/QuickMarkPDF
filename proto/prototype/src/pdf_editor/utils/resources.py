@@ -13,7 +13,7 @@ def get_project_root() -> Path:
     """Return the absolute path to the project root.
 
     Works in:
-    - Development: running python python/prototype/main.py from the project root
+    - Development: running python proto/prototype/main.py from the project root
     - Frozen (PyInstaller one-folder): sys._MEIPASS points to the temp extraction dir
     """
     if getattr(sys, "_MEIPASS", None):
@@ -21,7 +21,7 @@ def get_project_root() -> Path:
         return Path(sys._MEIPASS)
 
     # Running from source.
-    # This file lives at: <root>/python/prototype/src/pdf_editor/utils/resources.py
+    # This file lives at: <root>/proto/prototype/src/pdf_editor/utils/resources.py
     current = Path(__file__).resolve()
     for parent in current.parents:
         if (parent / "resources").exists() and (parent / "requirements.txt").exists():

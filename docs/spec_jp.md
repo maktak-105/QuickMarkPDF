@@ -8,9 +8,9 @@
 - **実装**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/バニラJS
 - **配布形態**: GitHub Releases の ZIP（フラット構成。Release は未公開）
 - **表示言語**: 日本語 / English（メニューバー右端のボタンで切替、`localStorage`とレジストリに永続化）
-- **バージョン**: v3.3.0
+- **バージョン**: v3.3.1
 
-製品として出荷されるのは`core/native/`（C++17 + WebView2版）である。`python/prototype/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。
+製品として出荷されるのは`src/app/`（C++17 + WebView2版）である。`proto/prototype/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。
 
 ## 2. アーキテクチャ
 
@@ -151,4 +151,4 @@
 - Markdown のネストしたリストへの対応
 - 大量ページの並列描画・書き出し
 - 製品級の CLI（現状の `QuickMarkPDF_cli.exe` はページモデルのデモ）
-- GitHub Release の公開（v3.3.0 は未タグ。v1.1.0 は公開済み）
+- GitHub Release の公開（v3.3.1 は未タグ。v1.1.0 は公開済み）

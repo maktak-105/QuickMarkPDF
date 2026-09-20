@@ -1,5 +1,5 @@
 QuickMarkPDF - シンプルなPDFページ編集ツール
-配布パッケージ  v3.3.0
+配布パッケージ  v3.3.1
 
 無料、広告無し、寄付無し、課金無し。
 
@@ -169,6 +169,7 @@ Markdownモード中に「保存」（またはCtrl+S）を押すと、現在の
 
 SHA-256
 -------
+この ZIP を添付した GitHub Release に掲載します。
 配布バイナリおよびZIPパッケージの公式SHA-256チェックサムは、CI（GitHub Actions）の
 ビルド時に自動算出され、GitHub Releasesの各リリースに `SHA256SUMS.txt` として添付されています。
 整合性確認にはリリースページ添付の `SHA256SUMS.txt` を参照してください:

@@ -1,4 +1,7 @@
 QuickMarkPDF - Change log
+v3.3.1 (2026-09-20)
+- Fixed build and release packaging after the folder restructure.
+
 
 v3.3.0 (2026-09-14)
 - Fixed Ctrl+mouse wheel / browser zoom shortcuts zooming the whole UI instead of just the PDF preview.
@@ -41,7 +44,7 @@ v1.0.0 (2026-08-21)
 - python/ (PySide6) is now a development-time evaluation prototype only; it is not distributed.
 - Switched to the Modern Dark theme shared with the other Quick apps, added a new application icon.
 - Added an in-app Help menu (usage guide, keyboard shortcuts) and an About dialog.
-- Rewrote README, distribution readme, and document/ specs to match the native version, including how Save merges multiple open files into one PDF.
+- Rewrote README, distribution readme, and docs/ specs to match the native version, including how Save merges multiple open files into one PDF.
 
 Unreleased (2026-08-18)
 - Refreshed the PDF editing core and user interface.

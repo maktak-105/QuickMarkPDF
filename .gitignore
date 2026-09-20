@@ -38,7 +38,7 @@ Thumbs.db
 
 # Project specific
 *.pdf
-!document/*.pdf
+!docs/*.pdf
 output/
 
 # PyInstaller build output
@@ -47,7 +47,7 @@ dist_tmp/
 *.manifest
 !src/app/QuickMarkPDF.manifest
 
-# Distribution folder
+# Keep the empty distribution output directory tracked.
 dist/*
 !dist/.gitkeep
 
@@ -70,8 +70,10 @@ third_party/*.tgz
 # Build logs
 *.log
 
-# Test tooling
+# Test tooling: generated reports/caches are not tracked.
+# tests/visual_baselines/ (the actual reference screenshots) IS tracked.
 proto/tests/reports/
 .pytest_cache/
 .coverage
 htmlcov/
+**/tests/reports/

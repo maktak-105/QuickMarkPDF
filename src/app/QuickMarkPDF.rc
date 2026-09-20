@@ -11,8 +11,8 @@ IDI_ICON1 ICON "QuickMarkPDF.ico"
 // https://appassets.quickmarkpdf.local/ 宛のNavigateに応答するため、実行時に
 // index.html/vendor/フォルダが exe と同じ場所に無くても起動できる
 // (pdfium.dll/WebView2Loader.dllの2DLLのみが引き続き外部ファイルとして必要)。
-// ここで参照する generated_*.html/.js は build_native.py がビルドの都度
-// dist/binary/index.html・resources/vendor/ からこのディレクトリにコピーする
+// ここで参照する generated_*.html/.js は scripts/build.py がビルドの都度
+// dist/index.html・resources/vendor/ からこのディレクトリにコピーする
 // 中間ファイル(.gitignore済み) -- windresの相対パス解決を単純にするため。
 #define IDR_INDEX_HTML 200
 #define IDR_MATHJAX_JS 201
@@ -33,12 +33,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "maktak-105"
       VALUE "FileDescription", "QuickMarkPDF"
-      VALUE "FileVersion", "3.3.0.0"
+      VALUE "FileVersion", "3.3.1.0"
       VALUE "InternalName", "QuickMarkPDF"
       VALUE "LegalCopyright", "MIT License"
       VALUE "OriginalFilename", "QuickMarkPDF.exe"
       VALUE "ProductName", "QuickMarkPDF"
-      VALUE "ProductVersion", "3.3.0.0"
+      VALUE "ProductVersion", "3.3.1.0"
     END
   END
   BLOCK "VarFileInfo"

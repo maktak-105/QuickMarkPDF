@@ -1,5 +1,5 @@
 QuickMarkPDF - Simple PDF page editor
-Distribution package  v3.3.0
+Distribution package  v3.3.1
 
 Free. No ads, no donation requests, no paid features.
 
@@ -42,6 +42,7 @@ Usage (quick start)
 6. Use the "Help" menu at the top for an in-app usage guide and keyboard
    shortcuts, and "Settings" for preview wheel-mode preferences.
 
+The GUI is Japanese only. There is no language toggle.
 The UI can switch between Japanese and English (toggle button at the right end of the menu bar).
 
 Opening files
@@ -168,6 +169,7 @@ Distribution files
 
 SHA-256
 -------
+Published with the GitHub Release that contains this ZIP.
 Official SHA-256 checksums are generated automatically by CI (GitHub Actions)
 and published as `SHA256SUMS.txt` on the GitHub Releases page:
 https://github.com/maktak-105/QuickMarkPDF/releases

@@ -2,10 +2,10 @@
 
 ## Status (read this first)
 
-`core/native/` (C++17 + WebView2) is the **shipped product**. When asked to
+`src/app/` (C++17 + WebView2) is the **shipped product**. When asked to
 "build the app" without qualification, build this version.
 
-`python/prototype/` (PySide6) is a **development-time evaluation prototype**. It is
+`proto/prototype/` (PySide6) is a **development-time evaluation prototype**. It is
 not distributed. It remains in the tree so page-editing behavior can still
 be compared during development. Visual match with the Python UI is **not**
 a goal — the native GUI uses the Modern Dark theme on purpose.
@@ -42,7 +42,7 @@ Standard install location:
 %LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.MCF.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin
 ```
 
-`build_native.py` searches this location automatically and uses `windres.exe`
+`scripts/build.py` searches this location automatically and uses `windres.exe`
 next to the detected compiler, so PATH registration is not required just to
 build. Add `mingw64\bin` to the **user** PATH only if you want to invoke
 `g++` / `windres` directly (restart the terminal/IDE afterward).
@@ -66,33 +66,33 @@ Default search paths (override with env vars if needed):
 ## Building the shipped native version
 
 ```powershell
-python build_native.py            # also runs core/native/engine_tests.cpp
-python build_native.py --skip-tests
+python scripts/build.py            # also runs tests/engine_tests.cpp
+python scripts/build.py build
 ```
 
-### What `build_native.py` does
+### What `scripts/build.py` does
 
 1. Detects `g++` or `clang++` (PATH, then the WinGet WinLibs location, then a few fallbacks).
-2. Runs `bundle_html.py`: inlines CSS/JS/images into `core/native/index.html`, then renames it to
-   `core/native/generated_index.html`. Mermaid/MathJax are copied from `resources/vendor/` to
-   `core/native/generated_mathjax.js` / `generated_mermaid.js` the same way (all `.gitignore`d
-   intermediate files -- none of this ends up in `dist/binary/`).
+2. Runs `bundle_html.py`: inlines CSS/JS/images into `src/app/index.html`, then renames it to
+   `src/app/generated_index.html`. Mermaid/MathJax are copied from `resources/vendor/` to
+   `src/app/generated_mathjax.js` / `generated_mermaid.js` the same way (all `.gitignore`d
+   intermediate files -- none of this ends up in `dist/`).
 3. Compiles the `.rc` (icon, version info, and UI embed resources) with `windres` / `llvm-windres`.
    This is the step that embeds the `generated_*` files into the exe as `RCDATA`.
 4. Statically links (`-static`) `webview_main.cpp` + engine into `QuickMarkPDF.exe`.
 5. Statically links the CLI demo into `QuickMarkPDF_cli.exe`.
-6. Copies `pdfium.dll` and `WebView2Loader.dll` into `dist/binary/`.
+6. Copies `pdfium.dll` and `WebView2Loader.dll` into `dist/`.
 7. Unless `--skip-tests`, builds and runs `engine_tests.cpp` (this test exe is **not** `-static`, so MinGW runtime DLLs are copied next to it).
 
 ### Build output
 
 | File | Description |
 | --- | --- |
-| `dist/binary/QuickMarkPDF.exe` | GUI (shipped app; UI, Mermaid.js, and MathJax bundled inside) |
-| `dist/binary/QuickMarkPDF_cli.exe` | Non-GUI page-model demo |
-| `dist/binary/pdfium.dll` | PDFium |
-| `dist/binary/WebView2Loader.dll` | WebView2 loader |
-| `core/native/QuickMarkPDF_native_tests.exe` | Engine tests (not shipped) |
+| `dist/QuickMarkPDF.exe` | GUI (shipped app; UI, Mermaid.js, and MathJax bundled inside) |
+| `dist/QuickMarkPDF_cli.exe` | Non-GUI page-model demo |
+| `dist/pdfium.dll` | PDFium |
+| `dist/WebView2Loader.dll` | WebView2 loader |
+| `src/app/build/intermediate/engine_tests.exe` | Engine tests (not shipped) |
 
 Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `WebView2Loader.dll` in the same
 folder -- that's all three files needed; the UI is embedded in the exe, so
@@ -101,7 +101,7 @@ no `index.html` or `vendor/` folder is required.
 **Known environment quirk:** on machines running CrowdStrike Falcon Sensor
 (confirmed on this dev machine), a freshly-built unsigned `.exe` can be
 flagged and blocked. Observed: `QuickMarkPDF_cli.exe` vanishing from
-`dist/binary/` right after a successful build, and `engine_tests.exe`
+`dist/` right after a successful build, and `engine_tests.exe`
 failing once with `STATUS_ENTRYPOINT_NOT_FOUND` (exit `3221225785`) then
 succeeding on a clean re-run. Re-run and check that the binary still exists
 before treating that exit code as a real regression. If Falcon blocks the
@@ -119,11 +119,11 @@ shared by Teams, Windows Search, and other apps. Stop only
 | WebView2 headers not found | Run `scripts\fetch_webview2_sdk.ps1`, or set `WEBVIEW2_INCLUDE` |
 | PDFium headers/DLL not found | Run `scripts\fetch_pdfium.ps1` |
 | `windres` not found | It lives next to the compiler; PATH changes need a terminal restart |
-| White/blank GUI | The embedded RCDATA is probably stale; re-run `python build_native.py` to rebuild the exe |
+| White/blank GUI | The embedded RCDATA is probably stale; re-run `python scripts/build.py` to rebuild the exe |
 | GUI will not start (Runtime) | Install Microsoft Edge WebView2 Runtime (Evergreen) |
-| `g++` / `windres` not found when invoked directly | Add WinLibs `mingw64\bin` to user PATH — not needed for `build_native.py` |
+| `g++` / `windres` not found when invoked directly | Add WinLibs `mingw64\bin` to user PATH — not needed for `scripts/build.py` |
 | Fresh unsigned exe disappears or tests fail with exit `3221225785` | CrowdStrike quirk above; re-run before assuming a regression |
-| `ModuleNotFoundError: No module named 'src'` | Python tests need the repo root as cwd (`pyproject.toml` sets `pythonpath = ["python/prototype"]`) |
+| `ModuleNotFoundError: No module named 'src'` | Python tests need the repo root as cwd (`pyproject.toml` sets `pythonpath = ["proto/prototype"]`) |
 
 ## Evaluation prototype (Python)
 
@@ -131,8 +131,8 @@ shared by Teams, Windows Search, and other apps. Stop only
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python python/prototype/main.py
-python python/prototype/main.py path\to\file.pdf
+python proto/prototype/main.py
+python proto/prototype/main.py path\to\file.pdf
 ```
 
 PyInstaller onedir (not shipped):
@@ -146,23 +146,23 @@ Output: `dist/QuickMarkPDF/` (`QuickMarkPDF.exe` plus `_internal`).
 ### Python automated tests
 
 ```powershell
-.venv\Scripts\python.exe python/tests/run_tests.py
+.venv\Scripts\python.exe proto/tests/run_tests.py
 ```
 
-This runs the default pytest suite, then writes `python/tests/reports/summary.md`
-plus JUnit XML and HTML coverage under `python/tests/reports/` (gitignored).
+This runs the default pytest suite, then writes `proto/tests/reports/summary.md`
+plus JUnit XML and HTML coverage under `proto/tests/reports/` (gitignored).
 
-`python/tests/conftest.py` installs an autouse `dialog_guard` that patches
+`proto/tests/conftest.py` installs an autouse `dialog_guard` that patches
 `QFileDialog` / `QMessageBox` / `QInputDialog` / `QDialog.exec`. An
 unregistered dialog fails immediately instead of hanging. Combined with a
 60s per-test timeout, the suite cannot wait forever for a click.
 
 | Location | What it checks | Default? |
 | --- | --- | --- |
-| `python/tests/test_*.py` | Unit + `MainWindow` flows (open/rotate/delete/reorder/undo/save/export) | Yes |
-| `python/tests/visual/` | Screenshot regression vs `python/tests/visual_baselines/` | Yes |
-| `python/tests/perf/` | Timing for load/rotate/reorder/undo/export | Yes |
-| `python/tests/real_screen/` | Visible window + `QTest` input | No (`--real-screen`) |
+| `proto/tests/test_*.py` | Unit + `MainWindow` flows (open/rotate/delete/reorder/undo/save/export) | Yes |
+| `proto/tests/visual/` | Screenshot regression vs `proto/tests/visual_baselines/` | Yes |
+| `proto/tests/perf/` | Timing for load/rotate/reorder/undo/export | Yes |
+| `proto/tests/real_screen/` | Visible window + `QTest` input | No (`--real-screen`) |
 
 Tests use offscreen Qt (`QT_QPA_PLATFORM=offscreen`) unless
 `QUICKMARKPDF_REAL_SCREEN=1`. Offscreen Qt in this environment has no CJK
@@ -175,7 +175,7 @@ regressions, not real Japanese rendering.
 .venv\Scripts\python.exe -m pytest tests/test_pdf_manager.py -v
 ```
 
-The TCP control channel (`core/native/test_api_server.cpp`) is gated on
+The TCP control channel (`src/engine/test_api_server.cpp`) is gated on
 `QUICKMARKPDF_TEST_PORT`. It is a no-op if unset. Command names there
 (`load_pdfs`, `undo`, `save_as`, …) are test-only and are not the GUI
 WebMessage protocol documented in [`spec.md`](spec.md).
@@ -195,20 +195,20 @@ pytest-timeout, pytest-cov).
 ```text
 QuickMarkPDF/
 ├── .github/workflows/     ci.yml, release.yml (native ZIP on v* tags)
-├── core/native/           C++ engine, WebView2 host, CLI demo, resources
+├── src/app/           C++ engine, WebView2 host, CLI demo, resources
 ├── templates/             development HTML
 ├── static/                development CSS/JS
-├── python/prototype/      evaluation prototype (not shipped)
-├── python/tests/          Python prototype tests
+├── proto/prototype/      evaluation prototype (not shipped)
+├── proto/tests/          Python prototype tests
 ├── python/tools/          helper scripts
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
 ├── resources/vendor/      Mermaid / MathJax source embedded into the exe
 ├── assets/                README screenshots (not in the ZIP)
-├── document/              developer docs (en + _jp)
+├── docs/              developer docs (en + _jp)
 ├── plans/                 dated plans and results
-├── dist/binary/           native build output (gitignored except folder)
-├── dist/documents/        shipped txt (readme / history / LICENSE)
-├── build_native.py
+├── dist/           native build output (gitignored except folder)
+├── docs/distribution/        shipped txt (readme / history / LICENSE)
+├── scripts/build.py
 ├── bundle_html.py
 ├── README.md / README_jp.md
 └── HISTORY.md / HISTORY_jp.md

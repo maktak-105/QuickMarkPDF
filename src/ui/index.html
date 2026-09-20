@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>QuickMarkPDF</title>
-  <link rel="stylesheet" href="../static/css/style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="menubar">
@@ -31,16 +31,16 @@
     </button>
   </header>
   <header class="toolbar">
-    <button id="open-button" class="tool" data-i18n-title="toolbar.open.title" title="PDF または Markdown ファイルを開く"><img src="../resources/icons/open.png" alt=""><span data-i18n="toolbar.open">開く</span></button>
+    <button id="open-button" class="tool" data-i18n-title="toolbar.open.title" title="PDF または Markdown ファイルを開く"><img src="../../resources/icons/open.png" alt=""><span data-i18n="toolbar.open">開く</span></button>
     <span class="sep" id="sep-1"></span>
-    <button id="split-button" class="tool" disabled data-i18n-title="toolbar.split.title" title="選択ページを新しいPDFとして保存（切り出し）"><img src="../resources/icons/split.png" alt=""><span data-i18n="toolbar.split">PDF切り出し</span></button>
-    <button id="export-button" class="tool" disabled data-i18n-title="toolbar.export.title" title="ページをPNG/JPG画像としてエクスポート"><img src="../resources/icons/image_export.png" alt=""><span data-i18n="toolbar.export">画像出力</span></button>
+    <button id="split-button" class="tool" disabled data-i18n-title="toolbar.split.title" title="選択ページを新しいPDFとして保存（切り出し）"><img src="../../resources/icons/split.png" alt=""><span data-i18n="toolbar.split">PDF切り出し</span></button>
+    <button id="export-button" class="tool" disabled data-i18n-title="toolbar.export.title" title="ページをPNG/JPG画像としてエクスポート"><img src="../../resources/icons/image_export.png" alt=""><span data-i18n="toolbar.export">画像出力</span></button>
     <span class="sep" id="sep-2"></span>
-    <button id="rotate-right-button" class="tool" disabled data-i18n-title="toolbar.rotateRight.title" title="選択ページを右に90度回転"><img src="../resources/icons/rotate_right.png" alt=""><span data-i18n="toolbar.rotateRight">右90°</span></button>
-    <button id="rotate-left-button" class="tool" disabled data-i18n-title="toolbar.rotateLeft.title" title="選択ページを左に90度回転"><img src="../resources/icons/rotate_left.png" alt=""><span data-i18n="toolbar.rotateLeft">左90°</span></button>
-    <button id="rotate-180-button" class="tool" disabled data-i18n-title="toolbar.rotate180.title" title="選択ページを180度回転"><img src="../resources/icons/rotate_180.png" alt=""><span data-i18n="toolbar.rotate180">180°</span></button>
+    <button id="rotate-right-button" class="tool" disabled data-i18n-title="toolbar.rotateRight.title" title="選択ページを右に90度回転"><img src="../../resources/icons/rotate_right.png" alt=""><span data-i18n="toolbar.rotateRight">右90°</span></button>
+    <button id="rotate-left-button" class="tool" disabled data-i18n-title="toolbar.rotateLeft.title" title="選択ページを左に90度回転"><img src="../../resources/icons/rotate_left.png" alt=""><span data-i18n="toolbar.rotateLeft">左90°</span></button>
+    <button id="rotate-180-button" class="tool" disabled data-i18n-title="toolbar.rotate180.title" title="選択ページを180度回転"><img src="../../resources/icons/rotate_180.png" alt=""><span data-i18n="toolbar.rotate180">180°</span></button>
     <span class="sep" id="sep-3"></span>
-    <button id="save-button" class="tool" disabled data-i18n-title="toolbar.save.title" title="PDF を保存"><img src="../resources/icons/save.png" alt=""><span data-i18n="toolbar.save">保存</span></button>
+    <button id="save-button" class="tool" disabled data-i18n-title="toolbar.save.title" title="PDF を保存"><img src="../../resources/icons/save.png" alt=""><span data-i18n="toolbar.save">保存</span></button>
   </header>
   <header class="toolbar size-toolbar">
     <span class="size-label" id="size-label" data-i18n="sizeToolbar.label">サムネ</span>
@@ -201,14 +201,14 @@
   <div class="modal-overlay" id="about-overlay" hidden>
     <div class="modal about-modal">
       <h2>QuickMarkPDF</h2>
-      <p class="about-version">Ver. 3.3.0</p>
+      <p class="about-version">Ver. 3.3.1</p>
       <hr class="about-divider">
       <p data-i18n="about.desc">無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツールです。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しも備えています。</p>
       <h3 class="about-section-title" data-i18n="about.devEnv.title">[開発環境]</h3>
       <p>C++17 (MinGW-w64) + WebView2</p>
       <h3 class="about-section-title" data-i18n="about.author.title">[制作者]</h3>
       <p>GitHub: <a href="https://github.com/maktak-105/QuickMarkPDF" target="_blank" rel="noopener">maktak-105/QuickMarkPDF</a></p>
-      <img class="about-badge" src="../assets/maktak105-V04-01.jpg" alt="Jûgo / @maktak105">
+      <img class="about-badge" src="../../assets/maktak105-V04-01.jpg" alt="Jûgo / @maktak105">
       <div class="modal-buttons">
         <button type="button" id="about-close" class="primary" data-i18n="about.close">閉じる</button>
       </div>
@@ -217,7 +217,7 @@
   <footer class="statusbar">
     <span id="status">準備完了</span>
   </footer>
-  <script src="../static/js/i18n.js"></script>
-  <script src="../static/js/app.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

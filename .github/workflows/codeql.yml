@@ -38,8 +38,8 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
-      # python/ (PySide6) is the spec of record; core/native/ (C++/WebView2)
-      # is the current build target. Both are scanned. See document/environment.md.
+      # proto/ contains the PySide6 prototype; src/ is the native build target.
+      # See docs/environment.md.
 
       - name: Install MinGW and Python
         if: matrix.language == 'cpp'
@@ -58,7 +58,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
-          python build_native.py --skip-tests
+          python scripts/build.py build
           if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
 
       - name: Perform CodeQL Analysis

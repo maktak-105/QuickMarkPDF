@@ -1,5 +1,9 @@
 # QuickMarkPDF Changelog
 
+## v3.3.1 — 2026-09-20
+
+- Fixed the project restructure, build/package paths, and release verification.
+
 This file records the major changes in each public version.
 
 ## Versioning rules

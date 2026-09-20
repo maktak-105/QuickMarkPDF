@@ -2,10 +2,10 @@
 
 ## 現状（まずここを読む）
 
-`core/native/`（C++17 + WebView2）が**製品として出荷される版**です。単に
+`src/app/`（C++17 + WebView2）が**製品として出荷される版**です。単に
 「ビルドして」と言われた場合は、この版をビルドします。
 
-`python/prototype/`（PySide6）は**開発中の挙動評価用プロトタイプ**であり、配布しません。
+`proto/prototype/`（PySide6）は**開発中の挙動評価用プロトタイプ**であり、配布しません。
 ページ編集の挙動比較のためにリポジトリへ残しています。Python 版 UI との見た目一致は
 **目標ではありません**。ネイティブ GUI は意図して Modern Dark テーマです。
 
@@ -40,7 +40,7 @@ winget install --id BrechtSanders.WinLibs.MCF.UCRT --exact --source winget
 %LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.MCF.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin
 ```
 
-`build_native.py` はこの場所を自動検索し、検出したコンパイラと同じフォルダの
+`scripts/build.py` はこの場所を自動検索し、検出したコンパイラと同じフォルダの
 `windres.exe` も使うため、プロジェクトのビルドだけなら PATH 登録は不要です。
 `g++` / `windres` を直接叩きたい場合のみ、`mingw64\bin` を**ユーザー環境変数**の
 PATH に追加してください（追加後はターミナル/IDE の再起動が必要）。
@@ -64,41 +64,41 @@ powershell -File scripts\fetch_pdfium.ps1
 ## 出荷するネイティブ版のビルド
 
 ```powershell
-python build_native.py            # core/native/engine_tests.cpp も実行
-python build_native.py --skip-tests
+python scripts/build.py            # tests/engine_tests.cpp も実行
+python scripts/build.py build
 ```
 
-### `build_native.py` の内訳
+### `scripts/build.py` の内訳
 
 1. `g++` または `clang++` を検出（PATH → WinGet の WinLibs → いくつかの予備パス）。
-2. `bundle_html.py` で CSS/JS/画像を `core/native/index.html` にインライン化した後、
-   `core/native/generated_index.html` へリネーム。Mermaid/MathJax は `resources/vendor/`
-   から同じく `core/native/generated_mathjax.js` / `generated_mermaid.js` へコピー
-   （いずれも `.gitignore` 済みの中間ファイルで、`dist/binary/` には残らない）。
+2. `bundle_html.py` で CSS/JS/画像を `src/app/index.html` にインライン化した後、
+   `src/app/generated_index.html` へリネーム。Mermaid/MathJax は `resources/vendor/`
+   から同じく `src/app/generated_mathjax.js` / `generated_mermaid.js` へコピー
+   （いずれも `.gitignore` 済みの中間ファイルで、`dist/` には残らない）。
 3. `.rc`（アイコン・バージョン情報・UI埋め込みリソース）を `windres` / `llvm-windres` で
    コンパイル。`generated_*` ファイルは `QuickMarkPDF.rc` の `RCDATA` としてこの時点で
    exe 本体に埋め込まれる。
 4. `webview_main.cpp` とエンジンを `-static` でリンクし `QuickMarkPDF.exe` を生成。
 5. CLI デモを `-static` で `QuickMarkPDF_cli.exe` にリンク。
-6. `pdfium.dll`、`WebView2Loader.dll` を `dist/binary/` へコピー。
+6. `pdfium.dll`、`WebView2Loader.dll` を `dist/` へコピー。
 7. `--skip-tests` が無ければ `engine_tests.cpp` をビルドして実行（このテスト exe は `-static` ではないため、MinGW ランタイム DLL を隣へコピーする）。
 
 ### ビルド成果物
 
 | ファイル | 説明 |
 | --- | --- |
-| `dist/binary/QuickMarkPDF.exe` | GUI（製品本体。UI一式・Mermaid.js・MathJaxを埋め込み済み） |
-| `dist/binary/QuickMarkPDF_cli.exe` | 非 GUI のページモデルデモ |
-| `dist/binary/pdfium.dll` | PDFium |
-| `dist/binary/WebView2Loader.dll` | WebView2 ローダー |
-| `core/native/QuickMarkPDF_native_tests.exe` | エンジンテスト（配布しない） |
+| `dist/QuickMarkPDF.exe` | GUI（製品本体。UI一式・Mermaid.js・MathJaxを埋め込み済み） |
+| `dist/QuickMarkPDF_cli.exe` | 非 GUI のページモデルデモ |
+| `dist/pdfium.dll` | PDFium |
+| `dist/WebView2Loader.dll` | WebView2 ローダー |
+| `src/app/build/intermediate/engine_tests.exe` | エンジンテスト（配布しない） |
 
 `QuickMarkPDF.exe`、`pdfium.dll`、`WebView2Loader.dll` の3ファイルを同じフォルダに
 置けば動作します（`index.html`/`vendor/` は exe に埋め込み済みのため不要）。
 
 **既知の環境上の癖**: CrowdStrike Falcon Sensor が動いている環境（この開発機で確認済み）では、
 ビルド直後の未署名 exe がブロックされることがあります。実例として、ビルド成功直後に
-`QuickMarkPDF_cli.exe` が `dist/binary/` から消え、`engine_tests.exe` の初回が
+`QuickMarkPDF_cli.exe` が `dist/` から消え、`engine_tests.exe` の初回が
 `STATUS_ENTRYPOINT_NOT_FOUND`（終了コード `3221225785`）で失敗したあと、再実行では成功しました。
 この終了コードで失敗した場合、実回帰と決めつける前に再実行し、バイナリが残っているか確認してください。
 GUI 本体までブロックされる場合は、コードの問題ではなくビルド出力先の除外設定の話です。
@@ -114,11 +114,11 @@ Teams・Windows 検索などと共有されます。終了するのは `QuickMar
 | WebView2 ヘッダーが見つからない | `scripts\fetch_webview2_sdk.ps1` を実行するか `WEBVIEW2_INCLUDE` を設定 |
 | PDFium ヘッダー/DLL が見つからない | `scripts\fetch_pdfium.ps1` を実行 |
 | `windres` が見つからない | コンパイラと同じフォルダにある。PATH 変更後はターミナル再起動 |
-| 起動時に白画面 | RCDATA埋め込みが古いままの可能性。`python build_native.py` を再実行してexeを作り直す |
+| 起動時に白画面 | RCDATA埋め込みが古いままの可能性。`python scripts/build.py` を再実行してexeを作り直す |
 | 起動できない（Runtime） | Microsoft Edge WebView2 Runtime (Evergreen) をインストール |
-| `g++` / `windres` を直接叩けない | WinLibs の `mingw64\bin` をユーザー PATH へ。`build_native.py` 自体には不要 |
+| `g++` / `windres` を直接叩けない | WinLibs の `mingw64\bin` をユーザー PATH へ。`scripts/build.py` 自体には不要 |
 | 未署名 exe が消える、または終了コード `3221225785` | 上記 Falcon の癖。回帰と決めつける前に再実行 |
-| `ModuleNotFoundError: No module named 'src'` | Python テストはリポジトリ直下を cwd にする（`pyproject.toml` の `pythonpath = ["python/prototype"]`） |
+| `ModuleNotFoundError: No module named 'src'` | Python テストはリポジトリ直下を cwd にする（`pyproject.toml` の `pythonpath = ["proto/prototype"]`） |
 
 ## 評価用プロトタイプ（Python）
 
@@ -126,8 +126,8 @@ Teams・Windows 検索などと共有されます。終了するのは `QuickMar
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python python/prototype/main.py
-python python/prototype/main.py path\to\file.pdf
+python proto/prototype/main.py
+python proto/prototype/main.py path\to\file.pdf
 ```
 
 PyInstaller onedir（配布しない）:
@@ -141,34 +141,34 @@ PyInstaller onedir（配布しない）:
 ### Python 自動テスト
 
 ```powershell
-.venv\Scripts\python.exe python/tests/run_tests.py
+.venv\Scripts\python.exe proto/tests/run_tests.py
 ```
 
-既定の pytest 一式を実行し、`python/tests/reports/summary.md` と JUnit XML・HTML カバレッジを
-`python/tests/reports/` へ書きます（Git 管理外）。
+既定の pytest 一式を実行し、`proto/tests/reports/summary.md` と JUnit XML・HTML カバレッジを
+`proto/tests/reports/` へ書きます（Git 管理外）。
 
-`python/tests/conftest.py` のオートユース `dialog_guard` が `QFileDialog` / `QMessageBox` /
+`proto/tests/conftest.py` のオートユース `dialog_guard` が `QFileDialog` / `QMessageBox` /
 `QInputDialog` / `QDialog.exec` をパッチします。未登録のダイアログはハングせず即失敗します。
 テストあたり 60 秒のタイムアウトと合わせ、クリック待ちで止まらないようにしています。
 
 | 場所 | 内容 | 既定で実行 |
 | --- | --- | --- |
-| `python/tests/test_*.py` | 単体 + `MainWindow` の開く/回転/削除/並べ替え/Undo/保存/書き出し | する |
-| `python/tests/visual/` | `python/tests/visual_baselines/` とのスクリーンショット回帰 | する |
-| `python/tests/perf/` | 読み込み/回転/並べ替え/Undo/書き出しの所要時間 | する |
-| `python/tests/real_screen/` | 実ウィンドウ + `QTest` 入力 | しない（`--real-screen`） |
+| `proto/tests/test_*.py` | 単体 + `MainWindow` の開く/回転/削除/並べ替え/Undo/保存/書き出し | する |
+| `proto/tests/visual/` | `proto/tests/visual_baselines/` とのスクリーンショット回帰 | する |
+| `proto/tests/perf/` | 読み込み/回転/並べ替え/Undo/書き出しの所要時間 | する |
+| `proto/tests/real_screen/` | 実ウィンドウ + `QTest` 入力 | しない（`--real-screen`） |
 
 `QUICKMARKPDF_REAL_SCREEN=1` が無い限り offscreen Qt（`QT_QPA_PLATFORM=offscreen`）です。
 この環境の offscreen Qt には CJK フォントが無く、見た目テストの日本語は豆腐になります。
 レイアウト回帰の検出用であり、実機の日本語表示そのものではありません。
 
 ```powershell
-.venv\Scripts\python.exe python/tests/run_tests.py --update-visual-baselines
-.venv\Scripts\python.exe python/tests/run_tests.py --real-screen
-.venv\Scripts\python.exe -m pytest python/tests/test_pdf_manager.py -v
+.venv\Scripts\python.exe proto/tests/run_tests.py --update-visual-baselines
+.venv\Scripts\python.exe proto/tests/run_tests.py --real-screen
+.venv\Scripts\python.exe -m pytest proto/tests/test_pdf_manager.py -v
 ```
 
-TCP 制御チャネル（`core/native/test_api_server.cpp`）は `QUICKMARKPDF_TEST_PORT` が
+TCP 制御チャネル（`src/engine/test_api_server.cpp`）は `QUICKMARKPDF_TEST_PORT` が
 無いと何もしません。ここのコマンド名（`load_pdfs`、`undo`、`save_as` など）は
 テスト専用であり、[`spec_jp.md`](spec_jp.md) の GUI WebMessage とは別物です。
 
@@ -186,20 +186,20 @@ Python 試作 / テスト: `requirements.txt`（PyMuPDF、PySide6、Pillow、Mar
 ```text
 QuickMarkPDF/
 ├── .github/workflows/     ci.yml, release.yml（v* タグでネイティブ ZIP）
-├── core/native/           C++ エンジン、WebView2 ホスト、CLI デモ、リソース
+├── src/app/           C++ エンジン、WebView2 ホスト、CLI デモ、リソース
 ├── templates/             開発用 HTML
 ├── static/                開発用 CSS/JS
-├── python/prototype/      評価用プロトタイプ（配布しない）
-├── python/tests/          Python 試作のテスト
+├── proto/prototype/      評価用プロトタイプ（配布しない）
+├── proto/tests/          Python 試作のテスト
 ├── python/tools/          補助スクリプト
 ├── scripts/               fetch_webview2_sdk.ps1, fetch_pdfium.ps1
 ├── resources/vendor/      exe へ埋め込む Mermaid / MathJax のソース
 ├── assets/                README 用スクリーンショット（ZIP には入れない）
-├── document/              開発者向け文書（英語 + _jp）
+├── docs/              開発者向け文書（英語 + _jp）
 ├── plans/                 日付付き計画書・実施結果
-├── dist/binary/           ネイティブ成果物（フォルダ以外は Git 管理外）
-├── dist/documents/        配布する txt（readme / history / LICENSE）
-├── build_native.py
+├── dist/           ネイティブ成果物（フォルダ以外は Git 管理外）
+├── docs/distribution/        配布する txt（readme / history / LICENSE）
+├── scripts/build.py
 ├── bundle_html.py
 ├── README.md / README_jp.md
 └── HISTORY.md / HISTORY_jp.md

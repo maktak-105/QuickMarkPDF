@@ -6,7 +6,7 @@
 
 A simple Windows desktop PDF page editor — free, no ads, no donation requests, no paid features. Just the split / merge / reorder / rotate / export you actually need. As a bonus, it also renders and exports Markdown to PDF, with Mermaid diagrams and math (MathJax).
 
-**Current version: v3.3.0.** `src/` (C++17 + WebView2) is the shipped product. `proto/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`docs/about.md`](docs/about.md) and [`docs/environment.md`](docs/environment.md).
+**Current version: v3.3.1.** `src/` (C++17 + WebView2) is the shipped product. `proto/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`docs/about.md`](docs/about.md) and [`docs/environment.md`](docs/environment.md).
 
 The UI can switch between Japanese and English (toggle button at the right end of the menu bar). The English and Japanese README screenshots show the same window in each language.
 
@@ -26,8 +26,8 @@ The UI can switch between Japanese and English (toggle button at the right end o
 If you only want to run the app, download the ZIP from GitHub Releases. GitHub Actions builds `QuickMarkPDF-binary.zip` on a `v*` tag; the ZIP is not stored in this repository.
 
 - [Latest releases](https://github.com/maktak-105/QuickMarkPDF/releases)
-- [QuickMarkPDF v3.3.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v3.3.0)
-- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v3.3.0/QuickMarkPDF-binary.zip)
+- [QuickMarkPDF v3.3.1](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v3.3.1)
+- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v3.3.1/QuickMarkPDF-binary.zip)
 
 The ZIP contains all distribution files in one flat folder.
 
@@ -39,6 +39,7 @@ The ZIP contains all distribution files in one flat folder.
 - `history.txt` / `history_jp.txt` - change log
 - `LICENSE.txt` / `LICENSE_jp.txt` - MIT License files
 
+Release binaries and checksums are published on GitHub Releases, not in this repository.
 ### Integrity verification (SHA-256)
 
 Official SHA-256 checksums for the distribution ZIP and binaries are automatically computed during the CI (GitHub Actions) build and published as `SHA256SUMS.txt` on each release page. Verify the downloaded package with PowerShell:
@@ -67,6 +68,8 @@ Full usage, including password-protected PDFs and image-export options, is in [`
 `QuickMarkPDF_cli.exe` is a page-model demo used to exercise the native engine. It is not a product command-line interface.
 
 ```powershell
+.\QuickMarkPDF_cli.exe --help
+.\QuickMarkPDF_cli.exe demo
 .\QuickMarkPDF_cli.exe input.pdf
 ```
 
@@ -85,10 +88,12 @@ The WebView2 SDK and PDFium are fetched into `third_party/` (gitignored):
 ```powershell
 powershell -File scripts\fetch_webview2_sdk.ps1
 powershell -File scripts\fetch_pdfium.ps1
+python scripts/build.py
 scripts\build.bat
 # or python scripts/build.py
 ```
 
+Output under `dist/`: `QuickMarkPDF.exe`, `QuickMarkPDF_cli.exe`, `pdfium.dll`, and `WebView2Loader.dll` (the UI bundle is embedded in the exe as a build step, not written to `dist/`).
 Output under `dist/`: `QuickMarkPDF.exe`, `QuickMarkPDF_cli.exe`, `pdfium.dll`, and `WebView2Loader.dll` (the UI bundle is embedded in the exe as a build step, not written as separate HTML).
 
 Full development details, tests, and QA: [`docs/environment.md`](docs/environment.md). Specification: [`docs/spec.md`](docs/spec.md).
