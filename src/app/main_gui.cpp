@@ -2177,6 +2177,23 @@ bool load_ui(const std::filesystem::path& executable_dir) {
     return true;
 }
 
+// The window content is dark HTML, so the system title bar must be dark as well. dwmapi is looked up at run time
+// (no extra import library). Attribute 20 = DWMWA_USE_IMMERSIVE_DARK_MODE (Windows 10 build 18985 and later,
+// Windows 11); 19 is the same switch on earlier Windows 10 builds.
+void apply_dark_title_bar(HWND window) {
+    HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+    if (!dwm) return;
+    using SetAttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+    const auto set_attribute = reinterpret_cast<SetAttributeFn>(GetProcAddress(dwm, "DwmSetWindowAttribute"));
+    if (set_attribute) {
+        const BOOL enabled = TRUE;
+        if (FAILED(set_attribute(window, 20, &enabled, sizeof(enabled)))) {
+            set_attribute(window, 19, &enabled, sizeof(enabled));
+        }
+    }
+    FreeLibrary(dwm);
+}
+
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_SIZE:
@@ -2321,6 +2338,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     g_window = CreateWindowExW(window_ex_style, window_class.lpszClassName, L"QuickMarkPDF", window_style, window_x,
                                 window_y, window_w, window_h, nullptr, nullptr, instance, nullptr);
     if (!g_window) return 1;
+    apply_dark_title_bar(g_window);
     load_last_used_dir_setting();
 
     if (offscreen) SetLayeredWindowAttributes(g_window, 0, 0, LWA_ALPHA);  // alpha=0: fully invisible
