@@ -23,6 +23,8 @@
 
 ## 配布版を使う
 
+コード署名: [SignPath.io](https://signpath.io) による無償のコード署名を利用し、証明書は [SignPath Foundation](https://signpath.org) が発行します。現在申請中で、承認後に公開するリリースから署名されます。詳細は [コード署名ポリシー](docs/code_signing_policy.md)。
+
 実行だけなら GitHub Releases の ZIP を使います。`v*` タグで GitHub Actions が `QuickMarkPDF-binary.zip` を作ります。ZIP はリポジトリには置きません。
 
 - [最新版の配布ページ](https://github.com/maktak-105/QuickMarkPDF/releases)
