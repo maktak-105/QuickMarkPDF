@@ -23,6 +23,8 @@ The UI can switch between Japanese and English (toggle button at the right end o
 
 ## Using the binary release
 
+Code signing: Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). The application is under review; releases published after approval will be signed. See [Code signing policy](docs/code_signing_policy.md).
+
 If you only want to run the app, download the ZIP from GitHub Releases. GitHub Actions builds `QuickMarkPDF-binary.zip` on a `v*` tag; the ZIP is not stored in this repository.
 
 - [Latest releases](https://github.com/maktak-105/QuickMarkPDF/releases)
