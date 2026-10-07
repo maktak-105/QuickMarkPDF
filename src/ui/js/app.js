@@ -375,6 +375,186 @@
     return html.join('\n');
   }
 
+  // ── Markdownコピー処理（テキスト選択 + Ctrl+C でMarkdown記法付きでコピー） ──
+  function convertTableToMarkdown(table) {
+    const rows = Array.from(table.querySelectorAll('tr'));
+    if (!rows.length) return '';
+    const lines = [];
+    rows.forEach((row, rowIdx) => {
+      const cells = Array.from(row.children).filter((c) => c.tagName === 'TH' || c.tagName === 'TD');
+      const cellTexts = cells.map((c) => c.textContent.trim().replace(/\|/g, '\\|'));
+      lines.push('| ' + cellTexts.join(' | ') + ' |');
+      if (rowIdx === 0 && row.querySelector('th')) {
+        lines.push('| ' + cells.map(() => '---').join(' | ') + ' |');
+      }
+    });
+    return lines.join('\n') + '\n\n';
+  }
+
+  function convertNodeToMarkdown(node) {
+    if (!node) return '';
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return '';
+    }
+
+    // 大容量ファイルバナーや追加読み込みボタン等はスキップ
+    if (node.classList && (node.classList.contains('large-file-banner') || node.classList.contains('load-more-container'))) {
+      return '';
+    }
+
+    const tag = node.tagName.toLowerCase();
+
+    // 見出し
+    if (/^h[1-6]$/.test(tag)) {
+      const level = parseInt(tag[1], 10);
+      const inner = Array.from(node.childNodes).map(convertNodeToMarkdown).join('').trim();
+      return '#'.repeat(level) + ' ' + inner + '\n\n';
+    }
+
+    // 段落
+    if (tag === 'p') {
+      const inner = Array.from(node.childNodes).map(convertNodeToMarkdown).join('').trim();
+      return inner + '\n\n';
+    }
+
+    // 引用
+    if (tag === 'blockquote') {
+      const inner = Array.from(node.childNodes).map(convertNodeToMarkdown).join('').trim();
+      const quoted = inner.split('\n').map((line) => (line ? `> ${line}` : '>')).join('\n');
+      return quoted + '\n\n';
+    }
+
+    // コードブロック
+    if (tag === 'pre') {
+      const code = node.querySelector('code') || node;
+      const isMermaid = node.classList.contains('mermaid');
+      const lang = isMermaid ? 'mermaid' : '';
+      return '```' + lang + '\n' + code.textContent.replace(/\n+$/, '') + '\n```\n\n';
+    }
+
+    // リスト
+    if (tag === 'ul') {
+      const items = Array.from(node.children)
+        .filter((el) => el.tagName.toLowerCase() === 'li')
+        .map((li) => '- ' + Array.from(li.childNodes).map(convertNodeToMarkdown).join('').trim())
+        .join('\n');
+      return items + '\n\n';
+    }
+    if (tag === 'ol') {
+      const items = Array.from(node.children)
+        .filter((el) => el.tagName.toLowerCase() === 'li')
+        .map((li, idx) => `${idx + 1}. ` + Array.from(li.childNodes).map(convertNodeToMarkdown).join('').trim())
+        .join('\n');
+      return items + '\n\n';
+    }
+    if (tag === 'li') {
+      const inner = Array.from(node.childNodes).map(convertNodeToMarkdown).join('').trim();
+      return '- ' + inner + '\n';
+    }
+
+    // 水平線
+    if (tag === 'hr') {
+      return '---\n\n';
+    }
+
+    // 表
+    if (tag === 'table') {
+      return convertTableToMarkdown(node);
+    }
+
+    // インライン装飾
+    if (tag === 'strong' || tag === 'b') {
+      return '**' + Array.from(node.childNodes).map(convertNodeToMarkdown).join('') + '**';
+    }
+    if (tag === 'em' || tag === 'i') {
+      return '*' + Array.from(node.childNodes).map(convertNodeToMarkdown).join('') + '*';
+    }
+    if (tag === 'code') {
+      return '`' + node.textContent + '`';
+    }
+    if (tag === 'a') {
+      const inner = Array.from(node.childNodes).map(convertNodeToMarkdown).join('');
+      const href = node.getAttribute('href');
+      return href ? `[${inner}](${href})` : inner;
+    }
+    if (tag === 'img') {
+      const alt = node.getAttribute('alt') || '';
+      const src = node.getAttribute('src') || '';
+      return `![${alt}](${src})`;
+    }
+    if (tag === 'br') {
+      return '\n';
+    }
+
+    return Array.from(node.childNodes).map(convertNodeToMarkdown).join('');
+  }
+
+  function getSelectionAsMarkdown(selection) {
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return '';
+    const range = selection.getRangeAt(0);
+    const cloned = range.cloneContents();
+
+    const hasBlockElements = Boolean(
+      cloned.querySelector &&
+      cloned.querySelector('h1, h2, h3, h4, h5, h6, p, blockquote, pre, ul, ol, table, hr')
+    );
+
+    if (!hasBlockElements) {
+      let block = range.commonAncestorContainer;
+      if (block.nodeType === Node.TEXT_NODE) {
+        block = block.parentElement;
+      }
+      const blockEl = block ? block.closest('h1, h2, h3, h4, h5, h6, li, blockquote, pre') : null;
+      if (blockEl) {
+        const tag = blockEl.tagName.toLowerCase();
+        const selectedText = convertNodeToMarkdown(cloned).trim();
+        if (!selectedText) return '';
+
+        if (/^h[1-6]$/.test(tag)) {
+          const level = parseInt(tag[1], 10);
+          return '#'.repeat(level) + ' ' + selectedText;
+        }
+        if (tag === 'li') {
+          const parentList = blockEl.closest('ol, ul');
+          if (parentList && parentList.tagName.toLowerCase() === 'ol') {
+            const index = Array.from(parentList.children).indexOf(blockEl) + 1;
+            return `${index}. ${selectedText}`;
+          }
+          return `- ${selectedText}`;
+        }
+        if (tag === 'blockquote') {
+          return selectedText.split('\n').map((l) => (l ? `> ${l}` : '>')).join('\n');
+        }
+        if (tag === 'pre') {
+          const isMermaid = blockEl.classList.contains('mermaid');
+          const lang = isMermaid ? 'mermaid' : '';
+          return '```' + lang + '\n' + selectedText + '\n```';
+        }
+      }
+    }
+
+    return convertNodeToMarkdown(cloned).trim();
+  }
+
+  document.addEventListener('copy', (event) => {
+    if (currentMode !== 'markdown') return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+    const anchor = selection.anchorNode;
+    const focus = selection.focusNode;
+    if (!markdownWorkspace.contains(anchor) && !markdownWorkspace.contains(focus)) return;
+
+    const mdText = getSelectionAsMarkdown(selection);
+    if (mdText) {
+      event.clipboardData.setData('text/plain', mdText);
+      event.preventDefault();
+    }
+  });
+
   function setStatus(text) {
     statusEl.textContent = text;
   }
