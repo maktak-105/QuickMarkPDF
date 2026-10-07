@@ -22,8 +22,8 @@ IDR_MATHJAX_JS RCDATA "generated_mathjax.js"
 IDR_MERMAID_JS RCDATA "generated_mermaid.js"
 
 1 VERSIONINFO
-FILEVERSION 3,3,0,0
-PRODUCTVERSION 3,3,0,0
+FILEVERSION 4,0,0,0
+PRODUCTVERSION 4,0,0,0
 FILEOS 0x40004L
 FILETYPE 0x1L
 BEGIN
@@ -33,12 +33,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "maktak-105"
       VALUE "FileDescription", "QuickMarkPDF"
-      VALUE "FileVersion", "3.3.1.0"
+      VALUE "FileVersion", "4.0.0.0"
       VALUE "InternalName", "QuickMarkPDF"
       VALUE "LegalCopyright", "MIT License"
       VALUE "OriginalFilename", "QuickMarkPDF.exe"
       VALUE "ProductName", "QuickMarkPDF"
-      VALUE "ProductVersion", "3.3.1.0"
+      VALUE "ProductVersion", "4.0.0.0"
     END
   END
   BLOCK "VarFileInfo"
