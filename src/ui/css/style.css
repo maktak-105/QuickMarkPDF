@@ -290,6 +290,9 @@ button.tool:disabled { opacity: .32; cursor: default; }
 .markdown-content li { margin: .25em 0; }
 .markdown-content img { max-width: 100%; }
 .markdown-content hr { border: none; border-top: 1px solid var(--border-color); margin: 1.6em 0; }
+.markdown-content .page-break {
+  height: 0; margin: 1.6em 0; border-top: 1px dashed var(--border-color); opacity: .7;
+}
 .markdown-content table { border-collapse: collapse; margin: 1em 0; width: 100%; }
 .markdown-content th, .markdown-content td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; }
 .markdown-content th { background: var(--bg-input); }
@@ -462,4 +465,13 @@ kbd {
   .markdown-content th, .markdown-content td { border-color: #999 !important; }
   .markdown-content h1 { border-bottom-color: #e0e0e0 !important; }
   .markdown-content h2 { border-bottom-color: #eee !important; }
+  /* The screen rule paints <hr> with --border-color, a near-transparent
+     white that is simply invisible on the printed white page (same class
+     of bug as the table borders fixed in v4.1.0). */
+  .markdown-content hr { border-top-color: #ddd !important; }
+  /* The page break itself. The screen-only dashed rule above would
+     otherwise print as a stray line at the top of the new page. */
+  .markdown-content .page-break {
+    break-before: page; border-top: none !important; margin: 0 !important;
+  }
 }

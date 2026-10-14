@@ -233,6 +233,23 @@
     return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
   }
 
+  // The one raw-HTML construct this converter honours instead of escaping
+  // (see the escapeHtml note above): a standalone page-break <div>. Both
+  // spellings other Markdown->PDF tools use are accepted -- an inline style
+  // naming a page break ('page-break-before/after: always', or the CSS3
+  // 'break-before/after: page') and Markdown PDF's class="page" -- written
+  // <div ...></div>, <div ... />, or <div ...> on a line of its own. Any
+  // other raw HTML still renders as literal text.
+  function isPageBreakLine(line) {
+    const match = line.trim().match(/^<div\s+([^>]*?)\/?>(?:\s*<\/div>)?$/i);
+    if (!match) return false;
+    const attrs = match[1];
+    const style = attrs.match(/style\s*=\s*["']([^"']*)["']/i);
+    if (style && /(?:page-)?break-(?:before|after)\s*:\s*(?:always|page)/i.test(style[1])) return true;
+    const cls = attrs.match(/class\s*=\s*["']([^"']*)["']/i);
+    return !!cls && cls[1].trim().split(/\s+/).some((c) => c.toLowerCase() === 'page');
+  }
+
   function markdownToHtml(source) {
     const lines = source.replace(/\r\n?/g, '\n').split('\n');
     const html = [];
@@ -291,6 +308,14 @@
         flushParagraph();
         flushList();
         html.push('<hr>');
+        i += 1;
+        continue;
+      }
+
+      if (isPageBreakLine(line)) {
+        flushParagraph();
+        flushList();
+        html.push('<div class="page-break"></div>');
         i += 1;
         continue;
       }

@@ -8,7 +8,7 @@
 - **実装**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/バニラJS
 - **配布形態**: GitHub Releases の ZIP（フラット構成）
 - **表示言語**: 日本語 / English（メニューバー右端のボタンで切替、`localStorage`とレジストリに永続化）
-- **バージョン**: v4.1.0
+- **バージョン**: v4.2.0
 
 製品として出荷されるのは`src/app/`（C++17 + WebView2版）である。`proto/prototype/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。
 

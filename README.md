@@ -6,7 +6,7 @@
 
 A simple Windows desktop PDF page editor — free, no ads, no donation requests, no paid features. Just the split / merge / reorder / rotate / export you actually need. As a bonus, it also renders and exports Markdown to PDF, with Mermaid diagrams and math (MathJax).
 
-**Current version: v4.1.0.** `src/` (C++17 + WebView2) is the shipped product. `proto/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`docs/about.md`](docs/about.md) and [`docs/environment.md`](docs/environment.md).
+**Current version: v4.2.0.** `src/` (C++17 + WebView2) is the shipped product. `proto/prototype/` (PySide6) is a development-time evaluation prototype and is not distributed. See [`docs/about.md`](docs/about.md) and [`docs/environment.md`](docs/environment.md).
 
 The UI can switch between Japanese and English (toggle button at the right end of the menu bar). The English and Japanese README screenshots show the same window in each language.
 
@@ -20,6 +20,7 @@ The UI can switch between Japanese and English (toggle button at the right end o
 - Extract selectable text from all pages, a typed page range, or the currently previewed page, and save it as a .txt file
 - Undo and unsaved-change protection
 - Markdown preview with Mermaid diagrams, math, and streaming chunk loading for large files, exportable to PDF
+- Page breaks in Markdown (put `<div style="page-break-before: always;"></div>` or `<div class="page"></div>` on a line of its own to break the page there on PDF export)
 
 ## Using the binary release
 
@@ -28,8 +29,8 @@ Code signing: Free code signing provided by [SignPath.io](https://signpath.io), 
 If you only want to run the app, download the ZIP from GitHub Releases. GitHub Actions builds `QuickMarkPDF-binary.zip` on a `v*` tag; the ZIP is not stored in this repository.
 
 - [Latest releases](https://github.com/maktak-105/QuickMarkPDF/releases)
-- [QuickMarkPDF v4.1.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v4.1.0)
-- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v4.1.0/QuickMarkPDF-binary.zip)
+- [QuickMarkPDF v4.2.0](https://github.com/maktak-105/QuickMarkPDF/releases/tag/v4.2.0)
+- [Direct download of QuickMarkPDF-binary.zip](https://github.com/maktak-105/QuickMarkPDF/releases/download/v4.2.0/QuickMarkPDF-binary.zip)
 
 The ZIP contains all distribution files in one flat folder.
 

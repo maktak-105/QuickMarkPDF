@@ -8,7 +8,7 @@
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
 - **Distribution**: GitHub Releases ZIP (flat layout)
 - **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
-- **Version**: v4.1.0
+- **Version**: v4.2.0
 
 `src/app/` (C++17 + WebView2) is the shipped product. `proto/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is

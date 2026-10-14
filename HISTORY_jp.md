@@ -1,5 +1,10 @@
 # QuickMarkPDF 変更履歴
 
+## v4.2.0 — 2026-10-14
+
+- Markdown内で改ページを指定できるようにした。`<div style="page-break-before: always;"></div>` または `<div class="page"></div>` を単独行に置くと、PDFへの書き出し時にその位置で改ページされる。
+- Markdownの水平線（`---`）がPDF上でまったく見えなくなる問題を修正。
+
 ## v4.1.0 — 2026-10-14
 
 - MarkdownからPDFを書き出す際、表の罫線が印刷で見えなくなる問題を修正。
