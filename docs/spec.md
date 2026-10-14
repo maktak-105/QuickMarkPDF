@@ -6,9 +6,9 @@
 - **Purpose**: A simple PDF page editor — free, no ads, no donation requests, no paid features (split, merge, reorder, rotate, export to image/PDF). As a bonus, it also exports Markdown (with Mermaid diagrams and math) to PDF.
 - **Target OS**: Windows 10 / 11 (64-bit)
 - **Implementation**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/vanilla JS
-- **Distribution**: GitHub Releases ZIP (flat layout; Release not published yet)
+- **Distribution**: GitHub Releases ZIP (flat layout)
 - **UI language**: Japanese / English (toggle button at the right end of the menu bar; persisted to `localStorage` and the registry)
-- **Version**: v3.3.1
+- **Version**: v4.1.0
 
 `src/app/` (C++17 + WebView2) is the shipped product. `proto/prototype/` (PySide6)
 is a prototype used only for evaluating behavior during development; it is
