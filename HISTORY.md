@@ -1,5 +1,10 @@
 # QuickMarkPDF Changelog
 
+## v4.2.0 — 2026-10-14
+
+- Added page breaks in Markdown. Put `<div style="page-break-before: always;"></div>` or `<div class="page"></div>` on a line of its own and the PDF export breaks the page there.
+- Fixed horizontal rules (`---`) being completely invisible in the exported PDF.
+
 ## v4.1.0 — 2026-10-14
 
 - Fixed Markdown table borders becoming invisible when exporting to PDF.

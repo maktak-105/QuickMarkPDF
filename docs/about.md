@@ -2,7 +2,7 @@
 
 ## Version
 
-Ver. v4.1.0
+Ver. v4.2.0
 
 ## Concept
 
