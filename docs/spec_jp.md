@@ -6,9 +6,9 @@
 - **目的**: 無料、広告無し、寄付無し、課金無し。シンプルなPDFページ編集ツール（分割・結合・並べ替え・回転・画像/PDF書き出し）。おまけでMarkdown（Mermaid図・数式対応）のPDF書き出しにも対応する
 - **対象OS**: Windows 10 / 11 (64-bit)
 - **実装**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/バニラJS
-- **配布形態**: GitHub Releases の ZIP（フラット構成。Release は未公開）
+- **配布形態**: GitHub Releases の ZIP（フラット構成）
 - **表示言語**: 日本語 / English（メニューバー右端のボタンで切替、`localStorage`とレジストリに永続化）
-- **バージョン**: v3.3.1
+- **バージョン**: v4.1.0
 
 製品として出荷されるのは`src/app/`（C++17 + WebView2版）である。`proto/prototype/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。
 

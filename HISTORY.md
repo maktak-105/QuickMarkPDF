@@ -1,5 +1,9 @@
 # QuickMarkPDF Changelog
 
+## v4.1.0 — 2026-10-14
+
+- Fixed Markdown table borders becoming invisible when exporting to PDF.
+
 ## v3.3.1 — 2026-09-20
 
 - Fixed the project restructure, build/package paths, and release verification.
