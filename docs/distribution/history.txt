@@ -1,4 +1,7 @@
 QuickMarkPDF - Change log
+v4.3.0 (2026-10-27)
+- Improved Markdown preview background styling: removed card frames and shadows for a clean flat design, fixing the background cutoff issue during vertical scrolling.
+
 v4.2.0 (2026-10-14)
 - Added page breaks in Markdown. Put <div style="page-break-before: always;"></div> or <div class="page"></div> on a line of its own and the PDF export breaks the page there.
 - Fixed horizontal rules (---) being invisible in the exported PDF.
