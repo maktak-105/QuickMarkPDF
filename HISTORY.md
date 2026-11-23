@@ -1,5 +1,30 @@
 # QuickMarkPDF Changelog
 
+## v5.0.0 — 2026-11-23
+
+### Features
+
+- Markdown files can now contain HTML. A safe subset is shown (and exported to PDF) as HTML: text formatting (`<b>`, `<i>`, `<mark>`, `<sub>`, `<sup>`, `<kbd>`, ...), `<br>`, links, images with `width`/`height`/`align`, tables, `<details>`/`<summary>`, `<div align="center">`, headings, lists, ruby, and so on. Anything outside the allow-list is dropped without being shown as text: scripts, frames, forms, `style`, event handlers, and the `class`/`id`/`name` attributes. HTML comments are hidden. HTML inside code blocks and inline code is still shown as text. Images must be `http(s)` or base64; images with a relative path are not displayed. See the specification ("Raw HTML in Markdown") for the full list.
+
+### Security
+
+- Fixed a flaw where a crafted Markdown file could run script inside the app and, after a PDF was opened, write image files to arbitrary folders. The Markdown renderer now only produces allow-listed tags and URL schemes, the UI page has a Content-Security-Policy, and the app ignores messages that do not come from its own page, cancels navigation to other sites, and opens only `http(s)` and `mailto:` links in the default app.
+- Image export rejects file-name prefixes that contain path characters, rejects relative and device-path folders, limits the resolution to 1-1200 dpi, and asks for confirmation before using an unconfirmed folder or overwriting a file.
+- Saving PDFs that include password-protected sources now warns that the encryption is not kept, and does not offer to overwrite the original.
+- DevTools and the browser shortcut keys are disabled. The WebView2 profile moved to `%LOCALAPPDATA%\QuickMarkPDF\WebView2` (the saved settings are copied over once).
+- `pdfium.dll` is loaded from the exe's own folder by full path. Passwords are wiped from memory after use. Overwrite-saving writes a temporary file and replaces the original only when that succeeds. Page rendering and image export have size limits.
+- Release builds carry a build provenance attestation, and downloaded build dependencies are verified by SHA-256.
+
+### Bug fixes
+
+- Fixed rendering and text extraction failing for password-protected PDFs even after they were opened with the password.
+- Fixed the preview and the text layer showing the old content after pages were reordered and the source file was overwritten.
+
+### Changes
+
+- Updated bundled libraries: pdfium 153.0.8009 to 160.0.8165, WebView2 SDK 1.0.2903.40 to 1.0.4370.26, Mermaid 11.15.0 to 11.17.2 (MathJax stays at 3.2.2).
+- Added a weekly check that compares the bundled library versions with the latest upstream releases.
+
 ## v4.3.0 — 2026-10-27
 
 - Improved Markdown preview background styling: removed redundant card borders and shadows in favor of a clean, flat design matching the dark theme, and fixed the background being cut off when scrolling vertically.

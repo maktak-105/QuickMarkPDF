@@ -45,6 +45,8 @@ jobs:
           $env:PYTHONIOENCODING = 'utf-8'
           node tests/markdown_render_test.js
           if ($LASTEXITCODE -ne 0) { throw 'Markdown renderer tests failed' }
+          node tests/markdown_html_test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Markdown HTML tests failed' }
           python scripts/build.py all
           if ($LASTEXITCODE -ne 0) { throw 'Build or native tests failed' }
       - name: Package distribution files

@@ -34,6 +34,8 @@ jobs:
         run: |
           node tests/markdown_render_test.js
           if ($LASTEXITCODE -ne 0) { throw 'Markdown renderer tests failed' }
+          node tests/markdown_html_test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Markdown HTML tests failed' }
       - name: Install MinGW
         shell: pwsh
         # Versions are those the last green run used (mingw 16.1.0, python 3.15.2). --version applies to every

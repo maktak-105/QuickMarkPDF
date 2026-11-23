@@ -190,6 +190,7 @@ Security regression tests (added with the 2026-11-23 audit fixes, see
 
 ```powershell
 node tests/markdown_render_test.js                      # Markdown converter: attack strings, fuzz, normal output
+node tests/markdown_html_test.js                        # raw HTML in Markdown: allow-list, dropping rules, attack payloads, fuzz
 python scripts/build.py test                            # engine tests (prefix, limits, encrypted sources, overwrite)
 python scripts/build.py testapi
 python tests/e2e/security_regression.py build/intermediate/QuickMarkPDF_testapi.exe

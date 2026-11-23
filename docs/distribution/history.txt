@@ -1,4 +1,11 @@
 QuickMarkPDF - Change log
+v5.0.0 (2026-11-23)
+- Markdown files can now contain HTML. A safe subset (text formatting, <br>, links, images with width/height/align, tables, <details>/<summary>, <div align="center">, headings, lists, ruby) is shown and exported to PDF as HTML. Scripts, frames, forms, style, event handlers and class/id/name attributes are dropped without being shown as text. HTML comments are hidden. HTML in code blocks and inline code is still shown as text. Images must be http(s) or base64; relative-path images are not displayed.
+- Security: fixed a flaw where a crafted Markdown file could run script in the app and, after a PDF was opened, write image files to arbitrary folders. Added a Content-Security-Policy, restricted Markdown output to allow-listed tags and URL schemes, validated image export prefixes, folders and resolution, warned that encryption is not kept when saving password-protected sources, disabled DevTools and browser shortcut keys, loaded pdfium.dll by full path from the exe folder, and added size limits.
+- Fixed rendering and text extraction failing for password-protected PDFs even after they were opened with the password.
+- Fixed the preview and the text layer showing the old content after pages were reordered and the source file was overwritten.
+- Updated bundled libraries: pdfium 160.0.8165, WebView2 SDK 1.0.4370.26, Mermaid 11.17.2.
+
 v4.3.0 (2026-10-27)
 - Improved Markdown preview background styling: removed card frames and shadows for a clean flat design, fixing the background cutoff issue during vertical scrolling.
 

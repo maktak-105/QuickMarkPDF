@@ -182,6 +182,7 @@ TCP 制御チャネル（`src/engine/test_api_server.cpp`）は、別ビルド�
 
 ```powershell
 node tests/markdown_render_test.js                      # Markdown変換: 攻撃文字列・ファズ・通常出力
+node tests/markdown_html_test.js                        # Markdown内のHTML: 許可リスト・破棄の規則・攻撃文字列・ファズ
 python scripts/build.py test                            # エンジンテスト(接頭辞・上限・暗号化検出・上書き保存)
 python scripts/build.py testapi
 python tests/e2e/security_regression.py build/intermediate/QuickMarkPDF_testapi.exe

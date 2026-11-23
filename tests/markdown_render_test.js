@@ -3,7 +3,7 @@
 //
 // The converter handles untrusted file content, so most of this file checks
 // that nothing the source says can turn into script: a known list of attack
-// strings plus a randomized fuzz run, each checked by assertSafeHtml(), a strict
+// strings plus a randomized fuzz run, each checked by assertSafeHtml() (tests/support/safe_html.js), a strict
 // validator for the converter's output grammar. The rest pins the HTML produced
 // for ordinary Markdown.
 'use strict';
@@ -14,68 +14,7 @@ const path = require('path');
 const { renderMarkdownDocument, sanitizeLinkUrl, sanitizeImageUrl, escapeHtml } =
   require(path.join(__dirname, '..', 'src', 'ui', 'js', 'markdown.js'));
 
-// ---------------------------------------------------------------------------
-// Output validator
-// ---------------------------------------------------------------------------
-// The converter only ever emits the tags below, with quoted attribute values
-// that cannot contain a quote or angle bracket. Anything else -- a stray '<' or
-// '>', an unknown tag or attribute, an on* handler, a URL with another scheme --
-// means markup from the source reached the output.
-const ALLOWED_ATTRIBUTES = {
-  a: ['href', 'target', 'rel'],
-  img: ['alt', 'src', 'referrerpolicy'],
-  div: ['class'],
-  pre: ['class'],
-  th: ['style'],
-  td: ['style'],
-};
-const PLAIN_TAGS = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'code', 'blockquote', 'strong', 'em',
-  'hr', 'table', 'thead', 'tbody', 'tr'];
-const TAG_PATTERN = /<(\/?)([a-z][a-z0-9]*)((?:\s+[a-z-]+(?:="[^"<>]*")?)*)\s*\/?>/g;
-const ATTRIBUTE_PATTERN = /\s+([a-z-]+)(?:="([^"]*)")?/g;
-
-function decode(text) {
-  return text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-}
-
-function assertSafeHtml(html, label) {
-  const fail = (message) => assert.fail(`${message}\n  input: ${label}\n  output: ${html}`);
-
-  const text = html.replace(TAG_PATTERN, '');
-  if (/[<>]/.test(text)) fail('stray angle bracket outside a generated tag');
-  if (/\u0000/.test(html)) fail('stash marker leaked into the output');
-
-  for (const match of html.matchAll(TAG_PATTERN)) {
-    const [, closing, name, attributes] = match;
-    const allowedAttributes = ALLOWED_ATTRIBUTES[name];
-    if (!allowedAttributes && !PLAIN_TAGS.includes(name)) fail(`tag <${name}> is not allowed`);
-    if (closing && attributes.trim() !== '') fail('closing tag with attributes');
-    for (const attribute of attributes.matchAll(ATTRIBUTE_PATTERN)) {
-      const attributeName = attribute[1];
-      const value = attribute[2] === undefined ? '' : attribute[2];
-      if (!allowedAttributes || !allowedAttributes.includes(attributeName)) {
-        fail(`attribute ${attributeName} is not allowed on <${name}>`);
-      }
-      const checked = decode(value).replace(/[\u0000-\u0020]/g, '');
-      if (attributeName === 'href') {
-        if (!/^(https?:|mailto:|#)/i.test(checked)) fail(`href with a disallowed target: ${value}`);
-      } else if (attributeName === 'src') {
-        if (!/^(https?:|data:image\/(png|jpe?g|gif|webp);base64,)/i.test(checked)) fail(`src with a disallowed target: ${value}`);
-      } else if (attributeName === 'style') {
-        if (!/^text-align:(left|right|center)$/.test(value)) fail(`unexpected style: ${value}`);
-      } else if (attributeName === 'class') {
-        if (!['math', 'mermaid', 'page-break'].includes(value)) fail(`unexpected class: ${value}`);
-      } else if (attributeName === 'target') {
-        if (value !== '_blank') fail(`unexpected target: ${value}`);
-      } else if (attributeName === 'rel') {
-        if (value !== 'noopener noreferrer') fail(`unexpected rel: ${value}`);
-      } else if (attributeName === 'referrerpolicy') {
-        if (value !== 'no-referrer') fail(`unexpected referrerpolicy: ${value}`);
-      }
-    }
-  }
-}
+const { assertSafeHtml, ATTRIBUTE_PATTERN } = require(path.join(__dirname, 'support', 'safe_html.js'));
 
 function render(source) {
   return renderMarkdownDocument(source);

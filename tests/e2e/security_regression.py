@@ -150,7 +150,11 @@ def make_fixtures(work):
         f.write("# Doc\n\nInline $E=mc^2$ and display:\n\n$$\\int_0^1 x^2 dx$$\n\n"
                 "```mermaid\nflowchart TD\n  A[Start] --> B{Choice}\n  B -->|yes| C[Done]\n```\n\n"
                 "```mermaid\nsequenceDiagram\n  Alice->>Bob: Hello\n```\n\n"
-                "[link](https://example.com/x) **bold** `code`\n")
+                "[link](https://example.com/x) **bold** `code`\n\n"
+                "<details><summary>More</summary>\n\ninside **details**\n\n</details>\n\n"
+                "<script>document.title='pwned'</script>\n\n"
+                "<img src=x onerror=\"document.title='pwned2'\">\n\n"
+                "<div style=\"position:fixed;inset:0\" class=\"modal-overlay\">overlay text</div>\n")
     return plain, evil, benign
 
 
@@ -249,6 +253,23 @@ def check_webview(app, work, benign):
         "diagrams: document.querySelectorAll('.mermaid svg').length, violations: window.__v})"))
     report("V-1: MathJax and Mermaid render with the CSP in place",
            stats["math"] >= 2 and stats["diagrams"] == 2 and stats["violations"] == [], str(stats))
+
+    # Raw HTML inside Markdown: allowed markup is shown, everything else is dropped (nothing passes through).
+    html_stats = json.loads(app.eval_js(
+        "JSON.stringify({details: document.querySelectorAll('#markdown-content details').length, "
+        "summary: ((document.querySelector('#markdown-content summary') || {}).textContent || '').trim(), "
+        "scripts: document.querySelectorAll('#markdown-content script').length, "
+        "handlers: document.querySelectorAll('#markdown-content [onerror],#markdown-content [onload],"
+        "#markdown-content [onclick]').length, "
+        # MathJax and Mermaid write their own style attributes into the SVG they generate; only count the rest.
+        "styled: Array.from(document.querySelectorAll('#markdown-content [style]')).filter(function (e) "
+        "{ return !e.closest('mjx-container') && !e.closest('.mermaid'); }).length, "
+        "overlay_class: document.querySelectorAll('#markdown-content .modal-overlay').length, "
+        "title_changed: document.title.indexOf('pwned') >= 0})"))
+    report("Markdown HTML: allowed tags render and script / event handlers / style / class are dropped",
+           html_stats["details"] == 1 and html_stats["summary"] == "More" and html_stats["scripts"] == 0
+           and html_stats["handlers"] == 0 and html_stats["styled"] == 0 and html_stats["overlay_class"] == 0
+           and html_stats["title_changed"] is False, str(html_stats))
     app.cmd({"type": "close_all"})
 
 

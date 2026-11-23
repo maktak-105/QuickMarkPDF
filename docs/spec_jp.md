@@ -8,7 +8,7 @@
 - **実装**: C++17 (MinGW-w64) + WebView2 + HTML/CSS/バニラJS
 - **配布形態**: GitHub Releases の ZIP（フラット構成）
 - **表示言語**: 日本語 / English（メニューバー右端のボタンで切替、`localStorage`とレジストリに永続化）
-- **バージョン**: v4.3.0
+- **バージョン**: v5.0.0
 
 製品として出荷されるのは`src/app/`（C++17 + WebView2版）である。`proto/prototype/`（PySide6版）は開発中の挙動評価のための試作・評価用プロトタイプであり、製品として配布されない。
 
@@ -56,7 +56,7 @@
 | 14 | 未保存変更の確認 | 破棄を伴う操作の前に確認ダイアログを表示 |
 | 15 | 右クリックメニュー | 右90°／左90°／180°回転、PDF切り出し、画像を切り出し、ページを削除、このファイルを閉じる。サムネイル・プレビューのどちらを右クリックしても同じ項目が出る（プレビューではこれに加えて「範囲選択（画像切り出し）に切り替え」/「テキスト選択に戻す」も表示）。プレビュー上で右ドラッグによるパンを行った後はメニューを表示せず、移動のない短い右クリック時のみメニューを表示する |
 | 16 | キーボードショートカット | Ctrl+O／Delete／Ctrl+Z／Ctrl+S（詳細は7節） |
-| 17 | Markdownプレビュー | 見出し・太字/斜体・インラインコード・コードブロック・引用・リスト・リンク・画像・水平線・表（GFM）に対応 |
+| 17 | Markdownプレビュー | 見出し・太字/斜体・インラインコード・コードブロック・引用・リスト・リンク・画像・水平線・表（GFM）に対応。許可リストにある一部の生HTMLも表示（8節） |
 | 18 | Mermaid図 | ```` ```mermaid ```` フェンスブロックをMermaid.jsでレンダリング |
 | 19 | 数式 | `$...$`（インライン）／`$$...$$`（ディスプレイ）記法をMathJaxでレンダリング |
 | 20 | MarkdownのPDF書き出し | `ICoreWebView2_7::PrintToPdf`でMarkdownプレビューをPDF化（chrome部分は`@media print`で除外） |
@@ -127,6 +127,25 @@
 - **画像出力（PNG）**: 自前のPNGエンコーダで書き出し。可逆・無圧縮相当
 - **画像出力（JPEG）**: Windows Imaging Component経由でエンコード。品質60〜100を指定可能
 - **MarkdownのPDF書き出し**: WebView2の`PrintToPdf`によるA4相当のページ出力。ツールバー等のUI要素は`@media print`で除外される
+
+### Markdown内のHTML
+
+Markdownファイルに書かれたHTMLは、そのまま画面に渡しません。すべてのタグを解析し、許可リストと照合して、アプリが作り直します。許可リストにないものは破棄します（文字としても表示されません）。
+
+| 表示するもの | 要素（属性） |
+| --- | --- |
+| 文字の装飾 | `b` `strong` `i` `em` `u` `s` `strike` `del` `ins` `mark` `small` `sub` `sup` `kbd` `code` `tt` `samp` `var` `cite` `q` `dfn` `span` `wbr` `br`、`abbr`（`title`）、`ruby` `rt` `rp` |
+| リンク・画像 | `a`（`href`: http・https・mailto・`#…` のみ、`title`）、`img`（`src`: http・https・base64の`data:image/png|jpeg|gif|webp`のみ、`alt` `title` `width` `height` `align`） |
+| 文章の構造 | `p` `div` `center` `h1`〜`h6` `hr` `blockquote` `pre` `ul` `ol`（`start`） `li` `dl` `dt` `dd` `details`（`open`） `summary` `figure` `figcaption`（`align` は left/right/center。要素によって有効） |
+| 表 | `table` `caption` `thead` `tbody` `tfoot` `tr` `th` `td`（`colspan` `rowspan` `align`） |
+
+- タグの間にあるMarkdownは、これまでどおり変換されます（`<div align="center">` … `</div>`、`<details>`、`<table>` など）。`p` と `center` は `div` として出力します。
+- **中身ごと破棄**（同じ段落の中にある対応する閉じタグまで。閉じタグがなければ、その開きタグだけ）: `script` `style` `iframe` `frame` `frameset` `object` `embed` `applet` `template` `noscript` `noembed` `noframes` `textarea` `title` `head` `select` `svg` `math` `canvas` `audio` `video` `xmp`。
+- **タグだけ破棄**（中の文字は残る）: 上記以外の、許可リストにない要素すべて（`font`、`form`、`input`、`button`、`label`、`marquee`、`picture`、`source`、`link`、`meta`、`base`、`html`、`body` など）。
+- **属性の破棄**: 許可リストにないもの。特に `class`、`style`、`id`、`name`、`on…`（イベント）、`target`、`rel`。リンクには常に `target="_blank" rel="noopener noreferrer"` が付きます。`href` が許可されないリンクは `<a>` を外して文字だけ残し、`src` が許可されない画像は表示しません。
+- HTMLコメント `<!-- … -->`、`<!DOCTYPE>`、`<?…?>`、`<![CDATA[…]]>` は取り除かれます。タグの形をしているが文法に合わないものも取り除かれます。
+- 文字のまま残るもの: `<` の直後が空白・数字・`=` のもの（`1 < 2`、`a <= b`）、コードブロック・インラインコード・数式 `$…$` の中。タグに見える文字はタグとして読まれます。`a<x>c` は `ac` になり（未対応のタグ `<x>` は消えます）、`a<b>c` は段落の残りが太字になります。`a &lt; b` か `a < b` と書くか、インラインコードで囲んでください。
+- 入れ子は自動で対応づけ（閉じていない要素は閉じ、対応のない閉じタグは無視）、20段までに制限します。
 
 ## 9. パフォーマンス
 
