@@ -56,12 +56,12 @@ Run `QuickMarkPDF.exe` for the GUI. Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `
 
 ## GUI usage
 
-1. Click **開く** (Open) to load one or more PDFs, or a single Markdown (`.md`) file. PDF and Markdown cannot be mixed in one selection.
+1. Click **Open** to load one or more PDFs, or a single Markdown (`.md`) file. PDF and Markdown cannot be mixed in one selection.
 2. Select pages in the left thumbnail panel (click / Ctrl+click / Shift+click). Drag thumbnails to reorder, including across files.
 3. Rotate, delete, split to a new PDF, or export images from the toolbar or the right-click menu; the right-click menu also has extract text.
 4. **Save** with one PDF open can overwrite or save as. With multiple PDFs open, Save always uses Save As and merges every open file's pages into one new PDF (originals are left unmodified). That is also how you merge PDFs.
 5. Opening a `.md` file switches to Markdown preview (Mermaid and MathJax work offline). Save then exports the preview to PDF.
-6. **ヘルプ** (Help) has a usage guide and keyboard shortcuts; **設定** (Settings) controls preview wheel mode.
+6. **Help** has a usage guide and keyboard shortcuts; **Settings** controls preview wheel mode.
 
 Keyboard shortcuts: `Ctrl+O` open, `Delete` delete selected pages, `Ctrl+Z` undo, `Ctrl+S` save.
 
