@@ -11,7 +11,8 @@ CLI = os.path.join(ROOT, "src", "cli")
 ENGINE = os.path.join(ROOT, "src", "engine")
 TESTS = os.path.join(ROOT, "tests")
 INTERMEDIATE = os.path.join(ROOT, "build", "intermediate")
-DIST = os.path.join(ROOT, "dist")
+# QUICKMARKPDF_DIST lets a trial build go somewhere else (e.g. while dist/QuickMarkPDF.exe is running and locked).
+DIST = os.environ.get("QUICKMARKPDF_DIST") or os.path.join(ROOT, "dist")
 sys.path.insert(0, SCRIPT_DIR)
 import bundle_html
 
@@ -44,7 +45,7 @@ def require_file(path):
         raise FileNotFoundError(f"Required build input not found: {path}")
 
 
-def build():
+def build(test_api=False):
     compiler = find_compiler()
     if not compiler:
         print("[エラー] C++ コンパイラ (g++ または clang++) が見つかりません。")
@@ -81,16 +82,38 @@ def build():
                "Windows resources", cwd=APP):
         return False
 
-    common = ["-O2", "-std=c++17", "-static", f"-I{webview_include}", f"-I{pdfium_include}", f"-I{ENGINE}", f"-I{APP}"]
+    # Hardening: stack protector, fortified libc calls, and an explicit request for
+    # ASLR / DEP / high-entropy ASLR (all three are already the linker defaults,
+    # but stating them keeps a toolchain change from silently dropping them).
+    hardening = ["-fstack-protector-strong", "-D_FORTIFY_SOURCE=2"]
+    link_hardening = ["-Wl,--dynamicbase,--nxcompat,--high-entropy-va"]
+    common = ["-O2", "-std=c++17", "-static", *hardening, f"-I{webview_include}", f"-I{pdfium_include}",
+              f"-I{ENGINE}", f"-I{APP}"]
     shared = [os.path.join(ENGINE, name) for name in ("engine.cpp", "pdf_backend.cpp", "image_io.cpp")]
-    gui = [compiler, *common, "-mwindows", "-municode", *shared, os.path.join(APP, "main_gui.cpp"),
-           os.path.join(ENGINE, "test_api_server.cpp"), resource_obj, "-o", os.path.join(DIST, "QuickMarkPDF.exe"),
+
+    # The test API (TCP server, injected paths, offscreen window) exists only in the
+    # separate testapi build; the shipped QuickMarkPDF.exe is built without it.
+    if test_api:
+        gui_output = os.path.join(INTERMEDIATE, "QuickMarkPDF_testapi.exe")
+        test_sources = [os.path.join(ENGINE, "test_api_server.cpp")]
+        test_flags = ["-DQUICKMARKPDF_ENABLE_TEST_API"]
+        test_libs = ["-lws2_32"]
+    else:
+        gui_output = os.path.join(DIST, "QuickMarkPDF.exe")
+        test_sources, test_flags, test_libs = [], [], []
+    gui = [compiler, *common, *test_flags, "-mwindows", "-municode", *shared, os.path.join(APP, "main_gui.cpp"),
+           *test_sources, resource_obj, "-o", gui_output, *link_hardening,
            "-lkernel32", "-luser32", "-lgdi32", "-lole32", "-loleaut32", "-luuid", "-lcomctl32",
-           "-lcomdlg32", "-lshell32", "-lcrypt32", "-lcredui", "-lwindowscodecs", "-lws2_32", "-lshlwapi"]
-    if not run(gui, "GUI build"):
+           "-lcomdlg32", "-lshell32", "-lcrypt32", "-lcredui", "-lwindowscodecs", *test_libs, "-lshlwapi"]
+    if not run(gui, "GUI build (test API)" if test_api else "GUI build"):
         return False
+    if test_api:
+        shutil.copy2(pdfium_dll, INTERMEDIATE)
+        shutil.copy2(webview_loader, INTERMEDIATE)
+        print(f"[成功] テスト用ビルドを {gui_output} に生成しました。")
+        return True
     cli = [compiler, *common, *shared, os.path.join(CLI, "main_cli.cpp"), "-o", os.path.join(DIST, "QuickMarkPDF_cli.exe"),
-           "-lkernel32", "-lole32", "-loleaut32", "-lwindowscodecs"]
+           *link_hardening, "-lkernel32", "-lole32", "-loleaut32", "-lwindowscodecs"]
     if not run(cli, "CLI build"):
         return False
     shutil.copy2(pdfium_dll, DIST)
@@ -124,9 +147,14 @@ def build_tests():
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if mode not in ("all", "build", "test"):
-        raise SystemExit("Usage: python scripts/build.py [all|build|test]")
-    success = build_tests() if mode == "test" else build()
+    if mode not in ("all", "build", "test", "testapi"):
+        raise SystemExit("Usage: python scripts/build.py [all|build|test|testapi]")
+    if mode == "test":
+        success = build_tests()
+    elif mode == "testapi":
+        success = build(test_api=True)
+    else:
+        success = build()
     if success and mode == "all":
         success = build_tests()
     raise SystemExit(0 if success else 1)

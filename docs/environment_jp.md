@@ -168,9 +168,27 @@ PyInstaller onedir（配布しない）:
 .venv\Scripts\python.exe -m pytest proto/tests/test_pdf_manager.py -v
 ```
 
-TCP 制御チャネル（`src/engine/test_api_server.cpp`）は `QUICKMARKPDF_TEST_PORT` が
-無いと何もしません。ここのコマンド名（`load_pdfs`、`undo`、`save_as` など）は
-テスト専用であり、[`spec_jp.md`](spec_jp.md) の GUI WebMessage とは別物です。
+TCP 制御チャネル（`src/engine/test_api_server.cpp`）は、別ビルドのテスト用
+ビルド（`python scripts/build.py testapi`、出力は
+`build/intermediate/QuickMarkPDF_testapi.exe`）にだけ含まれます。出荷する
+`QuickMarkPDF.exe` はこれを含めずにビルドされ、`QUICKMARKPDF_TEST_PORT`、
+`QUICKMARKPDF_OFFSCREEN`、`QUICKMARKPDF_TEST_OPEN_PATHS` を無視します。テスト用
+ビルドでも `QUICKMARKPDF_TEST_PORT` が無いと何もしません。ここのコマンド名
+（`load_pdfs`、`undo`、`save_as`、`ui_message`、`eval_js` など）はテスト専用であり、
+[`spec_jp.md`](spec_jp.md) の GUI WebMessage とは別物です。
+
+セキュリティ回帰テスト（2026-11-23 の診断対応で追加。
+`docs/investigations/2026-11-23-security-audit.md` 参照）:
+
+```powershell
+node tests/markdown_render_test.js                      # Markdown変換: 攻撃文字列・ファズ・通常出力
+python scripts/build.py test                            # エンジンテスト(接頭辞・上限・暗号化検出・上書き保存)
+python scripts/build.py testapi
+python tests/e2e/security_regression.py build/intermediate/QuickMarkPDF_testapi.exe
+```
+
+最後のテストは実際の WebView2 ページを操作するので WebView2 Runtime が必要で、
+CI では実行せず手元で実行します。
 
 ## 依存関係
 
@@ -180,6 +198,34 @@ TCP 制御チャネル（`src/engine/test_api_server.cpp`）は `QUICKMARKPDF_TE
 
 Python 試作 / テスト: `requirements.txt`（PyMuPDF、PySide6、Pillow、Markdown、PyInstaller）と
 `requirements-dev.txt`（pytest、pytest-qt、pytest-timeout、pytest-cov）。
+
+### 同梱ライブラリの更新
+
+ビルドを再現できるよう版を固定しています。その代わり、放っておくと自動では更新されません。
+上流との差は次で確認します。
+
+```powershell
+python scripts/check_dependency_updates.py --verify-vendor
+```
+
+pdfium（`scripts/fetch_pdfium.ps1` の `$pinnedRelease`）、WebView2 SDK
+（`scripts/fetch_webview2_sdk.ps1` の `$pinnedVersion`）、Mermaid と MathJax
+（`resources/vendor/` のファイルに含まれる版）を最新版と比べ、`resources/vendor/SHA256SUMS`
+も照合します。`.github/workflows/dependency-freshness.yml` が毎週月曜に実行し、遅れがあると失敗します。
+Mermaid は 11 系の中で追跡します（新しいメジャーは情報として表示するだけ）。MathJax は意図的に
+3.2.2 で据え置いており（4.x は CSP のもとで完全にオフラインで描画できるかの評価が先）、
+チェックの失敗にはなりません。WebView2 の *Runtime* は Windows が更新するもので、このリポジトリの
+管理対象ではありません。
+
+更新の手順:
+
+- pdfium / WebView2 SDK: 該当する `scripts/fetch_*.ps1` に新しい版と SHA-256 を書きます
+  （pdfium のハッシュは GitHub がアセットに表示するダイジェストから取り、nupkg の SHA-512 は
+  NuGet のカタログと照合します）。スクリプトを実行し、`python scripts/build.py all` とテストを実行します。
+- Mermaid / MathJax: npm のパッケージを取得し、SHA-512 を npm レジストリの `dist.integrity` と
+  照合して、`dist/mermaid.min.js`（MathJax 3.x は `es5/tex-svg.js`）を `resources/vendor/` のファイルに
+  上書きします。`python scripts/check_dependency_updates.py --update-vendor-manifest` を実行し、
+  再ビルドしてテストと描画確認（図・数式・CSP）を行います。
 
 ## ファイル構成（出荷レイアウト）
 

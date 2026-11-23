@@ -13,8 +13,9 @@ jobs:
   native-build-and-test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # Actions are pinned to full commit SHAs (the tag is kept in the comment).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.13'
       - name: Install Python test dependencies
@@ -28,9 +29,20 @@ jobs:
           $env:PYTHONIOENCODING = 'utf-8'
           python proto/tests/run_tests.py -- proto/tests
           if ($LASTEXITCODE -ne 0) { throw 'Prototype tests failed' }
+      - name: Run Markdown renderer tests
+        shell: pwsh
+        run: |
+          node tests/markdown_render_test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Markdown renderer tests failed' }
       - name: Install MinGW
         shell: pwsh
-        run: choco install mingw python --yes --no-progress
+        # Versions are those the last green run used (mingw 16.1.0, python 3.15.2). --version applies to every
+        # package on the command line, so each package gets its own command.
+        run: |
+          choco install mingw --version=16.1.0 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'choco install mingw failed' }
+          choco install python --version=3.15.2 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'choco install python failed' }
       - name: Fetch native dependencies
         shell: pwsh
         run: |
@@ -42,3 +54,9 @@ jobs:
           $env:PYTHONIOENCODING = 'utf-8'
           python scripts/build.py all
           if ($LASTEXITCODE -ne 0) { throw 'Build or native tests failed' }
+      - name: Build the test-API variant (compile check)
+        shell: pwsh
+        run: |
+          $env:PYTHONIOENCODING = 'utf-8'
+          python scripts/build.py testapi
+          if ($LASTEXITCODE -ne 0) { throw 'Test-API build failed' }

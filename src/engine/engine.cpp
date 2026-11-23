@@ -2,16 +2,21 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <unordered_set>
 #include <utility>
 
+#include <windows.h>
+
 #include "image_io.h"
 #include "pdf_backend.h"
+#include "secure_wipe.h"
 
 namespace quickmarkpdf {
 
@@ -262,6 +267,40 @@ std::string to_absolute(const std::string& raw_path) {
         return raw_path;
     }
 }
+
+// Wipes every password in a (merged) password map when it goes out of scope,
+// on every exit path of the save functions.
+struct PasswordMapWipe {
+    std::unordered_map<std::string, std::string>& passwords;
+    ~PasswordMapWipe() {
+        for (auto& entry : passwords) secure_wipe(entry.second);
+    }
+};
+
+// Wipes a single copied password when it goes out of scope.
+struct PasswordWipe {
+    std::string& password;
+    ~PasswordWipe() { secure_wipe(password); }
+};
+
+constexpr std::size_t kMaxExportPrefixBytes = 100;
+
+// "<target>.tmp_quickmarkpdf_<random>": unpredictable, so a file cannot be
+// planted at the name the save will use.
+std::filesystem::path unique_temp_path_for(const std::filesystem::path& target) {
+    std::random_device random;
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        const std::uint64_t value = (static_cast<std::uint64_t>(random()) << 32) ^ random();
+        char suffix[40];
+        std::snprintf(suffix, sizeof(suffix), ".tmp_quickmarkpdf_%016llx",
+                      static_cast<unsigned long long>(value));
+        std::filesystem::path candidate = target;
+        candidate += suffix;
+        std::error_code ec;
+        if (!std::filesystem::exists(candidate, ec) && !ec) return candidate;
+    }
+    return {};
+}
 }  // namespace
 
 PdfManager::LoadResult PdfManager::load_pdfs(const std::vector<std::string>& paths,
@@ -296,6 +335,7 @@ PdfManager::LoadResult PdfManager::load_pdfs(const std::vector<std::string>& pat
                 document_.append_page(PageRef{absolute, p, rotation});
             }
             if (!password.empty()) known_passwords_[absolute] = password;
+            if (info.encrypted) encrypted_sources_.insert(absolute);
             already_open.insert(absolute);
             result.loaded_count += 1;
         } catch (const PdfPasswordRequiredError&) {
@@ -305,6 +345,7 @@ PdfManager::LoadResult PdfManager::load_pdfs(const std::vector<std::string>& pat
             // Python baseline (not counted as loaded, password-required, or
             // duplicate -- just absent from the result).
         }
+        secure_wipe(password);
     }
     // append_page() marks the document dirty -- WorkingDocument's generic,
     // deliberately-tested "adding a page is an edit" contract (see
@@ -332,6 +373,22 @@ std::vector<PdfManager::PageInfo> PdfManager::page_infos() const {
         result.push_back(PageInfo{ref.source_path, ref.source_page, ref.rotation});
     }
     return result;
+}
+
+RenderedPage PdfManager::render_page(std::size_t page_index, int target_width) const {
+    const PageRef& ref = document_.page(page_index);  // throws std::out_of_range
+    std::string password;
+    PasswordWipe wipe{password};
+    if (auto it = known_passwords_.find(ref.source_path); it != known_passwords_.end()) password = it->second;
+    return PdfBackend::render_page(ref.source_path, ref.source_page, target_width, ref.rotation, password);
+}
+
+TextLayout PdfManager::get_text_layout(std::size_t page_index) const {
+    const PageRef& ref = document_.page(page_index);  // throws std::out_of_range
+    std::string password;
+    PasswordWipe wipe{password};
+    if (auto it = known_passwords_.find(ref.source_path); it != known_passwords_.end()) password = it->second;
+    return PdfBackend::get_text_layout(ref.source_path, ref.source_page, ref.rotation, password);
 }
 
 void PdfManager::reorder_pages(const std::vector<std::size_t>& order) {
@@ -382,12 +439,13 @@ bool PdfManager::overwrite_source(const std::unordered_map<std::string, std::str
     const std::string path = document_.page(0).source_path;
 
     std::unordered_map<std::string, std::string> merged = known_passwords_;
+    PasswordMapWipe merged_wipe{merged};
     for (const auto& [key, value] : passwords) merged[key] = value;
 
     namespace fs = std::filesystem;
     const fs::path target = fs::u8path(path);
-    fs::path temp = target;
-    temp += ".tmp_quickmarkpdf";
+    const fs::path temp = unique_temp_path_for(target);
+    if (temp.empty()) return false;
 
     try {
         PdfBackend::save(document_, temp.u8string(), merged);
@@ -397,16 +455,24 @@ bool PdfManager::overwrite_source(const std::unordered_map<std::string, std::str
         return false;
     }
 
-    std::error_code rename_ec;
-    fs::rename(temp, target, rename_ec);
-    if (rename_ec) {
-        std::error_code copy_ec;
-        fs::copy_file(temp, target, fs::copy_options::overwrite_existing, copy_ec);
-        std::error_code remove_ec;
-        fs::remove(temp, remove_ec);
-        if (copy_ec) return false;
+    // Replace in one step. If it fails (target locked, read-only, ...) the
+    // original file is left exactly as it was -- the old copy_file fallback
+    // truncated the target first and could lose it when the copy failed.
+    if (!::MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        std::error_code ec;
+        fs::remove(temp, ec);
+        return false;
     }
 
+    // The file at `path` was just replaced: drop the cached copy of the old one
+    // (it still has the old page order), and forget the password -- the new
+    // file is an unencrypted copy.
+    PdfBackend::invalidate_document_cache(path);
+    if (auto it = known_passwords_.find(path); it != known_passwords_.end()) {
+        secure_wipe(it->second);
+        known_passwords_.erase(it);
+    }
+    encrypted_sources_.erase(path);
     document_.rebase_all_pages_to(path);
     document_.mark_saved();
     return true;
@@ -415,6 +481,7 @@ bool PdfManager::overwrite_source(const std::unordered_map<std::string, std::str
 bool PdfManager::save_as(const std::string& output_path,
                           const std::unordered_map<std::string, std::string>& passwords) {
     std::unordered_map<std::string, std::string> merged = known_passwords_;
+    PasswordMapWipe merged_wipe{merged};
     for (const auto& [key, value] : passwords) merged[key] = value;
 
     try {
@@ -438,6 +505,7 @@ bool PdfManager::save_selected_pages(const std::vector<std::size_t>& indices, co
     if (subset.page_count() == 0) return false;
 
     std::unordered_map<std::string, std::string> merged = known_passwords_;
+    PasswordMapWipe merged_wipe{merged};
     for (const auto& [key, value] : passwords) merged[key] = value;
 
     try {
@@ -455,12 +523,22 @@ PdfManager::ExportResult PdfManager::export_pages_to_images(
 
     const bool is_png = (fmt == "png");
     const bool is_jpeg = (fmt == "jpg" || fmt == "jpeg");
-    const std::string extension = is_jpeg ? ".jpg" : ".png";
 
     std::vector<std::size_t> targets = indices;
     if (targets.empty()) {
         targets.resize(document_.page_count());
         for (std::size_t i = 0; i < targets.size(); ++i) targets[i] = i;
+    }
+
+    // Validate the destination before touching the disk: an unsafe prefix
+    // ("../x", "C:/x", ...) would otherwise write outside output_dir.
+    std::vector<std::string> planned;
+    try {
+        planned = plan_export_image_paths(targets, output_dir, fmt, prefix);
+    } catch (const std::invalid_argument& e) {
+        result.attempted = static_cast<int>(targets.size());
+        result.errors.push_back(e.what());
+        return result;
     }
 
     namespace fs = std::filesystem;
@@ -470,10 +548,9 @@ PdfManager::ExportResult PdfManager::export_pages_to_images(
     std::optional<PdfBackend::ClipRectPt> backend_clip;
     if (clip) backend_clip = PdfBackend::ClipRectPt{(*clip)[0], (*clip)[1], (*clip)[2], (*clip)[3]};
 
-    int counter = 0;
-    for (const auto index : targets) {
+    for (std::size_t target_index = 0; target_index < targets.size(); ++target_index) {
+        const auto index = targets[target_index];
         result.attempted += 1;
-        counter += 1;
 
         if (index >= document_.page_count()) {
             result.errors.push_back("page index out of range: " + std::to_string(index));
@@ -494,9 +571,7 @@ PdfManager::ExportResult PdfManager::export_pages_to_images(
             const RenderedPage rendered = PdfBackend::render_page_at_dpi(
                 ref.source_path, ref.source_page, dpi, ref.rotation, password, backend_clip);
 
-            char suffix[16];
-            std::snprintf(suffix, sizeof(suffix), "_%04d", counter);
-            const fs::path out_file = fs::u8path(output_dir) / fs::u8path(prefix + suffix + extension);
+            const fs::path out_file = fs::u8path(planned[target_index]);
             if (is_jpeg) {
                 write_jpeg_rgb(out_file.u8string(), rendered.width, rendered.height, rendered.rgba, jpeg_quality);
             } else {
@@ -508,6 +583,58 @@ PdfManager::ExportResult PdfManager::export_pages_to_images(
         }
     }
     return result;
+}
+
+bool PdfManager::is_safe_export_prefix(const std::string& prefix) {
+    if (prefix.size() > kMaxExportPrefixBytes) return false;
+    for (const unsigned char c : prefix) {
+        if (c < 0x20 || c == 0x7F) return false;
+        switch (c) {
+            case '<': case '>': case ':': case '"': case '/': case '\\': case '|': case '?': case '*':
+                return false;
+            default:
+                break;
+        }
+    }
+    return true;
+}
+
+std::vector<std::string> PdfManager::plan_export_image_paths(const std::vector<std::size_t>& indices,
+                                                              const std::string& output_dir,
+                                                              const std::string& fmt,
+                                                              const std::string& prefix) const {
+    if (!is_safe_export_prefix(prefix)) throw std::invalid_argument("invalid file name prefix");
+    if (output_dir.empty()) throw std::invalid_argument("output directory is empty");
+
+    const bool is_jpeg = (fmt == "jpg" || fmt == "jpeg");
+    const std::string extension = is_jpeg ? ".jpg" : ".png";
+    const std::size_t count = indices.empty() ? document_.page_count() : indices.size();
+
+    namespace fs = std::filesystem;
+    const fs::path directory = fs::u8path(output_dir);
+    std::vector<std::string> files;
+    files.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        char suffix[16];
+        std::snprintf(suffix, sizeof(suffix), "_%04d", static_cast<int>(i) + 1);
+        const fs::path name = fs::u8path(prefix + suffix + extension);
+        // Belt and braces next to is_safe_export_prefix: the name must be a
+        // bare file name with nothing that could redirect the path.
+        if (name.has_parent_path() || name.has_root_name() || name.has_root_directory() ||
+            name.filename() != name) {
+            throw std::invalid_argument("invalid file name prefix");
+        }
+        files.push_back((directory / name).u8string());
+    }
+    return files;
+}
+
+bool PdfManager::has_encrypted_sources() const {
+    if (encrypted_sources_.empty()) return false;
+    for (std::size_t i = 0; i < document_.page_count(); ++i) {
+        if (encrypted_sources_.count(document_.page(i).source_path) != 0) return true;
+    }
+    return false;
 }
 
 PdfManager::ExportResult PdfManager::extract_text_to_file(const std::vector<std::size_t>& indices,
@@ -568,7 +695,10 @@ bool PdfManager::close_document(const std::string& path) {
 
 void PdfManager::close_all() noexcept {
     document_.clear();
+    for (auto& entry : known_passwords_) secure_wipe(entry.second);
     known_passwords_.clear();
+    encrypted_sources_.clear();
+    PdfBackend::clear_document_cache();
 }
 
 bool PdfManager::is_dirty() const noexcept {

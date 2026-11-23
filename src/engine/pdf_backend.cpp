@@ -13,6 +13,7 @@
 #include <windows.h>
 
 #include "engine.h"
+#include "secure_wipe.h"
 #include "fpdf_edit.h"
 #include "fpdf_ppo.h"
 #include "fpdf_save.h"
@@ -30,6 +31,7 @@ using FPDF_InitLibrary_t = void(FPDF_CALLCONV*)();
 using FPDF_GetLastError_t = unsigned long(FPDF_CALLCONV*)();
 using FPDF_LoadMemDocument64_t = FPDF_DOCUMENT(FPDF_CALLCONV*)(const void*, size_t, FPDF_BYTESTRING);
 using FPDF_GetPageCount_t = int(FPDF_CALLCONV*)(FPDF_DOCUMENT);
+using FPDF_GetSecurityHandlerRevision_t = int(FPDF_CALLCONV*)(FPDF_DOCUMENT);
 using FPDF_CloseDocument_t = void(FPDF_CALLCONV*)(FPDF_DOCUMENT);
 using FPDF_CreateNewDocument_t = FPDF_DOCUMENT(FPDF_CALLCONV*)();
 using FPDF_ImportPagesByIndex_t =
@@ -61,6 +63,7 @@ struct PdfiumApi {
     FPDF_GetLastError_t GetLastError = nullptr;
     FPDF_LoadMemDocument64_t LoadMemDocument64 = nullptr;
     FPDF_GetPageCount_t GetPageCount = nullptr;
+    FPDF_GetSecurityHandlerRevision_t GetSecurityHandlerRevision = nullptr;
     FPDF_CloseDocument_t CloseDocument = nullptr;
     FPDF_CreateNewDocument_t CreateNewDocument = nullptr;
     FPDF_ImportPagesByIndex_t ImportPagesByIndex = nullptr;
@@ -92,18 +95,36 @@ Fn load_symbol(HMODULE module, const char* name) {
     return reinterpret_cast<Fn>(address);
 }
 
-// pdfium.dll is copied next to every executable that links pdf_backend.cpp
-// (see the CMake POST_BUILD steps), so the plain module name resolves via
-// the application-directory search rule.
+// pdfium.dll is copied next to every executable that links pdf_backend.cpp,
+// and is loaded by full path from the running executable's own folder. A bare
+// "pdfium.dll" would fall back to the current directory (and other search
+// locations) when the DLL is missing from the application folder, letting a
+// planted DLL be loaded instead.
+std::wstring pdfium_path() {
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD length = ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0) throw std::runtime_error("failed to locate the executable folder");
+        if (length < buffer.size()) {
+            buffer.resize(length);
+            break;
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+    return (std::filesystem::path(buffer).parent_path() / L"pdfium.dll").wstring();
+}
+
 const PdfiumApi& pdfium() {
     static const PdfiumApi api = [] {
-        HMODULE module = ::LoadLibraryW(L"pdfium.dll");
+        HMODULE module = ::LoadLibraryW(pdfium_path().c_str());
         if (!module) throw std::runtime_error("failed to load pdfium.dll");
         PdfiumApi loaded;
         loaded.InitLibrary = load_symbol<FPDF_InitLibrary_t>(module, "FPDF_InitLibrary");
         loaded.GetLastError = load_symbol<FPDF_GetLastError_t>(module, "FPDF_GetLastError");
         loaded.LoadMemDocument64 = load_symbol<FPDF_LoadMemDocument64_t>(module, "FPDF_LoadMemDocument64");
         loaded.GetPageCount = load_symbol<FPDF_GetPageCount_t>(module, "FPDF_GetPageCount");
+        loaded.GetSecurityHandlerRevision =
+            load_symbol<FPDF_GetSecurityHandlerRevision_t>(module, "FPDF_GetSecurityHandlerRevision");
         loaded.CloseDocument = load_symbol<FPDF_CloseDocument_t>(module, "FPDF_CloseDocument");
         loaded.CreateNewDocument = load_symbol<FPDF_CreateNewDocument_t>(module, "FPDF_CreateNewDocument");
         loaded.ImportPagesByIndex =
@@ -201,6 +222,7 @@ void invalidate_cached_document(const std::string& path) {
                                 [&](auto& entry) {
                                     if (entry.first != path) return false;
                                     if (entry.second.source.doc) api.CloseDocument(entry.second.source.doc);
+                                    secure_wipe(entry.second.password);
                                     return true;
                                 }),
                 cache.end());
@@ -222,6 +244,7 @@ FPDF_DOCUMENT open_source_cached(const PdfiumApi& api, const std::string& path, 
     cache.push_back({path, CachedEntry{password, std::move(source)}});
     if (cache.size() > kMaxCachedDocuments) {
         if (cache.front().second.source.doc) api.CloseDocument(cache.front().second.source.doc);
+        secure_wipe(cache.front().second.password);
         cache.erase(cache.begin());
     }
     return cache.back().second.source.doc;
@@ -276,11 +299,17 @@ PdfDocumentInfo PdfBackend::inspect(const std::string& path, const std::string& 
         api.ClosePage(page);
     }
 
-    return {path, static_cast<std::size_t>(pages), std::move(rotations)};
+    PdfDocumentInfo info;
+    info.path = path;
+    info.page_count = static_cast<std::size_t>(pages);
+    info.page_rotations = std::move(rotations);
+    info.encrypted = api.GetSecurityHandlerRevision(document) != -1;
+    return info;
 }
 
 RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_index, int target_width,
-                                      int rotation, const std::string& password) {
+                                      int rotation, const std::string& password, std::size_t max_pixels,
+                                      bool shrink_to_fit) {
     if (target_width < 1) throw std::invalid_argument("target_width must be at least 1");
 
     const auto& api = pdfium();
@@ -298,8 +327,37 @@ RenderedPage PdfBackend::render_page(const std::string& path, std::size_t page_i
 
     const float page_width = api.GetPageWidthF(page);
     const float page_height = api.GetPageHeightF(page);
-    const float scale = page_width > 0 ? static_cast<float>(target_width) / page_width : 1.0f;
-    const int target_height = std::max(1, static_cast<int>(std::lround(page_height * scale)));
+    float scale = page_width > 0 ? static_cast<float>(target_width) / page_width : 1.0f;
+
+    // A hostile page size (or an absurd target width) must not reach
+    // std::lround / the bitmap allocation as a value that overflows int.
+    const float raw_height = page_height * scale;
+    if (!std::isfinite(raw_height) || raw_height > 1.0e8f) {
+        api.ClosePage(page);
+        throw std::length_error("rendered page is too large: " + path);
+    }
+    int out_width = target_width;
+    int out_height = std::max(1, static_cast<int>(std::lround(raw_height)));
+
+    if (static_cast<double>(out_width) * out_height > static_cast<double>(max_pixels)) {
+        if (!shrink_to_fit) {
+            api.ClosePage(page);
+            throw std::length_error("rendered page exceeds the pixel limit: " + path);
+        }
+        const double factor =
+            std::sqrt(static_cast<double>(max_pixels) / (static_cast<double>(out_width) * out_height));
+        out_width = std::max(1, static_cast<int>(static_cast<double>(out_width) * factor));
+        for (;;) {
+            scale = page_width > 0 ? static_cast<float>(out_width) / page_width : 1.0f;
+            out_height = std::max(1, static_cast<int>(std::lround(page_height * scale)));
+            if (out_width == 1 || static_cast<double>(out_width) * out_height <= static_cast<double>(max_pixels)) {
+                break;
+            }
+            --out_width;
+        }
+    }
+    const int target_height = out_height;
+    target_width = out_width;
 
     FPDF_BITMAP bitmap = api.BitmapCreate(target_width, target_height, /*alpha=*/1);
     if (!bitmap) {
@@ -340,6 +398,7 @@ RenderedPage PdfBackend::render_page_at_dpi(const std::string& path, std::size_t
                                              int rotation, const std::string& password,
                                              const std::optional<ClipRectPt>& clip) {
     if (dpi < 1) throw std::invalid_argument("dpi must be at least 1");
+    if (dpi > kMaxExportDpi) throw std::invalid_argument("dpi must be at most " + std::to_string(kMaxExportDpi));
 
     const auto& api = pdfium();
     FPDF_DOCUMENT document = open_source_cached(api, path, password);
@@ -352,8 +411,11 @@ RenderedPage PdfBackend::render_page_at_dpi(const std::string& path, std::size_t
     const float page_width = api.GetPageWidthF(page);
     api.ClosePage(page);
 
-    const int target_width = std::max(1, static_cast<int>(std::lround(page_width * dpi / 72.0f)));
-    RenderedPage full = render_page(path, page_index, target_width, rotation, password);
+    const float width_px = page_width * dpi / 72.0f;
+    if (!(width_px < 1.0e7f)) throw std::length_error("page size is out of range: " + path);
+    const int target_width = std::max(1, static_cast<int>(std::lround(width_px)));
+    RenderedPage full = render_page(path, page_index, target_width, rotation, password, kMaxExportPixels,
+                                     /*shrink_to_fit=*/false);
     if (!clip) return full;
 
     const double scale = static_cast<double>(dpi) / 72.0;
@@ -405,6 +467,10 @@ void PdfBackend::save(const WorkingDocument& document, const std::string& output
             auto it = opened.find(ref.source_path);
             if (it == opened.end()) {
                 std::string password;
+                struct PasswordWipe {
+                    std::string& value;
+                    ~PasswordWipe() { secure_wipe(value); }
+                } password_wipe{password};
                 if (auto pw = passwords.find(ref.source_path); pw != passwords.end()) password = pw->second;
 
                 OpenSource source;
@@ -511,6 +577,30 @@ TextLayout PdfBackend::get_text_layout(const std::string& path, std::size_t page
     api.TextClosePage(text_page);
     api.ClosePage(page);
     return layout;
+}
+
+void PdfBackend::invalidate_document_cache(const std::string& path) noexcept {
+    try {
+        if (document_cache().empty()) return;
+        invalidate_cached_document(path);
+    } catch (...) {
+        // Best effort: nothing useful can be done from a noexcept cleanup path.
+    }
+}
+
+void PdfBackend::clear_document_cache() noexcept {
+    try {
+        auto& cache = document_cache();
+        if (cache.empty()) return;
+        const auto& api = pdfium();
+        for (auto& entry : cache) {
+            if (entry.second.source.doc) api.CloseDocument(entry.second.source.doc);
+            secure_wipe(entry.second.password);
+        }
+        cache.clear();
+    } catch (...) {
+        // Best effort: nothing useful can be done from a noexcept cleanup path.
+    }
 }
 
 }  // namespace quickmarkpdf

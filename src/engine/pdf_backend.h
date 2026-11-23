@@ -21,7 +21,19 @@ struct PdfDocumentInfo {
     // save/render would silently un-rotate a page the source file already
     // had rotated.
     std::vector<int> page_rotations;
+    // True when the source has an /Encrypt entry (user password or owner-only
+    // restrictions). Saved copies never keep the encryption (see
+    // PdfBackend::save), so callers warn before writing one.
+    bool encrypted = false;
 };
+
+// Resource limits for rasterizing. A thumbnail/preview that would exceed
+// kMaxRenderPixels is shrunk to fit; an image export that would exceed
+// kMaxExportPixels (or kMaxExportDpi) is refused instead of silently
+// producing a different size.
+inline constexpr std::size_t kMaxRenderPixels = 64u * 1024u * 1024u;
+inline constexpr std::size_t kMaxExportPixels = 150u * 1024u * 1024u;
+inline constexpr int kMaxExportDpi = 1200;
 
 // One line (or line-segment) of selectable text on a page, in top-left-
 // origin PDF points -- the same coordinate convention RenderedPage's
@@ -84,8 +96,11 @@ public:
     // typically a WorkingDocument PageRef's rotation, not a delta -- 0/90/
     // 180/270) is applied, so a 90/270 rotation swaps the output's aspect
     // ratio the same way PdfBackend::save's output page would.
+    // If width*height would exceed `max_pixels`, the output is shrunk to fit
+    // when `shrink_to_fit` is true, otherwise std::length_error is thrown.
     static RenderedPage render_page(const std::string& path, std::size_t page_index, int target_width,
-                                     int rotation, const std::string& password = "");
+                                     int rotation, const std::string& password = "",
+                                     std::size_t max_pixels = kMaxRenderPixels, bool shrink_to_fit = true);
 
     // A crop rectangle in PDF points (page-space, before DPI scaling and
     // before `rotation` is applied), e.g. {x0,y0,x1,y1} = {10,10,110,110}.
@@ -112,6 +127,14 @@ public:
     // not an error.
     static TextLayout get_text_layout(const std::string& path, std::size_t page_index, int rotation,
                                        const std::string& password = "");
+
+    // Closes every cached document and wipes the passwords kept with them.
+    static void clear_document_cache() noexcept;
+
+    // Drops the cached document for one path (wiping its password), e.g. after
+    // the file at that path was replaced on disk: a stale entry would keep
+    // serving the old file's pages.
+    static void invalidate_document_cache(const std::string& path) noexcept;
 };
 
 }  // namespace quickmarkpdf

@@ -68,6 +68,12 @@ void server_thread_main(int port, std::function<std::wstring(const std::wstring&
         return;
     }
 
+    // Nobody else may bind this port while the server is up (and, unlike
+    // SO_REUSEADDR, this does not let a second socket share it).
+    const int exclusive = 1;
+    setsockopt(listen_sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&exclusive),
+               sizeof(exclusive));
+
     // Loopback-only: this server executes arbitrary PdfManager operations
     // (including writing files to disk) with zero authentication, which is
     // fine ONLY because it never listens on anything but 127.0.0.1 and only
@@ -98,6 +104,9 @@ void server_thread_main(int port, std::function<std::wstring(const std::wstring&
             const int n = recv(client, chunk, sizeof(chunk), 0);
             if (n <= 0) break;  // client disconnected or error
             recv_buf.append(chunk, static_cast<std::size_t>(n));
+            // A command is one short line; a client that never sends a newline
+            // must not be able to grow this buffer without bound.
+            if (recv_buf.size() > 1024 * 1024 && recv_buf.find('\n') == std::string::npos) break;
 
             std::size_t newline;
             while ((newline = recv_buf.find('\n')) != std::string::npos) {

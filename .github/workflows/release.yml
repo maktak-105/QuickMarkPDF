@@ -11,18 +11,29 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
     runs-on: windows-latest
+    permissions:
+      contents: write       # upload the release assets
+      id-token: write       # sign the build provenance attestation
+      attestations: write   # store the build provenance attestation
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to full commit SHAs (the tag is kept in the comment).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - name: Install MinGW and Python
         shell: pwsh
-        run: choco install mingw python --yes --no-progress
+        # Versions are those the last green run used (mingw 16.1.0, python 3.15.2). --version applies to every
+        # package on the command line, so each package gets its own command.
+        run: |
+          choco install mingw --version=16.1.0 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'choco install mingw failed' }
+          choco install python --version=3.15.2 --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'choco install python failed' }
       - name: Fetch native dependencies
         shell: pwsh
         run: |
@@ -32,6 +43,8 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONIOENCODING = 'utf-8'
+          node tests/markdown_render_test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Markdown renderer tests failed' }
           python scripts/build.py all
           if ($LASTEXITCODE -ne 0) { throw 'Build or native tests failed' }
       - name: Package distribution files
@@ -60,8 +73,19 @@ jobs:
             "$hash  $(Split-Path -Leaf $path)"
           }
           $lines | Set-Content -LiteralPath SHA256SUMS.txt -Encoding ascii
+      # SHA256SUMS.txt travels with the release, so it only detects a damaged download. The attestation is
+      # signed by GitHub and ties these files to this workflow run and commit; check one with:
+      #   gh attestation verify QuickMarkPDF-binary.zip --repo maktak-105/QuickMarkPDF
+      # Only files built here are attested -- pdfium.dll and WebView2Loader.dll are third-party binaries.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            QuickMarkPDF-binary.zip
+            dist/QuickMarkPDF.exe
+            dist/QuickMarkPDF_cli.exe
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -75,3 +99,5 @@ jobs:
 
             Download `QuickMarkPDF-binary.zip`, extract every file into the same folder, and run `QuickMarkPDF.exe`.
             Keep `QuickMarkPDF.exe`, `pdfium.dll`, and `WebView2Loader.dll` together. The UI is embedded in the executable.
+
+            Provenance: `gh attestation verify QuickMarkPDF-binary.zip --repo maktak-105/QuickMarkPDF`

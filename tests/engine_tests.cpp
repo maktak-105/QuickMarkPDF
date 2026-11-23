@@ -109,6 +109,43 @@ void write_text_pdf(const std::string& path, const std::string& text, int text_x
     out << buf;
 }
 
+// Two pages, each with its own text, so a test can tell which page of the file
+// it is looking at (page order is exactly what a stale cache gets wrong).
+void write_two_page_text_pdf(const std::string& path, const std::string& first, const std::string& second) {
+    std::string buf = "%PDF-1.7\n";
+    std::vector<std::size_t> offsets(8, 0);
+    auto append_obj = [&](int num, const std::string& body) {
+        offsets[static_cast<std::size_t>(num)] = buf.size();
+        buf += std::to_string(num) + " 0 obj\n" + body + "\nendobj\n";
+    };
+    append_obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+    append_obj(2, "<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>");
+    const std::string texts[2] = {first, second};
+    const int page_objects[2] = {3, 6};
+    const int content_objects[2] = {4, 7};
+    for (int i = 0; i < 2; ++i) {
+        append_obj(page_objects[i],
+                   "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 5 0 R >> >> "
+                   "/Contents " + std::to_string(content_objects[i]) + " 0 R >>");
+        const std::string content = "BT /F1 24 Tf 20 100 Td (" + texts[i] + ") Tj ET";
+        append_obj(content_objects[i],
+                   "<< /Length " + std::to_string(content.size()) + " >>\nstream\n" + content + "\nendstream");
+    }
+    append_obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+    const auto xref_offset = buf.size();
+    buf += "xref\n0 8\n0000000000 65535 f \n";
+    for (int n = 1; n < 8; ++n) {
+        char entry[32];
+        std::snprintf(entry, sizeof(entry), "%010zu 00000 n \n", offsets[static_cast<std::size_t>(n)]);
+        buf += entry;
+    }
+    buf += "trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n" + std::to_string(xref_offset) + "\n%%EOF\n";
+
+    std::ofstream out(path, std::ios::binary);
+    out << buf;
+}
+
 // A genuinely encrypted (AES-128, standard security handler) 2-page PDF,
 // user password "secret123". Unlike write_min_pdf() above, PDF encryption's
 // key derivation (per the spec's standard security handler) is too involved
@@ -1086,6 +1123,280 @@ void test_manager_close_all_clears_everything() {
     std::remove(p1.c_str());
 }
 
+// ---- Security hardening (docs/investigations/2026-11-23-security-audit.md) ----
+
+void test_manager_export_rejects_unsafe_prefix() {
+    // V-2: a prefix such as "../x" or an absolute path must never steer an
+    // export outside output_dir, and a rejected export must write nothing
+    // (not even create the output directory).
+    namespace fs = std::filesystem;
+    const auto p1 = std::string("quickmarkpdf_test_prefix.pdf");
+    write_min_pdf(p1, 1);
+    const fs::path base = fs::current_path() / "quickmarkpdf_test_prefix_case";
+    fs::remove_all(base);
+    fs::create_directories(base / "out");
+    const std::string out_dir = (base / "out").u8string();
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1});
+
+    const std::vector<std::string> bad_prefixes = {
+        "../escaped", "..\\escaped", (base / "abs").u8string(), "C:/x", "a/b", "a\\b", "x:y",
+        "a*b", "a?b", "a\"b", "a<b", "a>b", "a|b", std::string("a\x01" "b"), std::string(101, 'a'),
+    };
+    for (const auto& prefix : bad_prefixes) {
+        const auto r = mgr.export_pages_to_images({0}, out_dir, "png", 72, prefix);
+        assert(r.success == 0);
+        assert(r.attempted == 1);
+        assert(r.errors.size() == 1);
+    }
+    std::size_t entries = 0;
+    for (const auto& entry : fs::recursive_directory_iterator(base)) {
+        (void)entry;
+        ++entries;
+    }
+    assert(entries == 1);  // only the pre-existing, still empty "out" dir; nothing was written anywhere
+
+    const auto never = base / "never";
+    const auto r_missing_dir = mgr.export_pages_to_images({0}, never.u8string(), "png", 72, "../x");
+    assert(r_missing_dir.success == 0);
+    assert(!fs::exists(never));
+
+    // A normal prefix (dots are fine) still works and lands inside out_dir.
+    const auto ok = mgr.export_pages_to_images({0}, out_dir, "png", 72, "page.v1");
+    assert(ok.success == 1);
+    assert(fs::exists(base / "out" / "page.v1_0001.png"));
+
+    fs::remove_all(base);
+    std::remove(p1.c_str());
+}
+
+void test_manager_plan_export_image_paths() {
+    namespace fs = std::filesystem;
+    const auto p1 = std::string("quickmarkpdf_test_plan.pdf");
+    write_min_pdf(p1, 3);
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1});
+
+    const auto all = mgr.plan_export_image_paths({}, "some_dir", "jpg", "p");
+    assert(all.size() == 3);
+    assert(fs::u8path(all[0]) == fs::u8path("some_dir") / "p_0001.jpg");
+    assert(fs::u8path(all[2]) == fs::u8path("some_dir") / "p_0003.jpg");
+
+    const auto selected = mgr.plan_export_image_paths({2, 0}, "some_dir", "png", "q");
+    assert(selected.size() == 2);
+    assert(fs::u8path(selected[0]).filename() == fs::u8path("q_0001.png"));
+    assert(fs::u8path(selected[1]).filename() == fs::u8path("q_0002.png"));
+
+    bool threw_prefix = false;
+    try {
+        mgr.plan_export_image_paths({0}, "some_dir", "png", "../x");
+    } catch (const std::invalid_argument&) {
+        threw_prefix = true;
+    }
+    assert(threw_prefix);
+
+    bool threw_dir = false;
+    try {
+        mgr.plan_export_image_paths({0}, "", "png", "x");
+    } catch (const std::invalid_argument&) {
+        threw_dir = true;
+    }
+    assert(threw_dir);
+
+    assert(PdfManager::is_safe_export_prefix("page"));
+    assert(PdfManager::is_safe_export_prefix(""));
+    assert(!PdfManager::is_safe_export_prefix("a/b"));
+
+    std::remove(p1.c_str());
+}
+
+void test_render_limits_shrink_or_refuse() {
+    // S-1: a render over the pixel budget is shrunk to fit (previews) or
+    // refused (exports) instead of allocating without bound.
+    const auto p1 = std::string("quickmarkpdf_test_limits.pdf");
+    write_min_pdf(p1, 1, 200, 200);
+
+    const auto shrunk = quickmarkpdf::PdfBackend::render_page(p1, 0, 4000, 0, "", /*max_pixels=*/10000);
+    assert(static_cast<std::size_t>(shrunk.width) * static_cast<std::size_t>(shrunk.height) <= 10000);
+    assert(shrunk.width >= 90 && shrunk.width <= 100);
+    assert(shrunk.rgba.size() == static_cast<std::size_t>(shrunk.width) * shrunk.height * 4);
+
+    bool refused = false;
+    try {
+        quickmarkpdf::PdfBackend::render_page(p1, 0, 4000, 0, "", 10000, /*shrink_to_fit=*/false);
+    } catch (const std::length_error&) {
+        refused = true;
+    }
+    assert(refused);
+
+    // dpi above the limit is rejected.
+    bool dpi_rejected = false;
+    try {
+        quickmarkpdf::PdfBackend::render_page_at_dpi(p1, 0, quickmarkpdf::kMaxExportDpi + 1, 0);
+    } catch (const std::invalid_argument&) {
+        dpi_rejected = true;
+    }
+    assert(dpi_rejected);
+    std::remove(p1.c_str());
+
+    // A page far larger than the export budget is reported per page, quickly,
+    // without a giant allocation (14400pt square at 72 dpi is ~207M pixels).
+    const auto big = std::string("quickmarkpdf_test_limits_big.pdf");
+    write_min_pdf(big, 1, 14400, 14400);
+    PdfManager mgr;
+    mgr.load_pdfs({big});
+    const auto out_dir = std::string("quickmarkpdf_test_limits_out");
+    const auto result = mgr.export_pages_to_images({0}, out_dir, "png", 72, "big");
+    assert(result.success == 0);
+    assert(result.attempted == 1);
+    assert(result.errors.size() == 1);
+    assert(!std::filesystem::exists(std::filesystem::u8path(out_dir) / "big_0001.png"));
+    std::filesystem::remove_all(out_dir);
+    std::remove(big.c_str());
+}
+
+void test_encrypted_sources_are_detected() {
+    // V-3: encryption is not carried into saved files, so the manager must
+    // be able to tell when a document comes from an encrypted source.
+    const auto enc = std::string("quickmarkpdf_test_enc_detect.pdf");
+    const auto plain = std::string("quickmarkpdf_test_enc_detect_plain.pdf");
+    write_encrypted_fixture_pdf(enc);
+    write_min_pdf(plain, 1);
+
+    assert(quickmarkpdf::PdfBackend::inspect(enc, "secret123").encrypted);
+    assert(!quickmarkpdf::PdfBackend::inspect(plain).encrypted);
+
+    PdfManager mgr;
+    mgr.load_pdfs({plain});
+    assert(!mgr.has_encrypted_sources());
+    mgr.load_pdfs({enc}, {{enc, "secret123"}});
+    assert(mgr.has_encrypted_sources());
+
+    mgr.close_document(enc);
+    assert(!mgr.has_encrypted_sources());  // no page of the encrypted file remains
+
+    mgr.load_pdfs({enc}, {{enc, "secret123"}});
+    assert(mgr.has_encrypted_sources());
+    mgr.close_all();
+    assert(!mgr.has_encrypted_sources());
+
+    std::remove(enc.c_str());
+    std::remove(plain.c_str());
+}
+
+void test_overwriting_an_encrypted_source_writes_an_unencrypted_file() {
+    // Documents today's behavior (the UI warns about it, see main_gui.cpp):
+    // pdfium cannot write encrypted files, so an overwrite drops the encryption.
+    const auto enc = std::string("quickmarkpdf_test_enc_overwrite.pdf");
+    write_encrypted_fixture_pdf(enc);
+
+    PdfManager mgr;
+    mgr.load_pdfs({enc}, {{enc, "secret123"}});
+    assert(mgr.has_encrypted_sources());
+    assert(mgr.overwrite_source());
+    assert(!mgr.has_encrypted_sources());  // the file on disk is now an unencrypted copy
+
+    const auto info = quickmarkpdf::PdfBackend::inspect(enc);  // opens without a password
+    assert(info.page_count == 2);
+    assert(!info.encrypted);
+
+    // The manager forgot the password with the encryption, and keeps rendering
+    // from the new file (not from a cached copy of the encrypted original).
+    assert(mgr.render_page(0, 100).width == 100);
+
+    mgr.close_all();
+    std::remove(enc.c_str());
+}
+
+void test_manager_renders_and_extracts_text_from_a_password_opened_source() {
+    // Rendering and text extraction used to call the backend without the
+    // password, so an encrypted file that had just been opened with the right
+    // password still failed with "password required".
+    const auto enc = std::string("quickmarkpdf_test_enc_render.pdf");
+    write_encrypted_fixture_pdf(enc);
+
+    PdfManager mgr;
+    const auto loaded = mgr.load_pdfs({enc}, {{enc, "secret123"}});
+    assert(loaded.loaded_count == 1);
+
+    const auto rendered = mgr.render_page(0, 120);
+    assert(rendered.width == 120);
+    assert(rendered.height == 120);  // the fixture's pages are square (200 x 200 pt)
+    assert(rendered.rgba.size() == static_cast<std::size_t>(rendered.width) * rendered.height * 4);
+
+    const auto layout = mgr.get_text_layout(1);  // a page with no text: an empty layout, not an error
+    assert(layout.page_width_pt > 0);
+
+    bool out_of_range = false;
+    try {
+        mgr.render_page(99, 100);
+    } catch (const std::out_of_range&) {
+        out_of_range = true;
+    }
+    assert(out_of_range);
+
+    mgr.close_all();
+    std::remove(enc.c_str());
+}
+
+void test_overwrite_does_not_leave_stale_pages_in_the_cache() {
+    // After "reorder, then overwrite", page 0 must come from the NEW file. The
+    // cache used to keep serving the old file's page order for that path.
+    const auto p1 = std::string("quickmarkpdf_test_ovw_cache.pdf");
+    write_two_page_text_pdf(p1, "PAGE-ONE", "PAGE-TWO");
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1});
+    const auto before = quickmarkpdf::detail::flatten_text_layout(mgr.get_text_layout(0));  // primes the cache
+    assert(before.find("PAGE-ONE") != std::string::npos);
+
+    mgr.reorder_pages({1, 0});
+    assert(mgr.overwrite_source());
+
+    const auto after_first = quickmarkpdf::detail::flatten_text_layout(mgr.get_text_layout(0));
+    const auto after_second = quickmarkpdf::detail::flatten_text_layout(mgr.get_text_layout(1));
+    assert(after_first.find("PAGE-TWO") != std::string::npos);
+    assert(after_first.find("PAGE-ONE") == std::string::npos);
+    assert(after_second.find("PAGE-ONE") != std::string::npos);
+
+    mgr.close_all();
+    std::remove(p1.c_str());
+}
+
+void test_overwrite_failure_keeps_the_original_file() {
+    // S-4: when the replace step fails (here: the target is read-only) the
+    // original must be untouched and no temp file may be left behind.
+    namespace fs = std::filesystem;
+    const auto p1 = std::string("quickmarkpdf_test_ovw_fail.pdf");
+    write_min_pdf(p1, 2);
+    const auto read_all = [](const std::string& path) {
+        std::ifstream in(path, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    };
+    const std::string before = read_all(p1);
+
+    PdfManager mgr;
+    mgr.load_pdfs({p1});
+    mgr.rotate_page(0, 90);
+
+    const fs::perms write_bits = fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write;
+    fs::permissions(p1, write_bits, fs::perm_options::remove);
+    const bool ok = mgr.overwrite_source();
+    fs::permissions(p1, write_bits, fs::perm_options::add);
+
+    assert(!ok);
+    assert(read_all(p1) == before);
+    assert(mgr.is_dirty());  // a failed save must leave the document dirty
+    for (const auto& entry : fs::directory_iterator(fs::current_path())) {
+        assert(entry.path().filename().u8string().find(".tmp_quickmarkpdf") == std::string::npos);
+    }
+
+    mgr.close_all();
+    std::remove(p1.c_str());
+}
+
 }  // namespace
 
 int main() {
@@ -1135,6 +1446,15 @@ int main() {
     test_manager_close_document_removes_only_its_pages_and_is_undoable();
     test_manager_clear_undo_history_keeps_pages();
     test_manager_close_all_clears_everything();
+
+    test_manager_export_rejects_unsafe_prefix();
+    test_manager_plan_export_image_paths();
+    test_render_limits_shrink_or_refuse();
+    test_encrypted_sources_are_detected();
+    test_overwriting_an_encrypted_source_writes_an_unencrypted_file();
+    test_overwrite_failure_keeps_the_original_file();
+    test_manager_renders_and_extracts_text_from_a_password_opened_source();
+    test_overwrite_does_not_leave_stale_pages_in_the_cache();
 
     std::puts("All engine_tests assertions passed.");
     return 0;

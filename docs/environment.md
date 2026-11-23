@@ -175,10 +175,28 @@ regressions, not real Japanese rendering.
 .venv\Scripts\python.exe -m pytest tests/test_pdf_manager.py -v
 ```
 
-The TCP control channel (`src/engine/test_api_server.cpp`) is gated on
-`QUICKMARKPDF_TEST_PORT`. It is a no-op if unset. Command names there
-(`load_pdfs`, `undo`, `save_as`, …) are test-only and are not the GUI
-WebMessage protocol documented in [`spec.md`](spec.md).
+The TCP control channel (`src/engine/test_api_server.cpp`) exists only in the
+separate test-API build (`python scripts/build.py testapi`, output
+`build/intermediate/QuickMarkPDF_testapi.exe`); the shipped `QuickMarkPDF.exe`
+is built without it and ignores `QUICKMARKPDF_TEST_PORT`,
+`QUICKMARKPDF_OFFSCREEN` and `QUICKMARKPDF_TEST_OPEN_PATHS`. In the test-API
+build it still does nothing unless `QUICKMARKPDF_TEST_PORT` is set. Command
+names there (`load_pdfs`, `undo`, `save_as`, `ui_message`, `eval_js`, …) are
+test-only and are not the GUI WebMessage protocol documented in
+[`spec.md`](spec.md).
+
+Security regression tests (added with the 2026-11-23 audit fixes, see
+`docs/investigations/2026-11-23-security-audit.md`):
+
+```powershell
+node tests/markdown_render_test.js                      # Markdown converter: attack strings, fuzz, normal output
+python scripts/build.py test                            # engine tests (prefix, limits, encrypted sources, overwrite)
+python scripts/build.py testapi
+python tests/e2e/security_regression.py build/intermediate/QuickMarkPDF_testapi.exe
+```
+
+The last one drives the real WebView2 page and needs the WebView2 Runtime; it
+is run locally, not in CI.
 
 ## Dependencies
 
@@ -189,6 +207,38 @@ preview are embedded into the exe at build time from `resources/vendor/`.
 Python prototype / tests: `requirements.txt` (PyMuPDF, PySide6, Pillow,
 Markdown, PyInstaller) and `requirements-dev.txt` (pytest, pytest-qt,
 pytest-timeout, pytest-cov).
+
+### Updating bundled libraries
+
+The versions are pinned so builds are reproducible, which also means they
+never update on their own. Check them against upstream:
+
+```powershell
+python scripts/check_dependency_updates.py --verify-vendor
+```
+
+It compares pdfium (`$pinnedRelease` in `scripts/fetch_pdfium.ps1`), the
+WebView2 SDK (`$pinnedVersion` in `scripts/fetch_webview2_sdk.ps1`), Mermaid
+and MathJax (the version inside the files in `resources/vendor/`) with the
+latest releases, and checks `resources/vendor/SHA256SUMS`.
+`.github/workflows/dependency-freshness.yml` runs it every Monday and fails
+when something is behind. Mermaid is tracked on the 11.x line (a newer major
+is only reported); MathJax is held on 3.2.2 on purpose (4.x has to be
+evaluated for fully offline rendering under the CSP first), so it never fails
+the check. The WebView2 *Runtime* is installed and updated by Windows, not by
+this repository.
+
+To update one:
+
+- pdfium / WebView2 SDK: set the new version and its SHA-256 in the matching
+  `scripts/fetch_*.ps1` (take pdfium's hash from the digest GitHub shows for
+  the asset; check the nupkg's SHA-512 against the NuGet catalog), run the
+  script, then `python scripts/build.py all` and the tests.
+- Mermaid / MathJax: download the npm package, check its SHA-512 against
+  `dist.integrity` from the npm registry, copy its `dist/mermaid.min.js`
+  (MathJax: `es5/tex-svg.js` for 3.x) over the file in `resources/vendor/`, run
+  `python scripts/check_dependency_updates.py --update-vendor-manifest`, then
+  rebuild and run the tests and the render checks (diagrams, math, CSP).
 
 ## File structure (shipped layout)
 

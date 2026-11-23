@@ -130,59 +130,15 @@
     }, { root: thumbnailPanel, rootMargin: '400px 0px', threshold: 0 });
   }
 
-  // Compact Markdown -> HTML converter. Covers headings, paragraphs,
-  // bold/italic, inline code, fenced code blocks (incl. ```mermaid blocks),
-  // blockquotes (recursive), simple (non-nested) bullet/numbered lists,
-  // links, images, GFM tables, inline/display math ($..$/$$..$$), and
-  // horizontal rules -- deliberately not a full CommonMark implementation.
-  // Escapes HTML in the source first, so raw HTML embedded in a Markdown
-  // file renders as literal text rather than executing -- a safe
-  // simplification, not a Python-parity feature (the Python baseline's
-  // `Markdown` package allows raw HTML passthrough).
+  // Markdown -> HTML lives in markdown.js (loaded before this file). It has no DOM
+  // dependencies, so it is unit-tested in Node (tests/markdown_render_test.js).
+  const { renderMarkdownDocument } = window.QMMarkdown;
 
-  // Math protection: replaces $$..$$ (display) and $..$ (inline) segments
-  // with opaque tokens before markdownToHtml runs, so bold/italic/code
-  // regexes and HTML-escaping never touch the LaTeX source, then restores
-  // the raw math text after conversion (mirrors markdown_manager.py's
-  // _protect_math/_restore_math_tokens token-swap approach). Skips fenced
-  // code blocks entirely, same as the Python version. MathJax's tex-svg.js
-  // itself scans the final DOM text for the $/$$ delimiters at render time.
-  let mathTokenCounter = 0;
-  function protectMath(source) {
-    if (!source || !source.includes('$')) {
-      return { text: source || '', tokens: new Map() };
-    }
-    const tokens = new Map();
-    const makeToken = (kind, content) => {
-      const token = `@@QMPDFMATH${mathTokenCounter}@@`;
-      mathTokenCounter += 1;
-      tokens.set(token, { kind, content });
-      return token;
-    };
-    const replaceMath = (segment) => segment
-      .replace(/(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$/g, (m, inner) => makeToken('display', `$$${inner}$$`))
-      .replace(/(?<!\\)\$(?!\$)([^$\n]+?)(?<!\\)\$/g, (m, inner) => makeToken('inline', `$${inner}$`));
-    const parts = source.split(/(^```[\w-]*\s*$[\s\S]*?^```\s*$)/m);
-    return { text: parts.map((part, idx) => (idx % 2 === 0 ? replaceMath(part) : part)).join(''), tokens };
-  }
-  function restoreMathTokens(html, tokens) {
-    let restored = html;
-    tokens.forEach((value, token) => {
-      if (value.kind === 'display') {
-        restored = restored.split(`<p>${token}</p>`).join(`<div class="math">${value.content}</div>`);
-      }
-      restored = restored.split(token).join(value.content);
-    });
-    return restored;
-  }
-  function renderMarkdownDocument(source) {
-    const { text, tokens } = protectMath(source);
-    return restoreMathTokens(markdownToHtml(text), tokens);
-  }
 
-  // Mermaid initialization mirrors markdown_manager.py's inline <script>
-  // (startOnLoad: false, securityLevel: 'loose', theme: 'default', run
-  // against every .mermaid element) and MathJax's typesetPromise() call.
+  // Mermaid initialization follows markdown_manager.py's inline <script>
+  // (startOnLoad: false, theme: 'default', run against every .mermaid
+  // element) -- except securityLevel, see below -- and MathJax's
+  // typesetPromise() call.
   // Both libraries load as `defer` <script src> tags (see bundle_html.py),
   // so by the time this runs (only ever triggered by a markdown_opened
   // message, always after the page's own initial load) window.mermaid/
@@ -192,7 +148,9 @@
   async function enhanceMarkdownRender() {
     try {
       if (window.mermaid) {
-        window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'default' });
+        // 'strict': diagram text is untrusted file content. 'loose' would let a
+        // diagram carry javascript: links and click callbacks.
+        window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'default' });
         await window.mermaid.run({ querySelector: '.markdown-content .mermaid' });
       }
       if (window.MathJax && window.MathJax.typesetPromise) {
@@ -201,203 +159,6 @@
     } catch (err) {
       console.warn('Markdown enhancement render failed:', err);
     }
-  }
-  function escapeHtml(text) {
-    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  function renderInline(text) {
-    let out = escapeHtml(text);
-    out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2">');
-    out = out.replace(/\[([^\]]*)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-    out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-    return out;
-  }
-
-  // GFM table row splitting: strips one optional leading/trailing pipe,
-  // then splits on '|'. A cell containing an escaped pipe ('\|') is not
-  // supported (matches this converter's general "compact, not full
-  // CommonMark" scope).
-  function splitTableRow(line) {
-    let trimmed = line.trim();
-    if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
-    if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
-    return trimmed.split('|').map((c) => c.trim());
-  }
-  function isTableSeparatorRow(line) {
-    if (!/\|/.test(line) && !/^:?-+:?$/.test(line.trim())) return false;
-    const cells = splitTableRow(line);
-    return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
-  }
-
-  // The one raw-HTML construct this converter honours instead of escaping
-  // (see the escapeHtml note above): a standalone page-break <div>. Both
-  // spellings other Markdown->PDF tools use are accepted -- an inline style
-  // naming a page break ('page-break-before/after: always', or the CSS3
-  // 'break-before/after: page') and Markdown PDF's class="page" -- written
-  // <div ...></div>, <div ... />, or <div ...> on a line of its own. Any
-  // other raw HTML still renders as literal text.
-  function isPageBreakLine(line) {
-    const match = line.trim().match(/^<div\s+([^>]*?)\/?>(?:\s*<\/div>)?$/i);
-    if (!match) return false;
-    const attrs = match[1];
-    const style = attrs.match(/style\s*=\s*["']([^"']*)["']/i);
-    if (style && /(?:page-)?break-(?:before|after)\s*:\s*(?:always|page)/i.test(style[1])) return true;
-    const cls = attrs.match(/class\s*=\s*["']([^"']*)["']/i);
-    return !!cls && cls[1].trim().split(/\s+/).some((c) => c.toLowerCase() === 'page');
-  }
-
-  function markdownToHtml(source) {
-    const lines = source.replace(/\r\n?/g, '\n').split('\n');
-    const html = [];
-    let i = 0;
-    let paragraphLines = [];
-    let list = null;  // { type: 'ul'|'ol', items: [] }
-
-    const flushParagraph = () => {
-      if (paragraphLines.length) {
-        html.push('<p>' + renderInline(paragraphLines.join(' ')) + '</p>');
-        paragraphLines = [];
-      }
-    };
-    const flushList = () => {
-      if (list) {
-        html.push(`<${list.type}>` + list.items.map((item) => `<li>${renderInline(item)}</li>`).join('') +
-          `</${list.type}>`);
-        list = null;
-      }
-    };
-
-    while (i < lines.length) {
-      const line = lines[i];
-
-      if (/^```/.test(line)) {
-        flushParagraph();
-        flushList();
-        const langMatch = line.match(/^```([\w-]*)/);
-        const lang = langMatch ? langMatch[1].toLowerCase() : '';
-        const codeLines = [];
-        i += 1;
-        while (i < lines.length && !/^```/.test(lines[i])) {
-          codeLines.push(lines[i]);
-          i += 1;
-        }
-        i += 1;
-        if (lang === 'mermaid') {
-          html.push('<pre class="mermaid">' + escapeHtml(codeLines.join('\n')) + '</pre>');
-        } else {
-          html.push('<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>');
-        }
-        continue;
-      }
-
-      const heading = line.match(/^(#{1,6})\s+(.*)$/);
-      if (heading) {
-        flushParagraph();
-        flushList();
-        const level = heading[1].length;
-        html.push(`<h${level}>${renderInline(heading[2].trim())}</h${level}>`);
-        i += 1;
-        continue;
-      }
-
-      if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
-        flushParagraph();
-        flushList();
-        html.push('<hr>');
-        i += 1;
-        continue;
-      }
-
-      if (isPageBreakLine(line)) {
-        flushParagraph();
-        flushList();
-        html.push('<div class="page-break"></div>');
-        i += 1;
-        continue;
-      }
-
-      if (/\|/.test(line) && i + 1 < lines.length && isTableSeparatorRow(lines[i + 1])) {
-        flushParagraph();
-        flushList();
-        const headerCells = splitTableRow(line);
-        const aligns = splitTableRow(lines[i + 1]).map((c) => {
-          const left = c.startsWith(':');
-          const right = c.endsWith(':');
-          if (left && right) return 'center';
-          if (right) return 'right';
-          if (left) return 'left';
-          return '';
-        });
-        i += 2;
-        const bodyRows = [];
-        while (i < lines.length && lines[i].trim() !== '' && /\|/.test(lines[i])) {
-          bodyRows.push(splitTableRow(lines[i]));
-          i += 1;
-        }
-        const alignAttr = (idx) => (aligns[idx] ? ` style="text-align:${aligns[idx]}"` : '');
-        const theadHtml = '<thead><tr>' +
-          headerCells.map((c, idx) => `<th${alignAttr(idx)}>${renderInline(c)}</th>`).join('') +
-          '</tr></thead>';
-        const tbodyHtml = '<tbody>' + bodyRows.map((row) => '<tr>' +
-          headerCells.map((_, idx) => `<td${alignAttr(idx)}>${renderInline(row[idx] || '')}</td>`).join('') +
-          '</tr>').join('') + '</tbody>';
-        html.push('<table>' + theadHtml + tbodyHtml + '</table>');
-        continue;
-      }
-
-      if (/^>\s?/.test(line)) {
-        flushParagraph();
-        flushList();
-        const quoted = [];
-        while (i < lines.length && /^>\s?/.test(lines[i])) {
-          quoted.push(lines[i].replace(/^>\s?/, ''));
-          i += 1;
-        }
-        html.push('<blockquote>' + markdownToHtml(quoted.join('\n')) + '</blockquote>');
-        continue;
-      }
-
-      const bullet = line.match(/^[-*+]\s+(.*)$/);
-      if (bullet) {
-        flushParagraph();
-        if (!list || list.type !== 'ul') {
-          flushList();
-          list = { type: 'ul', items: [] };
-        }
-        list.items.push(bullet[1]);
-        i += 1;
-        continue;
-      }
-
-      const numbered = line.match(/^\d+\.\s+(.*)$/);
-      if (numbered) {
-        flushParagraph();
-        if (!list || list.type !== 'ol') {
-          flushList();
-          list = { type: 'ol', items: [] };
-        }
-        list.items.push(numbered[1]);
-        i += 1;
-        continue;
-      }
-
-      if (line.trim() === '') {
-        flushParagraph();
-        flushList();
-        i += 1;
-        continue;
-      }
-
-      paragraphLines.push(line.trim());
-      i += 1;
-    }
-    flushParagraph();
-    flushList();
-    return html.join('\n');
   }
 
   // ── Markdownコピー処理（テキスト選択 + Ctrl+C でMarkdown記法付きでコピー） ──

@@ -1,3 +1,6 @@
 # Shipped product is C++ / WebView2.
 # All non-build Python lives under python/ and is excluded from Linguist.
 python/** linguist-vendored
+
+# Vendored third-party bundles are hashed (resources/vendor/SHA256SUMS): keep their bytes exact on every platform.
+resources/vendor/** -text

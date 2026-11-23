@@ -1,0 +1,25 @@
+name: Dependency freshness
+
+# Versions of the bundled PDF engine, WebView2 SDK and the vendored UI libraries are pinned (reproducible
+# builds), so they never update on their own. This job compares them with upstream once a week and fails when
+# something is behind (GitHub then notifies the repository owner), or when a vendored file no longer matches
+# resources/vendor/SHA256SUMS. See scripts/check_dependency_updates.py.
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are pinned to full commit SHAs (the tag is kept in the comment).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Compare pinned versions with upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/check_dependency_updates.py --verify-vendor

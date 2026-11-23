@@ -5,11 +5,13 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace quickmarkpdf {
 
 struct TextLayout;
+struct RenderedPage;
 
 namespace detail {
 // Flattens a page's line-level text runs (see pdf_backend.h's TextLayout)
@@ -140,6 +142,15 @@ public:
     std::size_t get_page_count() const noexcept;
     std::vector<PageInfo> page_infos() const;
 
+    // Rasterizes page `page_index` of the current document (see
+    // PdfBackend::render_page) / extracts its text layout (see
+    // PdfBackend::get_text_layout), applying the page's current rotation and
+    // the password its source file was opened with -- so an encrypted source
+    // that was opened with its password keeps rendering. Throws
+    // std::out_of_range for an index outside the document.
+    RenderedPage render_page(std::size_t page_index, int target_width) const;
+    TextLayout get_text_layout(std::size_t page_index) const;
+
     void reorder_pages(const std::vector<std::size_t>& order);
     void rotate_page(std::size_t index, int degrees);
     void rotate_pages(const std::vector<std::size_t>& indices, int degrees);
@@ -173,10 +184,34 @@ public:
     // (matching the Python baseline's per-page error accumulation). `clip`,
     // if set, is a crop rectangle in PDF points (page-space, before DPI
     // scaling) applied to every exported page.
+    // Nothing is written when `prefix` is not a plain file-name fragment
+    // (see is_safe_export_prefix): every target page is then reported in
+    // `errors` instead. dpi is limited to 1..kMaxExportDpi and the rendered
+    // size to kMaxExportPixels; a page over either limit is reported in
+    // `errors` for that page.
     ExportResult export_pages_to_images(const std::vector<std::size_t>& indices, const std::string& output_dir,
                                          const std::string& fmt, int dpi, const std::string& prefix,
                                          const std::optional<std::array<double, 4>>& clip = std::nullopt,
                                          int jpeg_quality = 90);
+
+    // True when `prefix` can be used as the start of a file name: no path
+    // separators, drive/stream colons, wildcards or other characters Windows
+    // forbids in a file name, no control characters, and at most 100 bytes.
+    // Prevents "../x" or "C:/x" from steering an export outside output_dir.
+    static bool is_safe_export_prefix(const std::string& prefix);
+
+    // The files export_pages_to_images would write, one per target page and
+    // in the same order ("{prefix}_{0001-based number}.{ext}" inside
+    // output_dir) -- lets a caller ask the user before overwriting. Throws
+    // std::invalid_argument for an unsafe prefix or an empty output_dir.
+    std::vector<std::string> plan_export_image_paths(const std::vector<std::size_t>& indices,
+                                                      const std::string& output_dir, const std::string& fmt,
+                                                      const std::string& prefix) const;
+
+    // True when any page of the current document comes from an encrypted
+    // source. Saving (overwrite, save-as, cut-out) writes a new, unencrypted
+    // PDF -- pdfium cannot write encrypted files -- so callers warn first.
+    bool has_encrypted_sources() const;
 
     // Extracts each target page's selectable text (via PdfBackend::get_text_layout
     // -- a page with no extractable text, e.g. a scanned image, contributes an
@@ -207,6 +242,9 @@ private:
     // so overwrite_source/save_as can re-open encrypted sources without
     // asking again within the same session.
     std::unordered_map<std::string, std::string> known_passwords_;
+    // Absolute source paths whose file is encrypted (see
+    // PdfDocumentInfo::encrypted).
+    std::unordered_set<std::string> encrypted_sources_;
 };
 
 }  // namespace quickmarkpdf

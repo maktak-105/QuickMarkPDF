@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <climits>
 #include <condition_variable>
 #include <cstddef>
 #include <cwctype>
@@ -26,6 +27,7 @@
 
 #include "engine.h"
 #include "pdf_backend.h"
+#include "secure_wipe.h"
 #include "test_api_server.h"
 
 namespace {
@@ -150,6 +152,62 @@ public:
     }
 };
 
+class NavigationStartingHandler : public ICoreWebView2NavigationStartingEventHandler {
+    std::function<HRESULT(ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs*)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit NavigationStartingHandler(
+        std::function<HRESULT(ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs*)> fn)
+        : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2NavigationStartingEventHandler) {
+            *ppv = static_cast<ICoreWebView2NavigationStartingEventHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) override {
+        return fn_(sender, args);
+    }
+};
+
+class NewWindowRequestedHandler : public ICoreWebView2NewWindowRequestedEventHandler {
+    std::function<HRESULT(ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs*)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit NewWindowRequestedHandler(
+        std::function<HRESULT(ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs*)> fn)
+        : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2NewWindowRequestedEventHandler) {
+            *ppv = static_cast<ICoreWebView2NewWindowRequestedEventHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) override {
+        return fn_(sender, args);
+    }
+};
+
 class WebResourceRequestedHandler : public ICoreWebView2WebResourceRequestedEventHandler {
     std::function<HRESULT(ICoreWebView2*, ICoreWebView2WebResourceRequestedEventArgs*)> fn_;
     std::atomic<ULONG> ref_{1};
@@ -239,6 +297,12 @@ std::filesystem::path g_current_markdown_path;
 // starting folder. Restored from the registry at startup and saved back
 // on every change (see save_settings_to_registry).
 std::filesystem::path g_last_used_dir;
+// The image-export folder the native side itself produced or the user
+// confirmed (folder picker, the defaults sent by get_export_defaults, or a
+// confirmed typed path). Any other folder named by an export_images message
+// must be confirmed in a native dialog first -- the message comes from the
+// page, so its folder cannot be trusted on its own. See handle_export_images.
+std::wstring g_export_dir_approved;
 
 // =====================
 // Settings persistence (registry) -- mirrors main_window.py's QSettings
@@ -308,8 +372,15 @@ std::optional<std::wstring> load_string_setting(const wchar_t* name) {
     return value;
 }
 
+// The QA/test hooks (offscreen window, TCP test API, injected file paths) are
+// compiled in only when QUICKMARKPDF_ENABLE_TEST_API is defined (scripts/
+// build.py testapi). A shipped build ignores their environment variables.
 bool is_offscreen_mode() {
+#ifdef QUICKMARKPDF_ENABLE_TEST_API
     return GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
+#else
+    return false;
+#endif
 }
 
 // =====================
@@ -351,8 +422,12 @@ const wchar_t* tr(const wchar_t* ja, const wchar_t* en) {
 // load_pdfs' password/close_all's confirm fields already let specific
 // dialogs be bypassed for testing.
 bool is_test_mode() {
+#ifdef QUICKMARKPDF_ENABLE_TEST_API
     wchar_t buffer[8]{};
     return GetEnvironmentVariableW(L"QUICKMARKPDF_TEST_PORT", buffer, 8) > 0;
+#else
+    return false;
+#endif
 }
 
 // Called once at startup, before the window is created -- window
@@ -443,6 +518,45 @@ std::pair<const std::byte*, DWORD> load_resource_bytes(int resource_id) {
 // exe/DLL以外の外部ファイルが要らない)。https系スキームなので file:// と違い
 // 通常のCORS/セキュリティコンテキストで動く。
 const wchar_t* const kAppOrigin = L"https://appassets.quickmarkpdf.local/";
+
+// True when `uri` is on the app's own virtual host. The trailing slash in
+// kAppOrigin matters: it keeps "appassets.quickmarkpdf.local.evil.example"
+// from matching.
+bool is_app_origin_uri(const std::wstring& uri) {
+    return uri.rfind(kAppOrigin, 0) == 0;
+}
+
+bool starts_with_ignore_case(const std::wstring& text, const wchar_t* prefix) {
+    const std::wstring p(prefix);
+    if (text.size() < p.size()) return false;
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        if (std::towlower(text[i]) != std::towlower(p[i])) return false;
+    }
+    return true;
+}
+
+// A link the user clicked in the rendered Markdown. Only http(s) pages and a
+// plain mailto:address (no query, so no attachment/body tricks) are handed to
+// the system; everything else is dropped.
+bool is_openable_external_uri(const std::wstring& uri) {
+    if (uri.empty() || uri.size() > 2048) return false;
+    if (is_app_origin_uri(uri)) return false;  // never hand the embedded UI's own address to a browser
+    for (const wchar_t c : uri) {
+        if (c <= L' ' || c == 0x7F) return false;
+    }
+    if (starts_with_ignore_case(uri, L"https://") || starts_with_ignore_case(uri, L"http://")) return true;
+    if (starts_with_ignore_case(uri, L"mailto:")) {
+        const std::wstring rest = uri.substr(7);
+        if (rest.empty()) return false;
+        for (const wchar_t c : rest) {
+            const bool ok = (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9') ||
+                            c == L'.' || c == L'_' || c == L'%' || c == L'+' || c == L'-' || c == L'@';
+            if (!ok) return false;
+        }
+        return true;
+    }
+    return false;
+}
 
 // リクエストされたパス(仮想ホストからの相対、先頭スラッシュ無し)を埋め込み
 // リソースへ解決する。一致しなければ resource_id==0 を返し、呼び出し側は
@@ -583,15 +697,18 @@ int extract_int(const std::wstring& message, const wchar_t* key, int fallback) {
     while (cursor < message.size() && message[cursor] == L' ') ++cursor;
     bool negative = cursor < message.size() && message[cursor] == L'-';
     if (negative) ++cursor;
-    int value = 0;
+    // Saturates instead of overflowing (signed overflow is undefined
+    // behaviour, and the value comes straight from the page's message).
+    long long value = 0;
     bool any_digit = false;
-    while (cursor < message.size() && std::iswdigit(message[cursor])) {
-        value = value * 10 + (message[cursor] - L'0');
+    while (cursor < message.size() && message[cursor] >= L'0' && message[cursor] <= L'9') {
+        if (value <= INT_MAX) value = value * 10 + (message[cursor] - L'0');
         ++cursor;
         any_digit = true;
     }
     if (!any_digit) return fallback;
-    return negative ? -value : value;
+    if (value > INT_MAX) value = INT_MAX;
+    return static_cast<int>(negative ? -value : value);
 }
 
 // nullopt means the key was absent (caller should fall back to a real
@@ -652,8 +769,11 @@ std::vector<std::size_t> extract_size_t_array(const std::wstring& message, const
         if (cursor >= message.size() || message[cursor] == L']') break;
         std::size_t value = 0;
         bool any_digit = false;
-        while (cursor < message.size() && std::iswdigit(message[cursor])) {
-            value = value * 10 + static_cast<std::size_t>(message[cursor] - L'0');
+        while (cursor < message.size() && message[cursor] >= L'0' && message[cursor] <= L'9') {
+            // Saturate rather than wrap around: an absurd index must stay
+            // absurd (and be rejected as out of range), not become a valid one.
+            const auto digit = static_cast<std::size_t>(message[cursor] - L'0');
+            value = value > (static_cast<std::size_t>(-1) - 9) / 10 ? static_cast<std::size_t>(-1) : value * 10 + digit;
             ++cursor;
             any_digit = true;
         }
@@ -837,6 +957,9 @@ std::vector<std::filesystem::path> parse_multiselect_buffer(const wchar_t* buffe
 // startup/CLI-args auto-open (see g_startup_paths / open_pdf_paths for
 // that separate, unrelated mechanism).
 std::optional<std::vector<std::filesystem::path>> test_hook_open_documents() {
+#ifndef QUICKMARKPDF_ENABLE_TEST_API
+    return std::nullopt;
+#else
     wchar_t buffer[32768]{};
     const DWORD len = GetEnvironmentVariableW(L"QUICKMARKPDF_TEST_OPEN_PATHS", buffer, 32768);
     if (len == 0 || len >= 32768) return std::nullopt;
@@ -850,6 +973,7 @@ std::optional<std::vector<std::filesystem::path>> test_hook_open_documents() {
         pos = next + 1;
     }
     return result;
+#endif
 }
 
 // Gate for any action that would discard unsaved PDF edits (window close,
@@ -1008,8 +1132,14 @@ std::optional<std::string> prompt_for_password(const std::filesystem::path& path
         &ui_info, filename.c_str(), nullptr, retry ? static_cast<DWORD>(ERROR_LOGON_FAILURE) : 0, username,
         CREDUI_MAX_USERNAME_LENGTH + 1, password, CREDUI_MAX_PASSWORD_LENGTH + 1, &save,
         CREDUI_FLAGS_GENERIC_CREDENTIALS | CREDUI_FLAGS_DO_NOT_PERSIST | CREDUI_FLAGS_EXCLUDE_CERTIFICATES);
-    if (result != NO_ERROR) return std::nullopt;
-    return wide_to_utf8(password);
+    std::optional<std::string> entered;
+    if (result == NO_ERROR) {
+        std::wstring password_w(password);
+        entered = wide_to_utf8(password_w);
+        quickmarkpdf::secure_wipe(password_w);
+    }
+    SecureZeroMemory(password, sizeof(password));
+    return entered;
 }
 
 // =====================
@@ -1095,7 +1225,9 @@ void handle_get_markdown_chunk(const std::wstring& message) {
     int raw_start = extract_int(message, L"start_line", 0);
     int raw_count = extract_int(message, L"count", 5000);
     std::size_t start_line = raw_start >= 0 ? static_cast<std::size_t>(raw_start) : 0;
-    std::size_t count = raw_count > 0 ? static_cast<std::size_t>(raw_count) : 5000;
+    // The UI asks for 5000 lines at a time; the cap keeps a forged count from
+    // making read_markdown_chunk reserve gigabytes.
+    std::size_t count = raw_count > 0 ? std::min<std::size_t>(static_cast<std::size_t>(raw_count), 20000) : 5000;
 
     auto chunk = read_markdown_chunk(g_current_markdown_path, start_line, count);
     const std::wstring response = L"{\"type\":\"markdown_chunk\",\"start_line\":" +
@@ -1203,7 +1335,10 @@ void open_pdf_paths(const std::vector<std::filesystem::path>& paths) {
             auto entered = prompt_for_password(path, retry);
             if (!entered) break;
             retry = true;
-            auto retry_result = g_manager.load_pdfs({absolute_path}, {{absolute_path, *entered}});
+            std::unordered_map<std::string, std::string> entered_passwords{{absolute_path, *entered}};
+            quickmarkpdf::secure_wipe(*entered);
+            auto retry_result = g_manager.load_pdfs({absolute_path}, entered_passwords);
+            for (auto& entry : entered_passwords) quickmarkpdf::secure_wipe(entry.second);
             if (retry_result.loaded_count > 0) {
                 opened = true;
                 ++extra_loaded;
@@ -1299,13 +1434,12 @@ void handle_drop_files(ICoreWebView2WebMessageReceivedEventArgs* args) {
 
 void handle_render_page(const std::wstring& message) {
     const int page_index = extract_int(message, L"page_index", -1);
-    const int width = extract_int(message, L"width", 160);
+    // The UI never asks for more than 4000 px (PREVIEW_MAX_RENDER_WIDTH in
+    // app.js); anything larger is not a legitimate request.
+    const int width = std::clamp(extract_int(message, L"width", 160), 1, 4096);
     if (page_index < 0 || static_cast<std::size_t>(page_index) >= g_manager.get_page_count()) return;
-    const auto infos = g_manager.page_infos();
-    const auto& ref = infos[static_cast<std::size_t>(page_index)];
     try {
-        const auto rendered =
-            quickmarkpdf::PdfBackend::render_page(ref.source_path, ref.original_page_index, width, ref.rotation);
+        const auto rendered = g_manager.render_page(static_cast<std::size_t>(page_index), width);
         const auto pixels_b64 = base64_encode(rendered.rgba.data(), static_cast<DWORD>(rendered.rgba.size()));
         const std::wstring response = L"{\"type\":\"page_rendered\",\"page_index\":" +
                                        std::to_wstring(page_index) + L",\"width\":" +
@@ -1330,11 +1464,8 @@ void handle_render_page(const std::wstring& message) {
 void handle_get_text_layout(const std::wstring& message) {
     const int page_index = extract_int(message, L"page_index", -1);
     if (page_index < 0 || static_cast<std::size_t>(page_index) >= g_manager.get_page_count()) return;
-    const auto infos = g_manager.page_infos();
-    const auto& ref = infos[static_cast<std::size_t>(page_index)];
     try {
-        const auto layout =
-            quickmarkpdf::PdfBackend::get_text_layout(ref.source_path, ref.original_page_index, ref.rotation);
+        const auto layout = g_manager.get_text_layout(static_cast<std::size_t>(page_index));
         std::wstring runs_json = L"[";
         for (std::size_t i = 0; i < layout.runs.size(); ++i) {
             if (i) runs_json += L",";
@@ -1584,13 +1715,35 @@ std::wstring ask_overwrite_or_save_as() {
     return L"cancel";
 }
 
+// pdfium cannot write encrypted files, so every saved PDF comes out without
+// the password protection the source had. Ask before writing one. Returns
+// true when the user wants to go on.
+bool confirm_encryption_loss(bool overwrite_is_skipped) {
+    if (is_test_mode()) return true;
+    force_foreground_window();
+    std::wstring text = tr(L"このPDFはパスワードで保護(暗号化)されています。\n"
+                           L"保存すると暗号化は保持されず、パスワードなしで開ける新しいPDFになります。",
+                           L"This PDF is password-protected (encrypted).\n"
+                           L"The saved file will NOT be encrypted: anyone can open it without the password.");
+    if (overwrite_is_skipped) {
+        text += tr(L"\n\n元のファイルへの上書きは行わず、新しいファイルとして保存します。",
+                   L"\n\nThe original file will not be overwritten; the result is saved as a new file.");
+    }
+    text += tr(L"\n\n続行しますか？", L"\n\nContinue?");
+    return MessageBoxW(g_window, text.c_str(), tr(L"暗号化は保持されません", L"Encryption is not preserved"),
+                       MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+}
+
 void handle_save_pdf() {
     if (g_manager.get_page_count() == 0) return;
 
-    std::filesystem::path target;
     bool overwrite = false;
 
-    if (g_manager.can_overwrite_source()) {
+    if (g_manager.has_encrypted_sources()) {
+        // Overwriting would replace the encrypted original with an unencrypted
+        // copy, so only "save as a new file" is offered.
+        if (!confirm_encryption_loss(g_manager.can_overwrite_source())) return;
+    } else if (g_manager.can_overwrite_source()) {
         const auto choice = ask_overwrite_or_save_as();
         if (choice == L"cancel") return;
         overwrite = (choice == L"overwrite");
@@ -1626,6 +1779,7 @@ void handle_split_pdf(const std::wstring& message) {
         post_status(tr(L"PDFを切り出したいページをサムネイルで選択してください", L"Select the pages to split out from the thumbnail panel"));
         return;
     }
+    if (g_manager.has_encrypted_sources() && !confirm_encryption_loss(false)) return;
     const auto default_name = suggest_export_basename(indices) + L".pdf";
     const auto default_dir = source_dir_for_pages(indices);
     const auto picked = prompt_save_pdf(default_name, default_dir);
@@ -1669,18 +1823,101 @@ void handle_extract_text(const std::wstring& message) {
 // message arrives), format/dpi/jpeg_quality/output_dir/prefix arrive
 // directly instead of the previous MessageBoxW yes/no + bare folder-picker
 // + hardcoded dpi=150/quality=90/prefix="page".
+// Lower-cased, separator-trimmed form of a folder path, for "is this the same
+// folder?" comparisons.
+std::wstring folder_key(const std::wstring& folder) {
+    std::wstring key = std::filesystem::path(folder).lexically_normal().wstring();
+    while (key.size() > 1 && (key.back() == L'\\' || key.back() == L'/')) key.pop_back();
+    for (auto& c : key) c = static_cast<wchar_t>(std::towlower(c));
+    return key;
+}
+
+// An export folder named by the page must be a plain absolute path: a
+// relative one would depend on the working directory, and device paths
+// ("\\.\", "\\?\") can reach things that are not folders.
+bool is_acceptable_export_dir(const std::wstring& folder) {
+    if (folder.empty() || folder.size() > 32000) return false;
+    for (const wchar_t c : folder) {
+        if (c < L' ') return false;
+    }
+    const auto is_separator = [](wchar_t c) { return c == L'\\' || c == L'/'; };
+    if (folder.size() >= 4 && is_separator(folder[0]) && is_separator(folder[1]) &&
+        (folder[2] == L'.' || folder[2] == L'?') && is_separator(folder[3])) {
+        return false;
+    }
+    return std::filesystem::path(folder).is_absolute();
+}
+
+bool confirm_image_export(const std::wstring& folder, std::size_t file_count, std::size_t existing_count) {
+    if (is_test_mode()) return true;
+    std::wstring shown = folder;
+    try {
+        shown = std::filesystem::weakly_canonical(std::filesystem::path(folder)).wstring();
+    } catch (const std::exception&) {
+        // Show the path as given.
+    }
+    std::wstring text = tr(L"画像を次のフォルダへ書き出します。\n\n", L"Images will be written to this folder:\n\n") +
+                        shown + tr(L"\n\n書き出すファイル数: ", L"\n\nFiles to write: ") + std::to_wstring(file_count);
+    if (existing_count > 0) {
+        text += tr(L"\n同じ名前の既存ファイル ", L"\n") + std::to_wstring(existing_count) +
+                tr(L" 件を上書きします。", L" existing file(s) with the same name will be overwritten.");
+    }
+    text += tr(L"\n\nよろしいですか？", L"\n\nContinue?");
+    force_foreground_window();
+    return MessageBoxW(g_window, text.c_str(), tr(L"画像の書き出し", L"Export images"),
+                       MB_YESNO | (existing_count > 0 ? MB_ICONWARNING : MB_ICONQUESTION)) == IDYES;
+}
+
 void handle_export_images(const std::wstring& message) {
     if (g_manager.get_page_count() == 0) return;
     auto indices = extract_size_t_array(message, L"indices");
     const int dpi = extract_int(message, L"dpi", 150);
+    if (dpi < 1 || dpi > quickmarkpdf::kMaxExportDpi) {
+        post_status(tr(L"解像度(DPI)は1〜1200の範囲で指定してください", L"DPI must be between 1 and 1200"));
+        return;
+    }
     const std::string fmt = wide_to_utf8(extract_string(message, L"fmt", L"png"));
     const int jpeg_quality = extract_int(message, L"jpeg_quality", 90);
     const std::string prefix = wide_to_utf8(extract_string(message, L"prefix", L"page"));
+    if (!quickmarkpdf::PdfManager::is_safe_export_prefix(prefix)) {
+        post_status(tr(L"接頭辞に使えない文字(\\ / : * ? \" < > | など)が含まれているか、長すぎます",
+                       L"The prefix contains characters that cannot be used in a file name (\\ / : * ? \" < > | ...) or is too long"));
+        return;
+    }
     auto output_dir = extract_string(message, L"output_dir");
     if (output_dir.empty()) {
         const auto folder = prompt_pick_folder();
         if (!folder) return;
         output_dir = folder->wstring();
+        g_export_dir_approved = output_dir;
+    }
+    if (!is_acceptable_export_dir(output_dir)) {
+        post_status(tr(L"出力先フォルダは絶対パスで指定してください", L"Specify the output folder as an absolute path"));
+        return;
+    }
+
+    // The folder in this message comes from the page, so unless it is one the
+    // native side itself produced or the user already confirmed, and unless
+    // it would only create new files, ask before writing anything.
+    std::vector<std::string> planned;
+    try {
+        planned = g_manager.plan_export_image_paths(indices, wide_to_utf8(output_dir), fmt, prefix);
+    } catch (const std::exception&) {
+        post_status(tr(L"出力ファイル名を作成できませんでした", L"Could not build the output file names"));
+        return;
+    }
+    std::size_t existing = 0;
+    for (const auto& file : planned) {
+        std::error_code ec;
+        if (std::filesystem::exists(std::filesystem::u8path(file), ec)) ++existing;
+    }
+    const bool approved = !g_export_dir_approved.empty() && folder_key(output_dir) == folder_key(g_export_dir_approved);
+    if (!approved || existing > 0) {
+        if (!confirm_image_export(output_dir, planned.size(), existing)) {
+            post_status(tr(L"画像の書き出しをキャンセルしました", L"Image export cancelled"));
+            return;
+        }
+        g_export_dir_approved = output_dir;
     }
     g_last_used_dir = std::filesystem::path(output_dir);
 
@@ -1703,6 +1940,7 @@ void handle_export_images(const std::wstring& message) {
 void handle_get_export_defaults(const std::wstring& message) {
     const auto indices = extract_size_t_array(message, L"indices");
     const auto dir = g_last_used_dir.empty() ? source_dir_for_pages(indices) : g_last_used_dir;
+    if (!dir.empty()) g_export_dir_approved = dir.wstring();  // chosen by the native side, not the page
     const auto prefix = suggest_export_basename(indices);
     const std::wstring response = L"{\"type\":\"export_defaults\",\"output_dir\":" + json_string(dir.wstring()) +
                                    L",\"prefix\":" + json_string(prefix) + L"}";
@@ -1713,6 +1951,7 @@ void handle_browse_export_folder() {
     const auto folder = prompt_pick_folder();
     if (!folder) return;
     g_last_used_dir = *folder;
+    g_export_dir_approved = folder->wstring();
     const std::wstring response = L"{\"type\":\"folder_picked\",\"path\":" + json_string(folder->wstring()) + L"}";
     if (g_webview) g_webview->PostWebMessageAsString(response.c_str());
 }
@@ -1723,9 +1962,50 @@ void handle_browse_export_folder() {
 //
 // Calls g_manager's methods directly -- the same PdfManager instance and
 // methods handle_*() above call -- rather than going through app.js/the
-// WebMessage bridge. Only reachable when QUICKMARKPDF_TEST_PORT is set (see
-// maybe_start_test_api_server's call site in wWinMain); a normal user run
-// never has this code path invoked.
+// WebMessage bridge. Compiled only when QUICKMARKPDF_ENABLE_TEST_API is
+// defined (scripts/build.py testapi) and then reachable only when
+// QUICKMARKPDF_TEST_PORT is set (see maybe_start_test_api_server's call site
+// in wWinMain); a shipped build does not contain this code at all.
+void dispatch_message(const std::wstring& message);
+
+#ifdef QUICKMARKPDF_ENABLE_TEST_API
+
+class ExecuteScriptCompletedHandler : public ICoreWebView2ExecuteScriptCompletedHandler {
+    std::function<HRESULT(HRESULT, LPCWSTR)> fn_;
+    std::atomic<ULONG> ref_{1};
+
+public:
+    explicit ExecuteScriptCompletedHandler(std::function<HRESULT(HRESULT, LPCWSTR)> fn) : fn_(std::move(fn)) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2ExecuteScriptCompletedHandler) {
+            *ppv = static_cast<ICoreWebView2ExecuteScriptCompletedHandler*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++ref_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --ref_;
+        if (remaining == 0) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT errorCode, LPCWSTR resultObjectAsJson) override {
+        return fn_(errorCode, resultObjectAsJson);
+    }
+};
+
+// eval_js / get_eval_result: ExecuteScript completes asynchronously on the
+// same message loop the TCP command is dispatched from, so (like
+// save_markdown_pdf) the command returns at once and a second command polls.
+std::mutex g_eval_mutex;
+int g_eval_state = 0;  // 0 = never run, 1 = pending, 2 = finished
+HRESULT g_eval_hresult = S_OK;
+std::wstring g_eval_result;
+// NewWindowRequested records the link here instead of launching a browser
+// when the test API is compiled in (see load_ui).
+std::wstring g_last_external_uri;
 
 // Set by export_markdown_to_pdf's completion callback. PrintToPdf is
 // inherently async (its callback fires later on the same message loop that
@@ -1850,10 +2130,7 @@ std::wstring dispatch_test_command(const std::wstring& message) {
             if (page_index < 0 || static_cast<std::size_t>(page_index) >= g_manager.get_page_count()) {
                 return L"{\"error\":\"page index out of range\"}";
             }
-            const auto infos = g_manager.page_infos();
-            const auto& ref = infos[static_cast<std::size_t>(page_index)];
-            const auto layout =
-                quickmarkpdf::PdfBackend::get_text_layout(ref.source_path, ref.original_page_index, ref.rotation);
+            const auto layout = g_manager.get_text_layout(static_cast<std::size_t>(page_index));
             std::wstring runs_json = L"[";
             for (std::size_t i = 0; i < layout.runs.size(); ++i) {
                 if (i) runs_json += L",";
@@ -1874,6 +2151,57 @@ std::wstring dispatch_test_command(const std::wstring& message) {
                 extract_int(message, L"jpeg_quality", 90));
             return L"{\"success\":" + std::to_wstring(result.success) + L",\"attempted\":" +
                    std::to_wstring(result.attempted) + L",\"errors\":" + json_string_array(result.errors) + L"}";
+        } else if (type == L"ui_message") {
+            // Runs the page-facing handler exactly as a WebMessage from the
+            // page would -- including its validation and confirmations (which
+            // answer "yes" in test mode).
+            dispatch_message(extract_string(message, L"message"));
+            return L"{\"ok\":true,\"state\":" + get_test_state_json() + L"}";
+        } else if (type == L"eval_js") {
+            if (!g_webview) return L"{\"error\":\"webview is not initialized\"}";
+            const auto script = extract_string(message, L"script");
+            {
+                std::lock_guard<std::mutex> lock(g_eval_mutex);
+                g_eval_state = 1;
+                g_eval_hresult = S_OK;
+                g_eval_result.clear();
+            }
+            auto* handler = new ExecuteScriptCompletedHandler([](HRESULT error, LPCWSTR json) -> HRESULT {
+                std::lock_guard<std::mutex> lock(g_eval_mutex);
+                g_eval_hresult = error;
+                g_eval_result = (SUCCEEDED(error) && json) ? json : L"";
+                g_eval_state = 2;
+                return S_OK;
+            });
+            const HRESULT started = g_webview->ExecuteScript(script.c_str(), handler);
+            handler->Release();
+            if (FAILED(started)) return L"{\"error\":\"ExecuteScript failed\"}";
+            return L"{\"started\":true}";
+        } else if (type == L"get_eval_result") {
+            std::lock_guard<std::mutex> lock(g_eval_mutex);
+            return L"{\"state\":" + std::to_wstring(g_eval_state) + L",\"hresult\":" +
+                   std::to_wstring(static_cast<long>(g_eval_hresult)) + L",\"result\":" + json_string(g_eval_result) + L"}";
+        } else if (type == L"get_last_external_uri") {
+            return L"{\"uri\":" + json_string(g_last_external_uri) + L"}";
+        } else if (type == L"get_webview_settings") {
+            if (!g_webview) return L"{\"error\":\"webview is not initialized\"}";
+            ICoreWebView2Settings* settings = nullptr;
+            if (FAILED(g_webview->get_Settings(&settings)) || !settings) return L"{\"error\":\"get_Settings failed\"}";
+            BOOL dev_tools = FALSE, context_menus = FALSE, status_bar = FALSE, accelerators = FALSE;
+            settings->get_AreDevToolsEnabled(&dev_tools);
+            settings->get_AreDefaultContextMenusEnabled(&context_menus);
+            settings->get_IsStatusBarEnabled(&status_bar);
+            ICoreWebView2Settings3* settings3 = nullptr;
+            if (SUCCEEDED(settings->QueryInterface(IID_ICoreWebView2Settings3, reinterpret_cast<void**>(&settings3))) &&
+                settings3) {
+                settings3->get_AreBrowserAcceleratorKeysEnabled(&accelerators);
+                settings3->Release();
+            }
+            settings->Release();
+            const auto flag = [](BOOL value) { return value ? L"true" : L"false"; };
+            return std::wstring(L"{\"dev_tools\":") + flag(dev_tools) + L",\"browser_accelerator_keys\":" +
+                   flag(accelerators) + L",\"status_bar\":" + flag(status_bar) + L",\"default_context_menus\":" +
+                   flag(context_menus) + L"}";
         } else if (type == L"extract_text_to_file") {
             const auto result = g_manager.extract_text_to_file(
                 extract_size_t_array(message, L"indices"), wide_to_utf8(extract_string(message, L"output_path")));
@@ -1913,6 +2241,8 @@ std::wstring run_test_command_on_main_thread(const std::wstring& command) {
     g_test_cv.wait(lock, [] { return g_test_response_ready; });
     return g_test_response;
 }
+
+#endif  // QUICKMARKPDF_ENABLE_TEST_API
 
 // =====================
 // WebView2 host plumbing
@@ -1979,6 +2309,61 @@ void dispatch_message(const std::wstring& message) {
     }
 }
 
+// The only state worth carrying over from the old profile is localStorage
+// (thumbnail size, wheel mode, language). Best effort: a file that cannot be
+// copied (e.g. the old profile is still open in another instance) is skipped.
+void migrate_legacy_local_storage(const std::filesystem::path& legacy_profile,
+                                  const std::filesystem::path& new_profile) {
+    namespace fs = std::filesystem;
+    const fs::path relative = fs::path(L"EBWebView") / L"Default" / L"Local Storage";
+    const fs::path from = legacy_profile / relative;
+    const fs::path to = new_profile / relative;
+    try {
+        std::error_code ec;
+        if (!fs::is_directory(from, ec)) return;
+        fs::create_directories(to, ec);
+        for (const auto& entry : fs::recursive_directory_iterator(from)) {
+            const fs::path target = to / fs::relative(entry.path(), from);
+            std::error_code item_ec;
+            if (entry.is_directory(item_ec)) {
+                fs::create_directories(target, item_ec);
+            } else if (entry.path().filename() != L"LOCK") {
+                fs::copy_file(entry.path(), target, fs::copy_options::overwrite_existing, item_ec);
+            }
+        }
+    } catch (const std::exception&) {
+        // Settings simply start from their defaults.
+    }
+}
+
+// The WebView2 profile lives in %LOCALAPPDATA%\QuickMarkPDF\WebView2. The
+// old location, a fixed folder directly under %TEMP%, was easy for another
+// process of the same user to tamper with and left rendered content in Temp.
+// Falls back to the old location only if LOCALAPPDATA is unavailable.
+// (The WEBVIEW2_USER_DATA_FOLDER environment variable still overrides this,
+// handled by the WebView2 loader itself.)
+std::wstring resolve_user_data_folder() {
+    namespace fs = std::filesystem;
+    wchar_t temp_dir[MAX_PATH]{};
+    GetTempPathW(MAX_PATH, temp_dir);
+    const fs::path legacy = fs::path(temp_dir) / L"QuickMarkPDF_WVData";
+
+    wchar_t local_app_data[MAX_PATH]{};
+    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data, MAX_PATH);
+    if (length > 0 && length < MAX_PATH) {
+        const fs::path folder = fs::path(local_app_data) / L"QuickMarkPDF" / L"WebView2";
+        std::error_code ec;
+        const bool existed = fs::exists(folder, ec);
+        fs::create_directories(folder, ec);
+        if (fs::is_directory(folder, ec)) {
+            if (!existed) migrate_legacy_local_storage(legacy, folder);
+            return folder.wstring();
+        }
+    }
+    CreateDirectoryW(legacy.c_str(), nullptr);
+    return legacy.wstring();
+}
+
 bool load_ui(const std::filesystem::path& executable_dir) {
     const auto loader_path = executable_dir / L"WebView2Loader.dll";
     HMODULE loader = LoadLibraryW(loader_path.c_str());
@@ -1998,10 +2383,7 @@ bool load_ui(const std::filesystem::path& executable_dir) {
         return false;
     }
 
-    wchar_t temp_dir[MAX_PATH]{};
-    GetTempPathW(MAX_PATH, temp_dir);
-    const std::wstring user_data_folder = std::wstring(temp_dir) + L"QuickMarkPDF_WVData";
-    CreateDirectoryW(user_data_folder.c_str(), nullptr);
+    const std::wstring user_data_folder = resolve_user_data_folder();
 
     const HRESULT create_result = create_environment(
         nullptr, user_data_folder.c_str(), nullptr,
@@ -2046,8 +2428,62 @@ bool load_ui(const std::filesystem::path& executable_dir) {
                     ICoreWebView2Settings* settings = nullptr;
                     if (SUCCEEDED(g_webview->get_Settings(&settings)) && settings) {
                         settings->put_IsZoomControlEnabled(FALSE);
+                        // Browser features this app does not need: DevTools (a
+                        // console next to the native bridge) and the
+                        // browser-only shortcuts (F5/Ctrl+R reload, Ctrl+F, Ctrl+P,
+                        // F12, ...). Editing keys such as Ctrl+C/V/Z are not
+                        // affected, and the app's own shortcuts are handled in
+                        // app.js. The status bar and the standard context menu are
+                        // deliberately left on.
+                        settings->put_AreDevToolsEnabled(FALSE);
+                        ICoreWebView2Settings3* settings3 = nullptr;
+                        if (SUCCEEDED(settings->QueryInterface(IID_ICoreWebView2Settings3,
+                                                               reinterpret_cast<void**>(&settings3))) &&
+                            settings3) {
+                            settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+                            settings3->Release();
+                        }
                         settings->Release();
                     }
+
+                    // The page is only ever the embedded UI. Refuse any other
+                    // top-level navigation (script-driven or redirected), and
+                    // never let WebView2 open its own pop-up window: links the
+                    // user clicks go to the system browser instead.
+                    EventRegistrationToken navigation_starting_token{};
+                    g_webview->add_NavigationStarting(
+                        new NavigationStartingHandler(
+                            [](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                                LPWSTR raw_uri = nullptr;
+                                bool allowed = false;
+                                if (SUCCEEDED(args->get_Uri(&raw_uri)) && raw_uri) {
+                                    allowed = is_app_origin_uri(raw_uri);
+                                    CoTaskMemFree(raw_uri);
+                                }
+                                if (!allowed) args->put_Cancel(TRUE);
+                                return S_OK;
+                            }),
+                        &navigation_starting_token);
+                    EventRegistrationToken new_window_token{};
+                    g_webview->add_NewWindowRequested(
+                        new NewWindowRequestedHandler(
+                            [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                                args->put_Handled(TRUE);
+                                LPWSTR raw_uri = nullptr;
+                                if (SUCCEEDED(args->get_Uri(&raw_uri)) && raw_uri) {
+                                    const std::wstring uri(raw_uri);
+                                    CoTaskMemFree(raw_uri);
+                                    if (is_openable_external_uri(uri)) {
+#ifdef QUICKMARKPDF_ENABLE_TEST_API
+                                        g_last_external_uri = uri;
+#else
+                                        ShellExecuteW(g_window, L"open", uri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#endif
+                                    }
+                                }
+                                return S_OK;
+                            }),
+                        &new_window_token);
 
                     // index.html/vendor/*.jsをファイルシステムではなくexe埋め込み
                     // リソースから返す。kAppOrigin宛のリクエストだけを対象にする
@@ -2097,22 +2533,37 @@ bool load_ui(const std::filesystem::path& executable_dir) {
                     const HRESULT add_result = g_webview->add_WebMessageReceived(
                         new WebMessageReceivedHandler(
                             [](ICoreWebView2*, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                // Only the embedded UI may talk to the native side.
+                                LPWSTR raw_source = nullptr;
+                                bool trusted = false;
+                                if (SUCCEEDED(args->get_Source(&raw_source)) && raw_source) {
+                                    trusted = is_app_origin_uri(raw_source);
+                                    CoTaskMemFree(raw_source);
+                                }
+                                if (!trusted) return S_OK;
+
                                 LPWSTR raw_message = nullptr;
                                 if (FAILED(args->TryGetWebMessageAsString(&raw_message))) return S_OK;
                                 const std::wstring message(raw_message);
                                 CoTaskMemFree(raw_message);
 
-                                if (extract_type(message) == L"drop_files") {
-                                    // app.js sends this via postMessageWithAdditionalObjects
-                                    // instead of the normal postMessage, since the dropped
-                                    // File objects' absolute paths aren't exposed through the
-                                    // standard Web File API -- ICoreWebView2File::get_Path is
-                                    // the WebView2-specific way to recover them.
-                                    handle_drop_files(args);
-                                    return S_OK;
+                                // A handler that throws (bad_alloc, a filesystem error, ...)
+                                // must not unwind through this COM callback and take the
+                                // whole app down.
+                                try {
+                                    if (extract_type(message) == L"drop_files") {
+                                        // app.js sends this via postMessageWithAdditionalObjects
+                                        // instead of the normal postMessage, since the dropped
+                                        // File objects' absolute paths aren't exposed through the
+                                        // standard Web File API -- ICoreWebView2File::get_Path is
+                                        // the WebView2-specific way to recover them.
+                                        handle_drop_files(args);
+                                        return S_OK;
+                                    }
+                                    dispatch_message(message);
+                                } catch (const std::exception&) {
+                                    post_status(tr(L"処理中にエラーが発生しました", L"An error occurred while handling the request"));
                                 }
-
-                                dispatch_message(message);
                                 return S_OK;
                             }),
                         &message_token);
@@ -2221,6 +2672,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         }
         PostQuitMessage(0);
         return 0;
+#ifdef QUICKMARKPDF_ENABLE_TEST_API
     case WM_APP_TEST_COMMAND: {
         std::wstring cmd;
         {
@@ -2236,6 +2688,7 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         g_test_cv.notify_all();
         return 0;
     }
+#endif
     default:
         return DefWindowProcW(window, message, wparam, lparam);
     }
@@ -2264,6 +2717,18 @@ std::vector<std::wstring> parse_startup_document_args(PWSTR command_line) {
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_command) {
+    // From here on, DLLs that are loaded without a full path come only from the
+    // application folder and System32 -- never from the current directory.
+    // Resolved at run time so older Windows versions without the API still start.
+    if (HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll")) {
+        using SetDefaultDllDirectoriesFn = BOOL(WINAPI*)(DWORD);
+        if (const auto set_default_dll_directories =
+                reinterpret_cast<SetDefaultDllDirectoriesFn>(GetProcAddress(kernel32, "SetDefaultDllDirectories"))) {
+            constexpr DWORD kLoadLibrarySearchDefaultDirs = 0x00001000;
+            set_default_dll_directories(kLoadLibrarySearchDefaultDirs);
+        }
+    }
+
     g_instance = instance;
     g_language = load_language_setting();
     g_startup_paths = parse_startup_document_args(command_line);
@@ -2301,7 +2766,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     // at alpha=0 stays in its normal on-screen position and fully
     // composited (so WebView2/DWM behave normally) while being genuinely
     // invisible and non-interactive to the user.
-    const bool offscreen = GetEnvironmentVariableW(L"QUICKMARKPDF_OFFSCREEN", nullptr, 0) > 0;
+    const bool offscreen = is_offscreen_mode();
 
     // CreateWindowExW's width/height are the OUTER window size, but the
     // Python spec's MainWindow.resize(1280, 820) sets its CLIENT area (what
@@ -2353,8 +2818,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command_line, int show_
     OleInitialize(nullptr);
     if (!load_ui(executable_dir)) return 1;
 
+#ifdef QUICKMARKPDF_ENABLE_TEST_API
     // No-ops unless QUICKMARKPDF_TEST_PORT is set -- see test_api_server.h.
     quickmarkpdf::maybe_start_test_api_server(run_test_command_on_main_thread);
+#endif
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
