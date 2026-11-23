@@ -135,6 +135,13 @@ Two extras are bundled and work offline, no internet connection needed:
   supports).
 - Math: inline `$...$` and display `$$...$$` LaTeX-style notation is
   rendered with MathJax.
+- HTML: a safe subset of HTML inside Markdown (<b>, <br>, links, images with
+  width/height/align, tables, <details>/<summary>, <div align="center">,
+  headings, lists, ruby) is shown as HTML and exported to PDF. Anything else
+  (scripts, frames, forms, style, event attributes, class/id/name) is dropped
+  without being shown as text. HTML comments are hidden. HTML inside code
+  blocks and inline code stays as text. Images must be http(s) or base64;
+  relative-path images are not displayed.
 - Large files: files of 2MB or larger stream the first 5,000 lines instantly,
   and a "Load more" button at the bottom fetches additional chunks on demand.
 Press "Save" (or Ctrl+S) in Markdown mode to export the current preview,

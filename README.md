@@ -20,6 +20,7 @@ The UI can switch between Japanese and English (toggle button at the right end o
 - Extract selectable text from all pages, a typed page range, or the currently previewed page, and save it as a .txt file
 - Undo and unsaved-change protection
 - Markdown preview with Mermaid diagrams, math, and streaming chunk loading for large files, exportable to PDF
+- Safe HTML inside Markdown (text formatting, `<br>`, links, images with `width`, tables, `<details>`, `<div align="center">`, ...) is shown and exported to PDF; scripts, frames, forms, `style`, event handlers and other non-allow-listed HTML are dropped (see `docs/spec.md`)
 - Page breaks in Markdown (put `<div style="page-break-before: always;"></div>` or `<div class="page"></div>` on a line of its own to break the page there on PDF export)
 
 ## Using the binary release

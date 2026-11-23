@@ -20,6 +20,7 @@
 - 全ページ／ページ番号指定／現在のプレビューページのテキストを抽出し、.txt ファイルとして保存
 - 元に戻す、未保存変更の確認保護
 - Markdownプレビュー（Mermaid図・数式対応、大容量ファイルのストリーム読み込み対応）、PDFへの書き出し
+- Markdown内の安全なHTML（文字装飾・`<br>`・リンク・`width`付き画像・表・`<details>`・`<div align="center">` など）を表示してPDFにも反映。スクリプト・フレーム・フォーム・`style`・イベント属性など許可外のHTMLは破棄（詳細は `docs/spec_jp.md`）
 - Markdown内の改ページ指定（`<div style="page-break-before: always;"></div>` または `<div class="page"></div>` を単独行に置くと、PDF書き出し時にその位置で改ページ）
 
 ## 配布版を使う
